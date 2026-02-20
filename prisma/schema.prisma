@@ -11,6 +11,19 @@ datasource db {
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
+// ============ MULTI-TENANCY ============
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique  // ex: ads-ativos, latam-prime
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("tenants")
+}
+
 // ============ USUÁRIOS E AUTENTICAÇÃO ============
 
 enum Role {
@@ -115,6 +128,109 @@ model ClientProfile {
   productionG2Items     ProductionG2[]        @relation("ProductionG2Client")
   onboardingMeetings    OnboardingMeeting[]
   metrics               CustomerMetrics?
+  landingBriefings     LandingBriefing[]
+  landingPages         LandingPage[]
+  landingDomains       LandingDomain[]
+}
+
+// ============ FÁBRICA DE LANDING PAGES & ADS ============
+
+model LandingBriefing {
+  id               String   @id @default(cuid())
+  clientId         String   @map("client_id")
+  client           ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  // Dados do negócio
+  nomeEmpresa      String   @default("") @map("nome_empresa") @db.VarChar(200)
+  nomeFantasia     String?  @map("nome_fantasia") @db.VarChar(200)
+  nicho            String   @default("") @db.VarChar(200)
+  subnicho         String?  @map("subnicho") @db.VarChar(200)
+  cidade           String   @default("") @db.VarChar(100)
+  estado           String   @default("") @db.VarChar(2)
+  cnpj             String?  @db.VarChar(18)
+  endereco         String?  @db.VarChar(300)
+  telefone         String?  @db.VarChar(20)
+  whatsapp         String?  @db.VarChar(20)
+  email            String?  @db.VarChar(150)
+  horarioAtendimento String? @map("horario_atendimento") @db.VarChar(100)
+  // Briefing estratégico
+  servicos         String   @default("") @db.Text           // Lista (linha por linha)
+  anosExperiencia  Int?     @map("anos_experiencia")
+  diferenciais     String?  @db.Text
+  objetivo         String?  @db.VarChar(100)   // LIGACOES, WHATSAPP, ORCAMENTO, AGENDAMENTO, PRESENCIAL, OUTRO
+  objetivoOutro    String?  @map("objetivo_outro") @db.VarChar(200)
+  tipoCliente      String?  @map("tipo_cliente") @db.Text
+  problemasDemandas String? @map("problemas_demandas") @db.Text
+  perfilCliente    String?  @map("perfil_cliente") @db.Text  // Legado
+  restricoes       String?  @db.Text
+  // Campos legados (compatibilidade)
+  publicoAlvo      String?  @map("publico_alvo") @db.VarChar(500)
+  dor              String?  @db.Text
+  solucao          String?  @db.Text
+  ofertaUnica      String?  @map("oferta_unica") @db.Text
+  status           String   @default("DRAFT")    // DRAFT, GERADO, PUBLICADO
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  pages            LandingPage[]
+
+  @@index([clientId])
+  @@index([status])
+  @@map("landing_briefings")
+}
+
+model LandingPage {
+  id          String   @id @default(cuid())
+  briefingId  String   @map("briefing_id")
+  briefing    LandingBriefing @relation(fields: [briefingId], references: [id], onDelete: Cascade)
+  clientId    String   @map("client_id")
+  client      ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  html        String   @db.Text
+  css         String?  @db.Text
+  whatsapp    String?  @map("whatsapp") @db.VarChar(20)
+  conversionId String? @map("conversion_id") @db.VarChar(100)  // Google Ads
+  conversionLabel String? @map("conversion_label") @db.VarChar(100)
+  status      String   @default("GERADO")   // GERADO, PUBLICADO
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  deployments LandingDeployment[]
+
+  @@index([clientId])
+  @@index([briefingId])
+  @@map("landing_pages")
+}
+
+model LandingDomain {
+  id              String   @id @default(cuid())
+  clientId        String   @map("client_id")
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  domain          String   @unique @db.VarChar(253)
+  cloudflareZoneId String? @map("cloudflare_zone_id") @db.VarChar(100)
+  sslStatus       String   @default("PENDING") @map("ssl_status") @db.VarChar(20)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  deployments     LandingDeployment[]
+
+  @@index([clientId])
+  @@map("landing_domains")
+}
+
+model LandingDeployment {
+  id            String   @id @default(cuid())
+  pageId        String   @map("page_id")
+  page          LandingPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  domainId      String?  @map("domain_id")
+  domain        LandingDomain? @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  url           String   @db.VarChar(500)
+  hospedaRef    String?  @map("hospeda_ref") @db.VarChar(100)
+  status        String   @default("PENDING")  // PENDING, DEPLOYING, LIVE, FAILED
+  deployedAt    DateTime? @map("deployed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([pageId])
+  @@index([domainId])
+  @@map("landing_deployments")
 }
 
 // Reunião de onboarding de cliente novo

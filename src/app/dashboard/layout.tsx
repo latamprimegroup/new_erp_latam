@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
-import { DashboardShell } from '@/components/DashboardShell'
+import { ShellEnterprise } from '@/components/ShellEnterprise'
 
 export default async function DashboardLayout({
   children,
@@ -12,8 +12,8 @@ export default async function DashboardLayout({
   if (!session) redirect('/login?callbackUrl=/dashboard')
 
   return (
-    <DashboardShell user={session.user}>
+    <ShellEnterprise user={session.user}>
       {children}
-    </DashboardShell>
+    </ShellEnterprise>
   )
 }

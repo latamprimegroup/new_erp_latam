@@ -4,6 +4,14 @@ import { hash } from 'bcryptjs'
 const prisma = new PrismaClient()
 
 async function main() {
+  // Tenant padrão (multi-tenancy)
+  await prisma.tenant.upsert({
+    where: { slug: 'ads-ativos' },
+    update: {},
+    create: { name: 'Ads Ativos', slug: 'ads-ativos', active: true },
+  })
+  console.log('Tenant ads-ativos criado/atualizado')
+
   const adminHash = await hash('admin123', 12)
   const admin = await prisma.user.upsert({
     where: { email: 'admin@adsativos.com' },

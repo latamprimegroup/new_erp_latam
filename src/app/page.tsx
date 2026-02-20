@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function HomePage() {
@@ -9,19 +8,14 @@ export default function HomePage() {
         <ThemeToggle />
       </div>
       {/* Decorative */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(30,58,138,0.08),transparent)] pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(21,162,235,0.12),transparent)] pointer-events-none" />
       <div className="absolute top-20 right-20 w-72 h-72 bg-primary-400/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-20 left-20 w-96 h-96 bg-accent-400/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="text-center max-w-2xl relative z-10 animate-fade-in mt-8">
-        <Image
-          src="/logo-ads-ativos.png"
-          alt="ADS Ativos"
-          width={180}
-          height={54}
-          className="h-14 w-auto mx-auto mb-4"
-          priority
-        />
+        <p className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent mb-4">
+          Ads Ativos
+        </p>
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-gray-100 mb-3 tracking-tight">
           ERP – Gestão de produção, estoque e vendas
         </h1>

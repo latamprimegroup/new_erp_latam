@@ -2,7 +2,6 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { signOut } from 'next-auth/react'
 import { NotificationsBell } from './NotificationsBell'
 import { ThemeToggle } from './ThemeToggle'
@@ -34,6 +33,9 @@ const LABELS: Record<string, string> = {
   solicitacoes: 'Solicitações',
   'contas-entregues': 'Customer ID',
   tickets: 'Tickets & OS',
+  'profit-engine': 'Profit Engine',
+  ceo: 'Centro Comando CEO',
+  deploy: 'Agente Deploy',
   config: 'Configurações',
   fornecedores: 'Fornecedores',
   relatorios: 'Relatórios',
@@ -88,14 +90,8 @@ export function DashboardHeader({
           </svg>
         </button>
         <nav className="flex items-center gap-1.5 text-sm" aria-label="Breadcrumb">
-          <Link href="/dashboard" className="hidden sm:block shrink-0 mr-2" aria-label="ADS Ativos">
-            <Image
-              src="/logo-ads-ativos.png"
-              alt=""
-              width={80}
-              height={24}
-              className="h-6 w-auto object-contain dark:opacity-90"
-            />
+          <Link href="/dashboard" className="hidden sm:block shrink-0 mr-2 font-bold text-primary-600 dark:text-primary-400" aria-label="ADS Ativos">
+            Ads Ativos
           </Link>
           <span className="text-gray-300 dark:text-gray-600 hidden sm:inline">|</span>
           <Link

@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function LoginPage() {
@@ -50,14 +49,10 @@ export default function LoginPage() {
       <div className="card w-full max-w-md animate-scale-in shadow-xl mt-8">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block mb-4">
-            <Image
-              src="/logo-ads-ativos.png"
-              alt="ADS Ativos"
-              width={140}
-              height={48}
-              className="h-12 w-auto mx-auto dark:opacity-95"
-              priority
-            />
+            <span className="text-2xl font-bold bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent">
+              Ads Ativos
+            </span>
+            <span className="block text-xs text-gray-500 mt-1 font-medium">ERP</span>
           </Link>
           <p className="text-gray-500 dark:text-gray-400">ERP – Acesse sua conta</p>
         </div>
