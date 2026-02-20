@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta oficial ADS Ativos */
+:root {
+  --ads-azul: #15A2EB;
+  --ads-azul-secondary: #1F70EE;
+  --ads-ciano: #07E5E9;
+  --ads-offwhite: #F8FAFC;
+  --ads-antracite: #1F2937;
+  --foreground: #1F2937;
+  --background: #F1F5F9;
+}
+
+/* Tema dark premium – tech + escala */
+.dark {
+  --foreground: #FFFFFF;
+  --background: #0E1117;
+  --ads-card: #161B22;
+  --ads-muted: #9CA3AF;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.dark body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer components {
+  /* CTA Principal – gradiente azul oficial */
+  .btn-primary {
+    @apply bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 
+           text-white font-semibold py-2.5 px-5 rounded-xl 
+           transition-all duration-300 shadow-md hover:shadow-glow 
+           hover:-translate-y-0.5 disabled:hover:translate-y-0 disabled:hover:shadow-md
+           focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-2 active:translate-y-0;
+  }
+  /* CTA Forte – ciano para destaque estratégico (ex: Meta 100M) */
+  .btn-accent {
+    @apply bg-gradient-to-r from-accent-500 to-accent-600 hover:from-accent-400 hover:to-accent-500 
+           text-black font-semibold py-2.5 px-5 rounded-xl 
+           transition-all duration-300 shadow-md hover:shadow-glow-accent 
+           hover:-translate-y-0.5 focus:ring-2 focus:ring-accent-500/40 focus:ring-offset-2;
+  }
+  .btn-secondary {
+    @apply bg-white/90 hover:bg-white dark:bg-ads-dark-card/90 dark:hover:bg-ads-dark-card 
+           text-ads-antracite dark:text-gray-200 font-medium py-2.5 px-5 
+           rounded-xl border border-gray-200 dark:border-white/10 hover:border-primary-600/30 dark:hover:border-primary-500/30
+           transition-all duration-300 hover:shadow-ads-sm;
+  }
+  .input-field {
+    @apply w-full border border-gray-200 dark:border-white/20 dark:bg-white/5 rounded-xl px-4 py-2.5 
+           focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 outline-none 
+           transition-all duration-200 placeholder:text-gray-400 dark:placeholder:text-gray-500
+           dark:text-gray-100;
+  }
+  /* Cards */
+  .card {
+    @apply bg-white dark:bg-ads-dark-card rounded-2xl shadow-ads dark:shadow-none 
+           border border-gray-100/80 dark:border-white/10 p-5
+           transition-all duration-300 hover:shadow-card-hover dark:hover:border-primary-500/20;
+  }
+  .card-elevated {
+    @apply bg-white dark:bg-ads-dark-card rounded-2xl shadow-ads-md dark:shadow-none 
+           border border-gray-100/80 dark:border-white/10 p-6
+           transition-all duration-300 hover:shadow-card-hover dark:hover:border-primary-500/20;
+  }
+  /* Texto e headings */
+  .heading-1 {
+    @apply text-2xl font-bold text-ads-antracite dark:text-gray-100;
+  }
+  .heading-2 {
+    @apply text-lg font-semibold text-ads-antracite dark:text-gray-100;
+  }
+  .text-muted {
+    @apply text-gray-500 dark:text-gray-400 text-sm;
+  }
+  .link-accent {
+    @apply text-accent-500 hover:text-accent-400 font-medium hover:underline;
+  }
+  .link-primary {
+    @apply text-primary-500 hover:text-primary-600 font-medium hover:underline;
+  }
+}
+
+/* Animações leves */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+.animate-slide-up {
+  animation: slideUp 0.35s ease-out;
+}

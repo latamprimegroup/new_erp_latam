@@ -1,0 +1,182 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+
+const PLATFORMS = [
+  { value: '', label: 'Todas' },
+  { value: 'GOOGLE_ADS', label: 'Google Ads' },
+  { value: 'META_ADS', label: 'Meta Ads' },
+  { value: 'KWAI_ADS', label: 'Kwai Ads' },
+  { value: 'TIKTOK_ADS', label: 'TikTok Ads' },
+]
+
+type Account = {
+  id: string
+  platform: string
+  platformLabel: string
+  type: string
+  yearStarted: number | null
+  niche: string | null
+  minConsumed: number | null
+  salePrice: number | null
+  description: string | null
+}
+
+export default function PesquisarContasPage() {
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filters, setFilters] = useState({
+    platform: '',
+    type: '',
+    yearMin: '',
+    consumoMin: '',
+    niche: '',
+  })
+  const [cotando, setCotando] = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (filters.platform) params.set('platform', filters.platform)
+    if (filters.type) params.set('type', filters.type)
+    if (filters.yearMin) params.set('yearMin', filters.yearMin)
+    if (filters.consumoMin) params.set('consumoMin', filters.consumoMin)
+    if (filters.niche) params.set('niche', filters.niche)
+    const res = await fetch(`/api/cliente/catalogo?${params}`)
+    const data = await res.json()
+    if (res.ok) setAccounts(data)
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [filters.platform, filters.type, filters.yearMin, filters.consumoMin, filters.niche])
+
+  async function solicitarCotacao(accountId: string) {
+    setCotando(accountId)
+    const res = await fetch('/api/cliente/cotacao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId }),
+    })
+    const data = await res.json()
+    setCotando(null)
+    if (res.ok && data.whatsappUrl) {
+      window.open(data.whatsappUrl, '_blank')
+    } else {
+      alert(data.error || 'Erro ao solicitar cotação')
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <Link href="/dashboard/cliente" className="text-gray-500 hover:text-gray-700">
+          ← Voltar
+        </Link>
+        <h1 className="heading-1">
+          Pesquisar Contas Disponíveis
+        </h1>
+      </div>
+
+      <div className="card mb-6">
+        <h2 className="font-semibold mb-4">Filtros</h2>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div>
+            <label className="block text-sm text-gray-500 mb-1">Plataforma</label>
+            <select
+              value={filters.platform}
+              onChange={(e) => setFilters((f) => ({ ...f, platform: e.target.value }))}
+              className="input-field"
+            >
+              {PLATFORMS.map((p) => (
+                <option key={p.value || 'all'} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-500 mb-1">Tipo</label>
+            <input
+              type="text"
+              value={filters.type}
+              onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+              className="input-field"
+              placeholder="Ex: Ads USD"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-500 mb-1">Ano mínimo</label>
+            <input
+              type="number"
+              value={filters.yearMin}
+              onChange={(e) => setFilters((f) => ({ ...f, yearMin: e.target.value }))}
+              className="input-field"
+              placeholder="2016"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-500 mb-1">Consumo mín. (R$)</label>
+            <input
+              type="number"
+              value={filters.consumoMin}
+              onChange={(e) => setFilters((f) => ({ ...f, consumoMin: e.target.value }))}
+              className="input-field"
+              placeholder="5000"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-500 mb-1">Nicho</label>
+            <input
+              type="text"
+              value={filters.niche}
+              onChange={(e) => setFilters((f) => ({ ...f, niche: e.target.value }))}
+              className="input-field"
+              placeholder="Saúde, E-commerce..."
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 className="font-semibold mb-4">Contas Encontradas</h2>
+        {loading ? (
+          <p className="text-gray-500 py-8">Carregando...</p>
+        ) : accounts.length === 0 ? (
+          <p className="text-gray-400 py-8">Nenhuma conta disponível com os filtros selecionados.</p>
+        ) : (
+          <div className="space-y-4">
+            {accounts.map((a) => (
+              <div
+                key={a.id}
+                className="p-4 border border-primary-600/10 rounded-lg flex flex-wrap justify-between items-center gap-4"
+              >
+                <div>
+                  <p className="font-medium">{a.platformLabel} — {a.type}</p>
+                  <p className="text-sm text-gray-500">
+                    Ano: {a.yearStarted || '—'} | Nicho: {a.niche || '—'} | Consumo mín: {a.minConsumed ? `R$ ${a.minConsumed.toLocaleString()}` : '—'}
+                  </p>
+                  {a.description && <p className="text-sm text-gray-600 mt-1">{a.description}</p>}
+                </div>
+                <div className="flex items-center gap-4">
+                  {a.salePrice && (
+                    <span className="text-lg font-bold text-primary-600">
+                      R$ {a.salePrice.toLocaleString('pt-BR')}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => solicitarCotacao(a.id)}
+                    disabled={!!cotando}
+                    className="btn-primary"
+                  >
+                    {cotando === a.id ? 'Abrindo...' : 'Solicitar Cotação via WhatsApp'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

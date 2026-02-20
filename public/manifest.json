@@ -1,0 +1,16 @@
+{
+  "name": "ERP Ads Ativos",
+  "short_name": "Ads Ativos",
+  "description": "Sistema de gestão de produção, estoque, vendas e entregas de contas de anúncios",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "theme_color": "#15A2EB",
+  "background_color": "#0E1117",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "pt-BR"
+}

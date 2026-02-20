@@ -1,0 +1,1657 @@
+// ERP Ads Ativos - Modelagem de Dados
+// Baseado no wireframe completo + Multi-país, Receita Federal, Atribuição exclusiva
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ============ USUÁRIOS E AUTENTICAÇÃO ============
+
+enum Role {
+  ADMIN
+  PRODUCER
+  DELIVERER
+  FINANCE
+  COMMERCIAL
+  CLIENT
+  MANAGER
+  PRODUCTION_MANAGER  // Gerente de Produção: conferência diária, valida com senha
+  PLUG_PLAY  // Operador Contingência Black - Plug & Play
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?   @map("password_hash")
+  name          String?
+  phone         String?
+  photo         String?
+  role          Role      @default(CLIENT)
+  emailVerified DateTime? @map("email_verified")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  producerProfile  ProducerProfile?
+  delivererProfile DelivererProfile?
+  clientProfile    ClientProfile?
+  managerProfile   ManagerProfile?
+
+  productionAccounts ProductionAccount[]
+  ordersSold         Order[]           @relation("OrderSeller")
+  deliveries         Delivery[]
+  goals              Goal[]
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  withdrawals        Withdrawal[]
+  monthlyStatements  ProducerMonthlyStatement[]
+
+  // Dados atribuídos exclusivamente a este produtor
+  assignedEmails        Email[]         @relation("AssignedEmails")
+  assignedCnpjs         Cnpj[]          @relation("AssignedCnpjs")
+  assignedPaymentProfiles PaymentProfile[] @relation("AssignedPaymentProfiles")
+  emailBatchesUploaded  EmailBatch[]    @relation("EmailBatchUploader")
+  blackOperations           BlackOperation[]
+  blackPayments             BlackPayment[]
+  plugPlayMonthlyStatements PlugPlayMonthlyStatement[]
+
+  deliveryGroupsAsResponsible DeliveryGroup[]
+  deliveryRepositionsAsAnalyst DeliveryReposition[]
+  deliveryGroupLogs          DeliveryGroupLog[]
+
+  notificationPreference NotificationPreference?
+  pushSubscriptions     PushSubscription[]
+  productionG2Created     ProductionG2[]       @relation("ProductionG2Creator")
+  productionG2CredentialViews ProductionG2CredentialViewLog[]
+
+  productionAccountsValidated ProductionAccount[] @relation("ProductionAccountValidatedBy")
+  productionG2Validated       ProductionG2[]      @relation("ProductionG2ValidatedBy")
+  accountArchiveBatches      AccountArchiveBatch[]
+  productionAlerts           ProductionAlert[]
+  documentAssetsUploaded     DocumentAsset[]
+  onboardingMeetingsCreated  OnboardingMeeting[] @relation("OnboardingMeetingCreator")
+  onboardingParticipations   OnboardingParticipant[]
+  sellerCommercialScores     SellerCommercialScore[]
+  operatorScores             OperatorScore[]
+}
+
+model ProducerProfile {
+  id     String @id @default(cuid())
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DelivererProfile {
+  id     String @id @default(cuid())
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ClientProfile {
+  id                    String                @id @default(cuid())
+  userId                String                @unique @map("user_id")
+  clientCode            String?               @unique @map("client_code")  // Ex: C273
+  country               String?
+  whatsapp              String?
+  notifyEmail           Boolean               @default(true) @map("notify_email")
+  notifyWhatsapp        Boolean               @default(true) @map("notify_whatsapp")
+  lastPurchaseAt        DateTime?             @map("last_purchase_at")
+  totalSpent            Decimal?              @map("total_spent") @db.Decimal(12, 2)
+  totalAccountsBought   Int                   @default(0) @map("total_accounts_bought")
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders                Order[]
+  quotations            Quotation[]
+  accountsDelivered     StockAccount[]        @relation("ClientAccounts")
+  deliveryGroups        DeliveryGroup[]
+  contestationTickets   ContestationTicket[]
+  supportTickets        SupportTicket[]
+  serviceOrders         ServiceOrder[]
+  accountSolicitations  AccountSolicitation[]
+  productionG2Items     ProductionG2[]        @relation("ProductionG2Client")
+  onboardingMeetings    OnboardingMeeting[]
+  metrics               CustomerMetrics?
+}
+
+// Reunião de onboarding de cliente novo
+model OnboardingMeeting {
+  id                   String    @id @default(cuid())
+  clientId             String    @map("client_id")
+  client               ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title                String    @default("Onboarding Cliente")
+  notes                String?   @db.Text
+  scheduledAt          DateTime  @map("scheduled_at")
+  durationMinutes      Int       @default(30) @map("duration_minutes")
+  googleCalendarEventId String?  @map("google_calendar_event_id")
+  status               String    @default("SCHEDULED")  // SCHEDULED, COMPLETED, CANCELLED, RESCHEDULED
+  createdById          String?   @map("created_by_id")
+  createdBy            User?     @relation("OnboardingMeetingCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  participants         OnboardingParticipant[]
+
+  @@index([clientId])
+  @@index([scheduledAt, status])
+  @@map("onboarding_meetings")
+}
+
+// Colaborador participante da reunião de onboarding
+model OnboardingParticipant {
+  id        String            @id @default(cuid())
+  meetingId String            @map("meeting_id")
+  meeting   OnboardingMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String            @map("user_id")
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  @@unique([meetingId, userId])
+  @@index([userId])
+  @@map("onboarding_participants")
+}
+
+// Solicitação de novas contas (por última compra ou quantidade desejada)
+model AccountSolicitation {
+  id                String         @id @default(cuid())
+  clientId          String         @map("client_id")
+  client            ClientProfile  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  quantity          Int            @map("quantity")
+  product           String
+  accountType       String         @map("account_type")
+  country           String?
+  referenceOrderId  String?        @map("reference_order_id") // se baseado na última compra
+  status            String         @default("pending") // pending, in_progress, completed, cancelled
+  notes             String?        @db.Text
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  @@map("account_solicitations")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String    @default("GENERIC")  // DAILY_DIGEST, TASK_ALERT, APPROVAL_NEEDED, etc.
+  channel   String    @default("IN_APP")   // IN_APP, EMAIL, WHATSAPP
+  title     String
+  message   String    @db.Text
+  metadata  Json?
+  read      Boolean   @default(false)
+  link      String?
+  priority  String    @default("NORMAL")   // LOW, NORMAL, HIGH, URGENT
+  sentAt    DateTime? @map("sent_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+model NotificationPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyDigestAt   String?  @map("daily_digest_at")   // "08:00"
+  notifyWhatsapp  Boolean  @default(true) @map("notify_whatsapp")
+  notifyEmail     Boolean  @default(true) @map("notify_email")
+  notifyInApp     Boolean  @default(true) @map("notify_in_app")
+  notifyPush      Boolean  @default(true) @map("notify_push")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @db.Text
+  keys      Json     // { p256dh, auth }
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model ManagerProfile {
+  id       String @id @default(cuid())
+  userId   String @unique @map("user_id")
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts StockAccount[]
+}
+
+// ============ PAÍSES E MOEDAS ============
+
+model Country {
+  id             String   @id @default(cuid())
+  code           String   @unique  // ISO 3166-1 alpha-2 (BR, US, MX, AR, etc.)
+  name           String
+  currency       String   // BRL, USD, MXN, ARS, EUR...
+  currencySymbol String   @map("currency_symbol") // R$, $, etc.
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  emails          Email[]
+  cnpjs           Cnpj[]
+  paymentProfiles PaymentProfile[]
+  niches          Niche[]
+}
+
+model Niche {
+  id          String   @id @default(cuid())
+  countryId   String   @map("country_id")
+  country     Country  @relation(fields: [countryId], references: [id])
+  name        String   // Ex: Nutra, E-commerce, Infoprodutos
+  cnaePattern String?  @map("cnae_pattern") @db.Text // Padrão CNAE ou equivalente para filtro
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  cnpjs Cnpj[]
+}
+
+// ============ STATUS DE ITENS DE ESTOQUE ============
+
+enum StockItemStatus {
+  AVAILABLE  // Disponível para reserva
+  RESERVED   // Reservado para um produtor (não pode ir para outro)
+  CONSUMED   // Já utilizado em uma conta (nunca mais reutilizar)
+  DISABLED   // Desativado/inutilizável
+}
+
+// ============ PRODUÇÃO E ESTOQUE ============
+
+enum AccountPlatform {
+  GOOGLE_ADS
+  META_ADS
+  KWAI_ADS
+  TIKTOK_ADS
+  OTHER
+}
+
+enum AccountStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IN_USE
+  AVAILABLE
+  CRITICAL
+  DELIVERED
+}
+
+model ProductionAccount {
+  id                  String         @id @default(cuid())
+  platform            AccountPlatform
+  type                String
+  email               String?
+  cnpj                String?
+  countryId           String?        @map("country_id")
+  status              AccountStatus  @default(PENDING)
+  rejectionReason     String?        @map("rejection_reason") @db.Text
+  rejectionReasonCode String?        @map("rejection_reason_code") // Código para agregação: DOC_INVALIDO, EMAIL_BLOQUEADO, etc.
+  producerId          String         @map("producer_id")
+  producer            User           @relation(fields: [producerId], references: [id])
+  stockAccountId      String?        @unique @map("stock_account_id")
+  stockAccount        StockAccount?  @relation(fields: [stockAccountId], references: [id])
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  // Referências aos dados consumidos (unicidade - nunca reutilizar)
+  emailId             String?        @unique @map("email_id")
+  emailConsumed       Email?         @relation(fields: [emailId], references: [id])
+  cnpjId              String?        @unique @map("cnpj_id")
+  cnpjConsumed        Cnpj?          @relation(fields: [cnpjId], references: [id])
+  paymentProfileId    String?        @unique @map("payment_profile_id")
+  paymentProfileConsumed PaymentProfile? @relation(fields: [paymentProfileId], references: [id])
+
+  checklist           ProductionChecklist[]
+  deletedAt           DateTime? @map("deleted_at")   // Soft delete: nunca apagar
+
+  validatedByManagerId String?   @map("validated_by_manager_id")  // Gerente que conferiu
+  validatedByManager   User?     @relation("ProductionAccountValidatedBy", fields: [validatedByManagerId], references: [id])
+  validatedAt          DateTime? @map("validated_at")             // Momento da conferência (conta para pagamento)
+
+  @@index([producerId, status, createdAt])
+  @@index([validatedAt])
+  @@index([deletedAt])
+}
+
+// Checklist para mitigar erros na produção (produtor marca antes de enviar)
+model ProductionChecklist {
+  id          String            @id @default(cuid())
+  accountId   String            @map("account_id")
+  account     ProductionAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stepType    String            @map("step_type") // EMAIL_OK, CNPJ_OK, PAGAMENTO_OK, PLATAFORMA_CRIADA, DADOS_VERIFICADOS
+  completed   Boolean           @default(false)
+  completedAt DateTime?         @map("completed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@unique([accountId, stepType])
+  @@map("production_checklists")
+}
+
+model StockAccount {
+  id                    String         @id @default(cuid())
+  platform              AccountPlatform
+  type                  String
+  source                String?        @default("PRODUCTION")  // PRODUCTION, PRODUCTION_G2, IMPORT, MANUAL
+  archivedAt            DateTime?      @map("archived_at")    // Preenchido = em vault (não vende). Null = disponível
+  deletedAt             DateTime?      @map("deleted_at")     // Soft delete: nunca apagar. Null = ativo.
+  countryId             String?        @map("country_id")
+  yearStarted           Int?           @map("year_started")
+  niche                 String?
+  minConsumed           Decimal?       @map("min_consumed") @db.Decimal(12, 2)
+  limitUsage            Decimal?       @map("limit_usage") @db.Decimal(12, 2)
+  spent                 Decimal?       @db.Decimal(12, 2)
+  status                AccountStatus  @default(AVAILABLE)
+  clientId              String?        @map("client_id")
+  client                ClientProfile? @relation("ClientAccounts", fields: [clientId], references: [id])
+  googleAdsCustomerId   String?        @map("google_ads_customer_id") // 123-456-7890 para API
+  margin                Decimal?       @db.Decimal(8, 2)
+  managerId             String?        @map("manager_id")
+  manager               ManagerProfile? @relation(fields: [managerId], references: [id])
+  supplierId            String?        @map("supplier_id")
+  supplier              Supplier?      @relation(fields: [supplierId], references: [id])
+  purchasePrice         Decimal?       @map("purchase_price") @db.Decimal(12, 2)
+  salePrice             Decimal?       @map("sale_price") @db.Decimal(12, 2)
+  markupPercent         Decimal?       @map("markup_percent") @db.Decimal(5, 2)
+  description           String?        @db.Text
+  deliveredAt           DateTime?      @map("delivered_at")
+  lastSpendSyncAt       DateTime?      @map("last_spend_sync_at")
+  productionAccount     ProductionAccount?
+  productionG2          ProductionG2?
+  credential            StockAccountCredential?  // Credenciais de importação (quando não vem de ProductionG2)
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  orderItems         OrderItem[]
+  emails             Email[]
+  cnpjs              Cnpj[]
+  paymentProfiles    PaymentProfile[]
+  quotations         Quotation[]
+  spendLogs          AccountSpendLog[]
+  contestationTickets ContestationTicket[]
+  rentedPhones        RentedPhoneNumber[]
+
+  @@index([status, platform, countryId])
+  @@index([clientId])
+  @@index([managerId])
+  @@index([archivedAt])
+  @@index([source])
+  @@index([deletedAt])
+}
+
+// Credenciais de conta (importação manual / migração de AdsPower)
+model StockAccountCredential {
+  id                  String       @id @default(cuid())
+  stockAccountId      String       @unique @map("stock_account_id")
+  stockAccount        StockAccount @relation(fields: [stockAccountId], references: [id], onDelete: Cascade)
+  email               String?      @db.Text
+  passwordEncrypted   String?      @map("password_encrypted") @db.Text
+  recoveryEmail       String?      @map("recovery_email")
+  twoFaSecret         String?      @map("two_fa_secret") @db.Text
+  twoFaSms            String?      @map("two_fa_sms")
+  googleAdsCustomerId String?      @map("google_ads_customer_id")
+  metaBusinessId      String?      @map("meta_business_id")
+  proxyConfig         Json?        @map("proxy_config")
+  notes               String?      @db.Text
+  deletedAt           DateTime?    @map("deleted_at")  // Soft delete: nunca apagar
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  @@index([deletedAt])
+  @@map("stock_account_credentials")
+}
+
+// Número de telefone alugado via API (5sim etc.) para validação SMS (Google, etc.)
+model RentedPhoneNumber {
+  id               String       @id @default(cuid())
+  stockAccountId   String?      @map("stock_account_id")
+  stockAccount     StockAccount? @relation(fields: [stockAccountId], references: [id], onDelete: SetNull)
+  productionG2Id   String?      @map("production_g2_id")
+  productionG2     ProductionG2? @relation(fields: [productionG2Id], references: [id], onDelete: SetNull)
+  phoneNumber      String       @map("phone_number")   // +5511999999999
+  country          String       // ex: brazil, england
+  operator         String?      // ex: vodafone
+  service          String       @default("google")    // google, telegram, etc.
+  provider         String       @default("5sim")     // 5sim, etc.
+  providerOrderId  String?      @map("provider_order_id")
+  status           String       @default("ACTIVE")   // ACTIVE, RELEASED, EXPIRED
+  expiresAt        DateTime?    @map("expires_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  smsInbox         SmsInbox[]
+
+  @@index([stockAccountId, status])
+  @@index([productionG2Id, status])
+  @@index([status])
+  @@map("rented_phone_numbers")
+}
+
+// SMS recebidos em número alugado (códigos de validação Google, etc.)
+model SmsInbox {
+  id             String            @id @default(cuid())
+  rentedPhoneId  String            @map("rented_phone_id")
+  rentedPhone    RentedPhoneNumber @relation(fields: [rentedPhoneId], references: [id], onDelete: Cascade)
+  sender         String?           // remetente
+  body           String            @db.Text
+  code           String?           // código extraído (ex: 6 dígitos)
+  receivedAt     DateTime?         @map("received_at") // quando a API recebeu
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([rentedPhoneId])
+  @@map("sms_inbox")
+}
+
+// Histórico de uploads de contas (arquivo)
+model AccountArchiveBatch {
+  id           String   @id @default(cuid())
+  filename     String   @map("filename")
+  format       String   // CSV, JSON
+  uploadedById String   @map("uploaded_by_id")
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  totalRows    Int      @map("total_rows")
+  imported     Int      @default(0)
+  failed       Int      @default(0)
+  duplicate    Int      @default(0) @map("duplicate")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([uploadedById])
+  @@index([createdAt])
+  @@map("account_archive_batches")
+}
+
+// Gastos por conta (sync via Google Ads API)
+model AccountSpendLog {
+  id            String       @id @default(cuid())
+  accountId     String       @map("account_id")
+  account       StockAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  periodStart   DateTime     @map("period_start") // início do período (ex: 1º do mês)
+  periodEnd     DateTime     @map("period_end")
+  costMicros    BigInt       @map("cost_micros") // cost em micros (÷ 1_000_000)
+  impressions   Int          @default(0)
+  clicks        Int          @default(0)
+  currencyCode  String?      @map("currency_code")
+  syncedAt      DateTime     @default(now()) @map("synced_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@unique([accountId, periodStart])
+  @@map("account_spend_logs")
+}
+
+// Tickets de contestação e operações comerciais
+enum ContestationType {
+  BAN_CONTESTATION    // Conta banida - contestar
+  REPLACEMENT_REQUEST // Solicitar reposição
+  PAUSED_NEEDS_OPS    // Conta pausada - precisa operação comercial
+}
+
+enum ContestationStatus {
+  OPEN
+  IN_REVIEW
+  REPLACEMENT_APPROVED
+  RESOLVED
+  REJECTED
+}
+
+model ContestationTicket {
+  id                    String            @id @default(cuid())
+  clientId              String            @map("client_id")
+  client                ClientProfile     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  accountId             String            @map("account_id")
+  account               StockAccount      @relation(fields: [accountId], references: [id])
+  type                  ContestationType
+  status                ContestationStatus @default(OPEN)
+  priority              String            @default("NORMAL")  // LOW, NORMAL, HIGH, URGENT
+  slaResponseAt         DateTime?         @map("sla_response_at")  // Prazo primeira resposta
+  slaResolveAt          DateTime?         @map("sla_resolve_at")   // Prazo resolução
+  banReason             String?           @map("ban_reason") @db.Text
+  description           String            @db.Text
+  needsReplacement      Boolean           @default(false) @map("needs_replacement")
+  commercialOpsRequested Boolean          @default(false) @map("commercial_ops_requested")
+  accountReturned       Boolean?          @map("account_returned") // se a conta voltou
+  resolutionNotes       String?           @map("resolution_notes") @db.Text
+  resolvedAt            DateTime?         @map("resolved_at")
+  resolvedById          String?           @map("resolved_by_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, priority])
+  @@map("contestation_tickets")
+}
+
+// Ticket de suporte - área do cliente
+model SupportTicket {
+  id          String   @id @default(cuid())
+  clientId    String   @map("client_id")
+  client      ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subject     String
+  description String   @db.Text
+  category    String   @default("GERAL")  // GERAL, DUVIDA, PROBLEMA, SOLICITACAO
+  status      String   @default("OPEN")   // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  priority    String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  ticketNumber String  @unique @map("ticket_number")  // TKT-0001
+  whatsappSentAt DateTime? @map("whatsapp_sent_at")
+  resolvedAt  DateTime? @map("resolved_at")
+  resolvedNote String? @map("resolved_note") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  serviceOrder ServiceOrder?
+
+  @@index([clientId])
+  @@index([status])
+  @@index([ticketNumber])
+  @@map("support_tickets")
+}
+
+// Ordem de serviço - vinculada a ticket ou criada diretamente
+model ServiceOrder {
+  id           String   @id @default(cuid())
+  clientId     String   @map("client_id")
+  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ticketId     String?  @unique @map("ticket_id")
+  ticket       SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  type         String   @default("MANUTENCAO")  // MANUTENCAO, CONFIGURACAO, TREINAMENTO, SUPORTE, OUTRO
+  title        String
+  description  String   @db.Text
+  status       String   @default("ABERTA")  // ABERTA, EM_ANDAMENTO, AGUARDANDO_CLIENTE, CONCLUIDA, CANCELADA
+  orderNumber  String   @unique @map("order_number")  // OS-0001
+  scheduledAt  DateTime? @map("scheduled_at")
+  completedAt  DateTime? @map("completed_at")
+  whatsappSentAt DateTime? @map("whatsapp_sent_at")
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([clientId])
+  @@index([status])
+  @@index([orderNumber])
+  @@map("service_orders")
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  contact     String?
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  accounts    StockAccount[]
+  emailBatches EmailBatch[]
+  emails     Email[]
+}
+
+// ============ BASE EMAILS / CNPJs / PERFIS (Estoque com Atribuição Exclusiva) ============
+
+model EmailBatch {
+  id              String   @id @default(cuid())
+  supplierId      String   @map("supplier_id")
+  supplier        Supplier @relation(fields: [supplierId], references: [id])
+  uploadedById    String   @map("uploaded_by_id")
+  uploadedBy      User     @relation("EmailBatchUploader", fields: [uploadedById], references: [id])
+  filename        String
+  totalImported   Int      @map("total_imported")
+  failedCount     Int      @default(0) @map("failed_count")
+  duplicateCount  Int      @default(0) @map("duplicate_count")
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  emails          Email[]
+}
+
+model Email {
+  id                  String          @id @default(cuid())
+  email               String          @unique  // Unicidade global - nunca duplicar
+  recovery            String?
+  passwordHash        String?         @map("password_hash")
+  passwordPlain       String?         @map("password_plain") @db.Text  // Criptografado em repouso; usado na produção
+  status              StockItemStatus @default(AVAILABLE)
+  countryId           String?         @map("country_id")
+  country             Country?        @relation(fields: [countryId], references: [id])
+  supplierId          String?         @map("supplier_id")
+  supplier            Supplier?       @relation(fields: [supplierId], references: [id])
+  batchId             String?         @map("batch_id")
+  batch               EmailBatch?     @relation(fields: [batchId], references: [id])
+  accountId           String?         @map("account_id")  // Conta de estoque vinculada (quando em uso)
+  account             StockAccount?   @relation(fields: [accountId], references: [id])
+  assignedToProducerId String?        @map("assigned_to_producer_id")
+  assignedToProducer  User?           @relation("AssignedEmails", fields: [assignedToProducerId], references: [id])
+  assignedAt          DateTime?       @map("assigned_at")
+  consumedAt          DateTime?       @map("consumed_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  productionAccount   ProductionAccount?
+  productionG2        ProductionG2?
+
+  @@index([status, countryId])
+  @@index([assignedToProducerId])
+}
+
+model Cnpj {
+  id                  String          @id @default(cuid())
+  cnpj                String          @unique  // Unicidade global
+  razaoSocial         String?         @map("razao_social")
+  nomeFantasia        String?         @map("nome_fantasia")
+  cnae                String?         // Código CNAE principal
+  cnaeDescricao       String?         @map("cnae_descricao") @db.Text
+  cnaesSecundarios    Json?           @map("cnaes_secundarios") // Array de códigos/descrições
+  status              StockItemStatus @default(AVAILABLE)
+  countryId           String?         @map("country_id")
+  country             Country?        @relation(fields: [countryId], references: [id])
+  nicheId             String?         @map("niche_id")
+  niche               Niche?          @relation(fields: [nicheId], references: [id])
+  accountId           String?         @map("account_id")
+  account             StockAccount?   @relation(fields: [accountId], references: [id])
+  assignedToProducerId String?        @map("assigned_to_producer_id")
+  assignedToProducer  User?           @relation("AssignedCnpjs", fields: [assignedToProducerId], references: [id])
+  assignedAt          DateTime?       @map("assigned_at")
+  consumedAt          DateTime?       @map("consumed_at")
+  sourceApi           String?         @map("source_api")  // Brasil API, ReceitaWS, etc.
+  fetchedAt           DateTime?       @map("fetched_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  paymentProfiles     PaymentProfile[]
+  productionAccount   ProductionAccount?
+  productionG2        ProductionG2?
+
+  @@index([status, countryId])
+  @@index([assignedToProducerId])
+}
+
+model PaymentProfile {
+  id                  String          @id @default(cuid())
+  type                String
+  gateway             String
+  status              StockItemStatus @default(AVAILABLE)
+  cnpjId              String?         @map("cnpj_id")
+  cnpj                Cnpj?           @relation(fields: [cnpjId], references: [id])
+  accountId           String?         @map("account_id")
+  account             StockAccount?   @relation(fields: [accountId], references: [id])
+  countryId           String?         @map("country_id")
+  country             Country?        @relation(fields: [countryId], references: [id])
+  assignedToProducerId String?        @map("assigned_to_producer_id")
+  assignedToProducer  User?           @relation("AssignedPaymentProfiles", fields: [assignedToProducerId], references: [id])
+  assignedAt          DateTime?       @map("assigned_at")
+  consumedAt          DateTime?       @map("consumed_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  productionAccount   ProductionAccount?
+  productionG2        ProductionG2?
+
+  @@index([status, countryId])
+  @@index([assignedToProducerId])
+}
+
+// ============ VENDAS E PEDIDOS ============
+
+enum OrderStatus {
+  QUOTE
+  AWAITING_PAYMENT
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+  IN_SEPARATION
+  IN_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  clientId    String      @map("client_id")
+  client      ClientProfile @relation(fields: [clientId], references: [id])
+  country     String?
+  product     String
+  accountType String      @map("account_type")
+  quantity    Int         @default(1)
+  value       Decimal     @db.Decimal(12, 2)
+  currency    String      @default("BRL")  // ISO 4217 para multi-moeda
+  status      OrderStatus @default(AWAITING_PAYMENT)
+  sellerId    String?     @map("seller_id")
+  seller      User?       @relation("OrderSeller", fields: [sellerId], references: [id])
+  pixKey      String?     @map("pix_key")
+  pixQrCode   String?     @map("pix_qr_code") @db.Text
+  paymentDueAt DateTime? @map("payment_due_at")
+  paidAt      DateTime?  @map("paid_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  items       OrderItem[]
+  delivery    Delivery?
+  deliveryGroups DeliveryGroup[]
+  financialEntries FinancialEntry[]
+
+  @@index([clientId, status])
+  @@index([paidAt])
+  @@index([status, paidAt])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String      @id @default(cuid())
+  orderId   String      @map("order_id")
+  order     Order       @relation(fields: [orderId], references: [id])
+  accountId String      @map("account_id")
+  account   StockAccount @relation(fields: [accountId], references: [id])
+  quantity  Int         @default(1)
+}
+
+// ============ ENTREGAS ============
+
+enum DeliveryStatus {
+  PENDING
+  IN_PROGRESS
+  DELIVERED
+  DELAYED
+}
+
+model Delivery {
+  id             String        @id @default(cuid())
+  orderId        String        @unique @map("order_id")
+  order          Order         @relation(fields: [orderId], references: [id])
+  qtySold        Int           @map("qty_sold")
+  qtyDelivered   Int           @default(0) @map("qty_delivered")
+  accountsDelivered String?    @map("accounts_delivered") @db.Text
+  status         DeliveryStatus @default(PENDING)
+  sla            DateTime?
+  responsibleId  String?       @map("responsible_id")
+  responsible    User?         @relation(fields: [responsibleId], references: [id])
+  deliveredAt    DateTime?     @map("delivered_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+}
+
+// ============ MÓDULO DE ENTREGAS (ADS ATIVOS) ============
+
+enum DeliveryGroupStatus {
+  AGUARDANDO_INICIO
+  EM_ANDAMENTO
+  PARCIALMENTE_ENTREGUE
+  FINALIZADA
+  ATRASADA
+  EM_REPOSICAO
+  CANCELADA
+}
+
+enum DeliveryAccountType {
+  USD
+  BRL
+}
+
+enum DeliveryPaymentType {
+  AUTOMATICO
+  MANUAL
+}
+
+model DeliveryGroup {
+  id                    String              @id @default(cuid())
+  groupNumber           String              @unique @map("group_number")  // GR-0001
+  lastUpdatedAt         DateTime?           @map("last_updated_at") // Última atualização operacional (gerado automaticamente)
+  clientId              String              @map("client_id")
+  client                ClientProfile       @relation(fields: [clientId], references: [id])
+  orderId               String?             @map("order_id")
+  order                 Order?              @relation(fields: [orderId], references: [id])
+  whatsappGroupLink     String              @unique @map("whatsapp_group_link")
+  accountType           DeliveryAccountType @map("account_type")
+  quantityContracted    Int                 @map("quantity_contracted")
+  quantityDelivered     Int                 @default(0) @map("quantity_delivered")
+  currency              String              @default("BRL")
+  paymentType           DeliveryPaymentType @map("payment_type")
+  estimatedTimeHours    Int?                @map("estimated_time_hours")
+  expectedCompletionAt  DateTime?           @map("expected_completion_at")
+  status                DeliveryGroupStatus @default(AGUARDANDO_INICIO)
+  completedAt           DateTime?           @map("completed_at")
+  responsibleId         String              @map("responsible_id")
+  responsible           User                @relation(fields: [responsibleId], references: [id])
+  groupCreatedAt        DateTime            @default(now()) @map("group_created_at")
+  saleDate              DateTime?           @map("sale_date")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  repositions           DeliveryReposition[]
+  returns               DeliveryReturn[]
+  financialEntries      FinancialEntry[]
+  logs                  DeliveryGroupLog[]
+  productionG2Items    ProductionG2[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("delivery_groups")
+}
+
+enum RepositionReason {
+  BLOQUEIO
+  LIMITE_GASTO
+  ERRO_ESTRUTURAL
+  PROBLEMA_PERFIL
+  OUTRO
+}
+
+enum RepositionStatus {
+  SOLICITADA
+  APROVADA
+  NEGADA
+  CONCLUIDA
+}
+
+model DeliveryReposition {
+  id            String          @id @default(cuid())
+  deliveryId    String          @map("delivery_id")
+  delivery      DeliveryGroup   @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  quantity      Int
+  reason        RepositionReason
+  reasonOther   String?         @map("reason_other") @db.Text
+  status        RepositionStatus @default(SOLICITADA)
+  requestedAt   DateTime        @default(now()) @map("requested_at")
+  analystId     String?         @map("analyst_id")
+  analyst       User?           @relation(fields: [analystId], references: [id])
+  resolvedAt    DateTime?       @map("resolved_at")
+  notes         String?         @db.Text
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@index([deliveryId])
+  @@index([status])
+  @@map("delivery_repositions")
+}
+
+// Devolução de contas (impacto financeiro, crédito, ajuste LTV)
+model DeliveryReturn {
+  id            String   @id @default(cuid())
+  deliveryId    String   @map("delivery_id")
+  delivery      DeliveryGroup @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  quantity      Int      // Quantidade devolvida
+  reason        String?  @db.Text
+  status        String   @default("REGISTRADA") // REGISTRADA, CREDITO_APLICADO
+  valueAdjusted Decimal? @map("value_adjusted") @db.Decimal(12, 2) // Valor do crédito/ajuste
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdById   String?  @map("created_by_id")
+
+  @@index([deliveryId])
+  @@map("delivery_returns")
+}
+
+model DeliveryGroupLog {
+  id          String   @id @default(cuid())
+  deliveryId  String   @map("delivery_id")
+  delivery    DeliveryGroup @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id])
+  action      String
+  entity      String
+  entityId    String?  @map("entity_id")
+  details     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([deliveryId])
+  @@index([createdAt])
+  @@map("delivery_group_logs")
+}
+
+// ============ FINANCEIRO ============
+
+enum FinancialType {
+  INCOME
+  EXPENSE
+}
+
+model FinancialCategory {
+  id       String   @id @default(cuid())
+  name     String
+  type     FinancialType
+  active   Boolean  @default(true)
+  entries  FinancialEntry[]
+}
+
+model FinancialEntry {
+  id             String       @id @default(cuid())
+  type           FinancialType
+  category       String
+  categoryId     String?      @map("category_id")
+  financialCategory FinancialCategory? @relation(fields: [categoryId], references: [id])
+  costCenter     String?      @map("cost_center")
+  value          Decimal      @db.Decimal(12, 2)
+  currency       String       @default("BRL")
+  date           DateTime
+  orderId        String?      @map("order_id")
+  order          Order?       @relation(fields: [orderId], references: [id])
+  deliveryGroupId String?     @map("delivery_group_id")
+  deliveryGroup  DeliveryGroup? @relation(fields: [deliveryGroupId], references: [id])
+  netProfit      Decimal?     @map("net_profit") @db.Decimal(12, 2)
+  description    String?      @db.Text
+  reconciled     Boolean      @default(false) @map("reconciled")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([date])
+  @@index([orderId])
+  @@index([deliveryGroupId])
+}
+
+// ============ SAQUES ============
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  HELD
+  FAILED
+}
+
+model Withdrawal {
+  id          String          @id @default(cuid())
+  userId      String?         @map("user_id") // Produtor que solicitou (saque por meta)
+  user        User?           @relation(fields: [userId], references: [id])
+  gateway     String
+  accountId   String?         @map("account_id")
+  value       Decimal         @db.Decimal(12, 2)
+  fee         Decimal?        @db.Decimal(12, 2)
+  netValue    Decimal         @map("net_value") @db.Decimal(12, 2)
+  status      WithdrawalStatus @default(PENDING)
+  dueDate     DateTime?       @map("due_date")
+  risk        String?
+  holdReason  String?         @map("hold_reason") @db.Text
+  reconciled  Boolean         @default(false) @map("reconciled")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============ METAS E BÔNUS ============
+
+model Goal {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  user            User     @relation(fields: [userId], references: [id])
+  dailyTarget     Int      @map("daily_target")
+  monthlyTarget   Int      @map("monthly_target")
+  productionCurrent Int    @default(0) @map("production_current")
+  bonus           Decimal? @db.Decimal(12, 2)
+  status          String   @default("active")
+  periodStart     DateTime @map("period_start")
+  periodEnd       DateTime @map("period_end")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  bonusReleases   BonusRelease[]
+
+  @@index([userId, periodStart])
+  @@index([status])
+}
+
+model BonusRelease {
+  id        String   @id @default(cuid())
+  goalId    String   @map("goal_id")
+  goal      Goal     @relation(fields: [goalId], references: [id])
+  value     Decimal  @db.Decimal(12, 2)
+  status    String   @default("pending")
+  releasedAt DateTime? @map("released_at")
+  createdAt DateTime @default(now()) @map("created_at")
+}
+
+// Fechamento mensal do produtor: salário + valor por conta + bônus. Ao fechar, libera saque.
+model ProducerMonthlyStatement {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  user             User     @relation(fields: [userId], references: [id])
+  month            Int
+  year             Int
+  accountsApproved Int      @map("accounts_approved")
+  baseSalary       Decimal  @map("base_salary") @db.Decimal(12, 2)
+  perAccountTotal  Decimal  @map("per_account_total") @db.Decimal(12, 2)
+  bonusTotal       Decimal  @map("bonus_total") @db.Decimal(12, 2)
+  totalAmount      Decimal  @map("total_amount") @db.Decimal(12, 2)
+  status           String   @default("PENDING") // PENDING, CLOSED (libera saque)
+  closedAt         DateTime? @map("closed_at")
+  closedById       String?   @map("closed_by_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, month, year])
+  @@map("producer_monthly_statements")
+}
+
+// ============ COTAÇÕES ============
+
+model Quotation {
+  id         String       @id @default(cuid())
+  clientId   String       @map("client_id")
+  client     ClientProfile @relation(fields: [clientId], references: [id])
+  accountId  String       @map("account_id")
+  account    StockAccount @relation(fields: [accountId], references: [id])
+  status     String       @default("pending")
+  message    String?      @db.Text
+  createdAt  DateTime     @default(now()) @map("created_at")
+}
+
+// ============ CONFIGURAÇÃO GLOBAL ============
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+}
+
+// ============ CONTINGÊNCIA BLACK - PLUG & PLAY ============
+
+enum BlackOperationStatus {
+  DRAFT
+  EM_AQUECIMENTO
+  EM_CONFIG
+  LIVE
+  SURVIVED_24H
+  BANNED
+}
+
+enum BlackStepType {
+  AQUECIMENTO_G2
+  DOMINIO_NICHO
+  AQUECIMENTO_CONTA
+  CLOAKER
+  PAGINA_WHITE
+  PAGINA_BLACK
+  YOUTUBE_CANAL
+  CRIATIVO_BLACK
+}
+
+model BlackOperation {
+  id              String              @id @default(cuid())
+  collaboratorId  String              @map("collaborator_id")
+  collaborator    User                @relation(fields: [collaboratorId], references: [id], onDelete: Cascade)
+  niche           String
+  domain          String?
+  stockAccountId  String?             @map("stock_account_id")
+  status          BlackOperationStatus @default(DRAFT)
+  wentLiveAt      DateTime?           @map("went_live_at")
+  bannedAt        DateTime?           @map("banned_at")
+  notes           String?             @db.Text
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  steps     BlackOperationStep[]
+  payment   BlackPayment?
+}
+
+model BlackOperationStep {
+  id          String       @id @default(cuid())
+  operationId String       @map("operation_id")
+  operation   BlackOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  stepType    BlackStepType @map("step_type")
+  status      String       @default("PENDING") // PENDING, IN_PROGRESS, DONE
+  completedAt DateTime?    @map("completed_at")
+  notes       String?      @db.Text
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@unique([operationId, stepType])
+  @@map("black_operation_steps")
+}
+
+model BlackPayment {
+  id             String         @id @default(cuid())
+  operationId    String         @unique @map("operation_id")
+  operation      BlackOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  collaboratorId String         @map("collaborator_id")
+  collaborator   User           @relation(fields: [collaboratorId], references: [id])
+  amount         Decimal        @db.Decimal(12, 2)
+  status         String         @default("PENDING") // PENDING, PAID
+  paidAt         DateTime?      @map("paid_at")
+  approvedById   String?        @map("approved_by_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@map("black_payments")
+}
+
+// Fechamento mensal Plug & Play: salário base + bônus por meta (contas SURVIVED_24h)
+model PlugPlayMonthlyStatement {
+  id                  String   @id @default(cuid())
+  collaboratorId      String   @map("collaborator_id")
+  collaborator        User     @relation(fields: [collaboratorId], references: [id])
+  month               Int
+  year                Int
+  accountsSurvived24h Int      @map("accounts_survived_24h")
+  baseSalary          Decimal  @map("base_salary") @db.Decimal(12, 2)
+  bonusTotal          Decimal  @map("bonus_total") @db.Decimal(12, 2)
+  totalAmount         Decimal  @map("total_amount") @db.Decimal(12, 2)
+  tier                String?  // BRONZE, PRATA, OURO, META_BATIDA, ELITE
+  status              String   @default("PENDING") // PENDING, CLOSED
+  closedAt            DateTime? @map("closed_at")
+  closedById          String?   @map("closed_by_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([collaboratorId, month, year])
+  @@map("plugplay_monthly_statements")
+}
+
+// ============ MÓDULO PRODUÇÃO GOOGLE G2 (GMAIL + GOOGLE ADS) ============
+
+enum ProductionG2Status {
+  PARA_CRIACAO
+  CRIANDO_GMAIL
+  CRIANDO_GOOGLE_ADS
+  VINCULANDO_CNPJ
+  CONFIGURANDO_PERFIL_PAGAMENTO
+  EM_REVISAO
+  APROVADA
+  REPROVADA
+  ENVIADA_ESTOQUE
+  ARQUIVADA
+}
+
+model ProductionG2 {
+  id                     String              @id @default(cuid())
+  taskName               String              @map("task_name")
+  currency               String              @default("BRL")  // BRL, USD
+  creatorId              String              @map("creator_id")
+  creator                User                @relation("ProductionG2Creator", fields: [creatorId], references: [id])
+  status                 ProductionG2Status  @default(PARA_CRIACAO)
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+  estimatedDeliveryHours Int?                @map("estimated_delivery_hours")
+  clientId               String?             @map("client_id")
+  client                 ClientProfile?      @relation("ProductionG2Client", fields: [clientId], references: [id])
+  deliveryType           String?             @map("delivery_type")
+  deliveryGroupId        String?             @map("delivery_group_id")
+  deliveryGroup          DeliveryGroup?      @relation(fields: [deliveryGroupId], references: [id])
+  cnpjLink               String?             @map("cnpj_link") @db.Text
+  cnpjNumber             String?             @map("cnpj_number")
+  siteUrl                String?             @map("site_url")
+  emailId                String?             @unique @map("email_id")
+  emailConsumed          Email?              @relation(fields: [emailId], references: [id])
+  cnpjId                 String?             @unique @map("cnpj_id")
+  cnpjConsumed           Cnpj?               @relation(fields: [cnpjId], references: [id])
+  paymentProfileId       String?             @unique @map("payment_profile_id")
+  paymentProfileConsumed PaymentProfile?     @relation(fields: [paymentProfileId], references: [id])
+  codeG2                 String              @unique @map("code_g2")
+  googleAdsCustomerId    String?             @map("google_ads_customer_id")
+  itemId                 String              @unique @map("item_id")
+  stockAccountId         String?             @unique @map("stock_account_id")
+  stockAccount           StockAccount?       @relation(fields: [stockAccountId], references: [id])
+  rejectedReason         String?             @map("rejected_reason") @db.Text
+  rejectedAt             DateTime?           @map("rejected_at")
+  approvedAt             DateTime?           @map("approved_at")
+  sentToStockAt          DateTime?           @map("sent_to_stock_at")
+  archivedAt             DateTime?           @map("archived_at")
+  deletedAt              DateTime?           @map("deleted_at")   // Soft delete: nunca apagar
+
+  validatedByManagerId   String?             @map("validated_by_manager_id")  // Gerente que conferiu
+  validatedByManager     User?               @relation("ProductionG2ValidatedBy", fields: [validatedByManagerId], references: [id])
+  validatedAt            DateTime?           @map("validated_at")             // Momento da conferência (conta para pagamento)
+
+  credentials            ProductionG2Credential?
+  documents              DocumentAsset[]
+  rentedPhones           RentedPhoneNumber[]
+  auditLogs              ProductionG2Log[]
+  credentialViews        ProductionG2CredentialViewLog[]
+
+  @@index([creatorId, status, createdAt])
+  @@index([status])
+  @@index([clientId])
+  @@index([codeG2])
+  @@index([googleAdsCustomerId])
+  @@index([cnpjNumber])
+  @@index([validatedAt])
+  @@index([deletedAt])
+  @@map("production_g2")
+}
+
+model ProductionG2Credential {
+  id                String       @id @default(cuid())
+  productionG2Id    String       @unique @map("production_g2_id")
+  productionG2      ProductionG2 @relation(fields: [productionG2Id], references: [id], onDelete: Cascade)
+  emailGoogle       String?      @map("email_google")
+  passwordEncrypted String?      @map("password_encrypted") @db.Text
+  recoveryEmail     String?      @map("recovery_email")
+  twoFaSecret       String?      @map("two_fa_secret") @db.Text
+  twoFaSms          String?      @map("two_fa_sms")
+  securityStatus    String?      @map("security_status")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@map("production_g2_credentials")
+}
+
+model ProductionG2Log {
+  id            String       @id @default(cuid())
+  productionG2Id String      @map("production_g2_id")
+  productionG2  ProductionG2 @relation(fields: [productionG2Id], references: [id], onDelete: Cascade)
+  userId        String       @map("user_id")
+  action        String
+  entity        String       @default("ProductionG2")
+  entityId      String?      @map("entity_id")
+  details       Json?
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([productionG2Id])
+  @@index([createdAt])
+  @@map("production_g2_logs")
+}
+
+model ProductionG2CredentialViewLog {
+  id             String       @id @default(cuid())
+  productionG2Id String       @map("production_g2_id")
+  productionG2   ProductionG2 @relation(fields: [productionG2Id], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id])
+  viewedAt       DateTime     @default(now()) @map("viewed_at")
+  ip             String?
+
+  @@index([productionG2Id])
+  @@index([userId, viewedAt])
+  @@map("production_g2_credential_views")
+}
+
+// ============ AGENTE G2 - DOCUMENTOS E ATIVOS ÚNICOS ============
+
+enum DocumentAssetType {
+  RG_FRENTE
+  RG_VERSO
+  CARTAO_CNPJ
+  COMPROVANTE_ENDERECO
+  COMPROVANTE_OUTRO
+}
+
+model DocumentAsset {
+  id                   String            @id @default(cuid())
+  productionG2Id       String            @map("production_g2_id")
+  productionG2         ProductionG2      @relation(fields: [productionG2Id], references: [id], onDelete: Cascade)
+  type                 DocumentAssetType
+  storagePath          String            @map("storage_path")  // path relativo ou URL
+  contentHash          String            @map("content_hash")  // SHA-256 do arquivo
+  mimeType             String?           @map("mime_type")
+  uploadedById         String            @map("uploaded_by_id")
+  uploadedBy           User              @relation(fields: [uploadedById], references: [id])
+  uploadedAt           DateTime          @default(now()) @map("uploaded_at")
+  ip                   String?
+  validatedAt          DateTime?         @map("validated_at")
+  blockedReason        String?           @map("blocked_reason") @db.Text
+  createdAt            DateTime          @default(now()) @map("created_at")
+
+  @@unique([productionG2Id, type])
+  @@index([contentHash])
+  @@index([productionG2Id])
+  @@map("document_assets")
+}
+
+enum UniqueAssetType {
+  CPF
+  CNPJ
+  RG_HASH
+  EMAIL_GOOGLE
+  RECOVERY_EMAIL
+  GOOGLE_ADS_ID
+  PAYMENT_PROFILE
+  PHONE
+}
+
+model UniqueAssetRegistry {
+  id                       String           @id @default(cuid())
+  assetType                UniqueAssetType  @map("asset_type")
+  assetHash                String           @map("asset_hash")  // SHA-256 normalizado
+  consumedAt               DateTime         @default(now()) @map("consumed_at")
+  productionG2Id           String?          @map("production_g2_id")
+  productionAccountId      String?          @map("production_account_id")
+  createdAt                DateTime         @default(now()) @map("created_at")
+
+  @@unique([assetType, assetHash])
+  @@index([assetType])
+  @@index([assetHash])
+  @@map("unique_asset_registry")
+}
+
+enum ProductionAlertType {
+  DOC_DUPLICATE
+  META_AT_RISK
+  LOW_QUALITY
+  HIGH_RISK
+  SLOW_PACE
+  EXCESS_REJECT
+  DOC_INCOMPLETE
+  BLOCKED_REUSE
+}
+
+enum ProductionAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model ProductionAlert {
+  id             String                 @id @default(cuid())
+  producerId     String                 @map("producer_id")
+  producer       User                   @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  productionG2Id String?                @map("production_g2_id")
+  type           ProductionAlertType
+  severity       ProductionAlertSeverity @default(WARNING)
+  message        String                 @db.Text
+  resolvedAt     DateTime?              @map("resolved_at")
+  resolvedById   String?                @map("resolved_by_id")
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  @@index([producerId])
+  @@index([type])
+  @@index([resolvedAt])
+  @@map("production_alerts")
+}
+
+// ============ AGENTE DEPLOY ============
+
+model DeployLog {
+  id           String   @id @default(cuid())
+  action       String   // INITIAL_DEPLOY, MIGRATE, BACKUP, ROLLBACK, UPDATE
+  step         String?
+  status       String   // PENDING, RUNNING, SUCCESS, FAILED
+  message      String?  @db.Text
+  details      Json?
+  startedAt    DateTime @default(now()) @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  triggeredById String? @map("triggered_by_id")
+
+  @@index([startedAt])
+  @@map("deploy_logs")
+}
+
+// ============ BI / MÉTRICAS ESTRATÉGICAS ============
+
+// Métricas LTV por cliente (atualização diária)
+model CustomerMetrics {
+  id                     String       @id @default(cuid())
+  clientId               String       @unique @map("client_id")
+  client                 ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  referenceDate          DateTime     @map("reference_date")
+  dataPrimeiraCompra     DateTime?    @map("data_primeira_compra")
+  revenueTotal           Decimal      @default(0) @map("revenue_total") @db.Decimal(14, 2)
+  costTotal              Decimal      @default(0) @map("cost_total") @db.Decimal(14, 2)
+  marginTotal            Decimal      @default(0) @map("margin_total") @db.Decimal(14, 2)
+  ticketMedio            Decimal      @default(0) @map("ticket_medio") @db.Decimal(12, 2)
+  frequenciaMensal       Decimal      @default(0) @map("frequencia_mensal") @db.Decimal(8, 4)
+  mesesRelacionamento    Int          @default(0) @map("meses_relacionamento")
+  tempoRelacionamentoDias Int         @default(0) @map("tempo_relacionamento_dias")
+  churnFlag              Boolean      @default(false) @map("churn_flag")
+  diasSemCompra          Int          @default(0) @map("dias_sem_compra")
+  ltvBruto               Decimal      @default(0) @map("ltv_bruto") @db.Decimal(14, 2)
+  ltvLiquido             Decimal      @default(0) @map("ltv_liquido") @db.Decimal(14, 2)
+  ltvReal                Decimal      @default(0) @map("ltv_real") @db.Decimal(14, 2)
+  ltvProjetado3m         Decimal?     @map("ltv_projetado_3m") @db.Decimal(14, 2)
+  ltvProjetado6m         Decimal?     @map("ltv_projetado_6m") @db.Decimal(14, 2)
+  ltvProjetado12m        Decimal?     @map("ltv_projetado_12m") @db.Decimal(14, 2)
+  cac                    Decimal?     @map("cac") @db.Decimal(12, 2)
+  ltvCacRatio            Decimal?     @map("ltv_cac_ratio") @db.Decimal(8, 2)
+  paybackMeses           Decimal?     @map("payback_meses") @db.Decimal(6, 2)
+  churnProbability       Decimal?     @map("churn_probability") @db.Decimal(6, 2)
+  scoreValor             Int?         @map("score_valor")
+  scoreRisco             Int?         @map("score_risco")
+  scoreFidelidade        Int?         @map("score_fidelidade")
+  segmento               String?
+  churnRisk              String?      @map("churn_risk")
+  vendedorId             String?      @map("vendedor_id")
+  pais                   String?
+  moeda                  String?      @default("BRL")
+  tipoConta              String?      @map("tipo_conta")
+  updatedAt              DateTime     @updatedAt @map("updated_at")
+
+  @@index([referenceDate])
+  @@index([segmento])
+  @@index([vendedorId])
+  @@index([pais])
+  @@map("customer_metrics")
+}
+
+// Coorte mensal detalhado (receita por mês)
+model CohortMonthly {
+  id                 String   @id @default(cuid())
+  mesAquisicao       DateTime @map("mes_aquisicao")
+  clientesAtivos     Int      @map("clientes_ativos")
+  receitaMes1        Decimal  @default(0) @map("receita_mes_1") @db.Decimal(14, 2)
+  receitaMes2        Decimal  @default(0) @map("receita_mes_2") @db.Decimal(14, 2)
+  receitaMes3        Decimal  @default(0) @map("receita_mes_3") @db.Decimal(14, 2)
+  receitaMes6        Decimal  @default(0) @map("receita_mes_6") @db.Decimal(14, 2)
+  receitaMes12       Decimal  @default(0) @map("receita_mes_12") @db.Decimal(14, 2)
+  retencaoPercentual Decimal? @map("retencao_percentual") @db.Decimal(6, 2)
+  margemPercentual   Decimal? @map("margem_percentual") @db.Decimal(6, 2)
+  referenceDate      DateTime @map("reference_date")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([mesAquisicao, referenceDate])
+  @@index([mesAquisicao])
+  @@map("cohort_monthly")
+}
+
+// Score comercial do vendedor (bonificação inteligente)
+model SellerCommercialScore {
+  id            String   @id @default(cuid())
+  sellerId      String   @map("seller_id")
+  seller        User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  referenceDate DateTime @map("reference_date")
+  receitaGerada Decimal  @default(0) @map("receita_gerada") @db.Decimal(14, 2)
+  margemGerada  Decimal  @default(0) @map("margem_gerada") @db.Decimal(14, 2)
+  ltvMedio      Decimal  @default(0) @map("ltv_medio") @db.Decimal(14, 2)
+  taxaRetencao  Decimal? @map("taxa_retencao") @db.Decimal(6, 2)
+  scoreTotal    Int      @map("score_total")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([sellerId, referenceDate])
+  @@index([sellerId])
+  @@map("seller_commercial_scores")
+}
+
+// Alertas estratégicos
+model StrategicAlert {
+  id          String   @id @default(cuid())
+  type        String   // CHURN_SUBIR, LTV_CAIR, LTV_CAC_BAIXO, RECEITA_CAIR, MARGEM_CAIR
+  severity    String   // LOW, MEDIUM, HIGH, CRITICAL
+  message     String   @db.Text
+  details     Json?
+  resolvedAt  DateTime? @map("resolved_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([type, resolvedAt])
+  @@map("strategic_alerts")
+}
+
+// Análise de coorte (por mês de aquisição)
+model CohortMetric {
+  id              String   @id @default(cuid())
+  cohortMonth     DateTime @map("cohort_month") // ex: 2025-01-01 (início do mês)
+  clientsCount    Int      @map("clients_count")
+  revenueTotal    Decimal  @default(0) @map("revenue_total") @db.Decimal(14, 2)
+  marginTotal     Decimal  @default(0) @map("margin_total") @db.Decimal(14, 2)
+  retentionPct    Decimal? @map("retention_pct") @db.Decimal(6, 2)
+  referenceDate   DateTime @map("reference_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([cohortMonth, referenceDate])
+  @@index([cohortMonth])
+  @@map("cohort_metrics")
+}
+
+// Profit Engine - Snapshot diário P&L
+model ProfitEngineSnapshot {
+  id                    String   @id @default(cuid())
+  referenceDate         DateTime @map("reference_date")
+  receitaBruta          Decimal  @default(0) @map("receita_bruta") @db.Decimal(14, 2)
+  receitaLiquida        Decimal  @default(0) @map("receita_liquida") @db.Decimal(14, 2)
+  custoVariavel         Decimal  @default(0) @map("custo_variavel") @db.Decimal(14, 2)
+  custoFixo             Decimal  @default(0) @map("custo_fixo") @db.Decimal(14, 2)
+  margemBruta           Decimal  @default(0) @map("margem_bruta") @db.Decimal(14, 2)
+  margemBrutaPct        Decimal? @map("margem_bruta_pct") @db.Decimal(6, 2)
+  margemLiquida         Decimal  @default(0) @map("margem_liquida") @db.Decimal(14, 2)
+  margemLiquidaPct      Decimal? @map("margem_liquida_pct") @db.Decimal(6, 2)
+  lucroOperacional      Decimal  @default(0) @map("lucro_operacional") @db.Decimal(14, 2)
+  lucroLiquido          Decimal  @default(0) @map("lucro_liquido") @db.Decimal(14, 2)
+  lucroAcumuladoAno     Decimal  @default(0) @map("lucro_acumulado_ano") @db.Decimal(14, 2)
+  lucroProjetado12m     Decimal? @map("lucro_projetado_12m") @db.Decimal(14, 2)
+  metaLucro12m          Decimal? @map("meta_lucro_12m") @db.Decimal(14, 2)
+  gapParaMeta           Decimal? @map("gap_para_meta") @db.Decimal(14, 2)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@unique([referenceDate])
+  @@index([referenceDate])
+  @@map("profit_engine_snapshots")
+}
+
+// Unit Economics por tipo de conta
+model UnitEconomicsSnapshot {
+  id                 String   @id @default(cuid())
+  referenceDate      DateTime @map("reference_date")
+  tipoConta          String   @map("tipo_conta")
+  moeda              String   @default("BRL")
+  receitaPorUnidade  Decimal  @default(0) @map("receita_por_unidade") @db.Decimal(12, 2)
+  custoPorUnidade    Decimal  @default(0) @map("custo_por_unidade") @db.Decimal(12, 2)
+  margemPorUnidade   Decimal  @default(0) @map("margem_por_unidade") @db.Decimal(12, 2)
+  cacReal            Decimal? @map("cac_real") @db.Decimal(12, 2)
+  ltvReal            Decimal? @map("ltv_real") @db.Decimal(12, 2)
+  payback            Decimal? @map("payback") @db.Decimal(6, 2)
+  scoreRentabilidade Int?     @map("score_rentabilidade")
+  margemNegativa     Boolean  @default(false) @map("margem_negativa")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([referenceDate, tipoConta, moeda])
+  @@index([referenceDate])
+  @@map("unit_economics_snapshots")
+}
+
+// Valuation mensal
+model ValuationSnapshot {
+  id            String   @id @default(cuid())
+  referenceDate DateTime @map("reference_date")
+  revenue12m    Decimal  @default(0) @map("revenue_12m") @db.Decimal(14, 2)
+  ebitda12m     Decimal? @map("ebitda_12m") @db.Decimal(14, 2)
+  valuationConservador Decimal? @map("valuation_conservador") @db.Decimal(14, 2)
+  valuationModerado    Decimal? @map("valuation_moderado") @db.Decimal(14, 2)
+  valuationAgressivo   Decimal? @map("valuation_agressivo") @db.Decimal(14, 2)
+  multipleRevenue     Decimal? @map("multiple_revenue") @db.Decimal(6, 2)
+  multipleEbitda      Decimal? @map("multiple_ebitda") @db.Decimal(6, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([referenceDate])
+  @@map("valuation_snapshots")
+}
+
+// Radar de risco empresarial
+model RiskRadarSnapshot {
+  id            String   @id @default(cuid())
+  referenceDate DateTime @map("reference_date")
+  scoreGeral    Int      @map("score_geral")  // 0-100
+  classificacao String  // SAUDAVEL, ATENCAO, RISCO, CRITICO
+  churnScore    Decimal? @map("churn_score") @db.Decimal(6, 2)
+  margemScore   Decimal? @map("margem_score") @db.Decimal(6, 2)
+  cacScore      Decimal? @map("cac_score") @db.Decimal(6, 2)
+  producaoScore Decimal? @map("producao_score") @db.Decimal(6, 2)
+  estoqueScore  Decimal? @map("estoque_score") @db.Decimal(6, 2)
+  detalhes      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([referenceDate])
+  @@map("risk_radar_snapshots")
+}
+
+// Métricas de produção agregadas (diárias)
+model ProductionMetricsSnapshot {
+  id               String   @id @default(cuid())
+  referenceDate    DateTime @map("reference_date")
+  producerId       String?  @map("producer_id")
+  producaoDia      Int      @map("producao_dia")
+  producaoSemana   Int      @map("producao_semana")
+  producaoMes      Int      @map("producao_mes")
+  metaMensal       Int      @map("meta_mensal")
+  taxaAprovacao    Decimal? @map("taxa_aprovacao") @db.Decimal(6, 2)
+  taxaReprovacao   Decimal? @map("taxa_reprovacao") @db.Decimal(6, 2)
+  tempoMedioConta  Int?     @map("tempo_medio_conta") // minutos
+  indiceRetrabalho Decimal? @map("indice_retrabalho") @db.Decimal(6, 2)
+  scoreQualidade   Int?     @map("score_qualidade")
+  scoreProdutividade Int?   @map("score_produtividade")
+  rankingMes       Int?     @map("ranking_mes")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([referenceDate])
+  @@index([producerId, referenceDate])
+  @@map("production_metrics_snapshots")
+}
+
+// Score operacional por colaborador (produção, qualidade, ranking)
+model OperatorScore {
+  id                   String   @id @default(cuid())
+  userId               String   @map("user_id")
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referenceDate        DateTime @map("reference_date")
+  setor                String   // PRODUCAO, ENTREGAS, VENDAS
+  producaoDiaria       Int      @default(0) @map("producao_diaria")
+  producaoMensal       Int      @default(0) @map("producao_mensal")
+  metaMensal           Int      @default(0) @map("meta_mensal")
+  taxaAprovacao        Decimal? @map("taxa_aprovacao") @db.Decimal(6, 2)
+  taxaReprovacao       Decimal? @map("taxa_reprovacao") @db.Decimal(6, 2)
+  tempoMedioTarefa     Int?     @map("tempo_medio_tarefa") // minutos
+  taxaRetrabalho       Decimal? @map("taxa_retrabalho") @db.Decimal(6, 2)
+  indiceErro           Decimal? @map("indice_erro") @db.Decimal(6, 2)
+  indiceReposicao      Decimal? @map("indice_reposicao") @db.Decimal(6, 2)
+  scoreProdutividade   Int      @default(0) @map("score_produtividade")
+  scoreQualidade       Int      @default(0) @map("score_qualidade")
+  scoreGeral           Int      @default(0) @map("score_geral")
+  rankingMes           Int?     @map("ranking_mes")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, referenceDate, setor])
+  @@index([referenceDate])
+  @@index([setor])
+  @@map("operator_scores")
+}
+
+// Relatório mensal de gargalos
+model BottleneckReport {
+  id                String   @id @default(cuid())
+  referenceDate     DateTime @map("reference_date")
+  etapaMaisDemora   String?  @map("etapa_mais_demora")
+  setorMaiorErro    String?  @map("setor_maior_erro")
+  colaboradorRetrabalho String? @map("colaborador_retrabalho")
+  tipoContaReprovacao   String? @map("tipo_conta_reprovacao")
+  clienteMaiorReposicao String? @map("cliente_maior_reposicao")
+  details           Json?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([referenceDate])
+  @@index([referenceDate])
+  @@map("bottleneck_reports")
+}
+
+// ============ AUDITORIA ============
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entity     String
+  entityId   String?  @map("entity_id")
+  details    Json?
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+}

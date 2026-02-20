@@ -1,0 +1,260 @@
+================================================================================
+  INTEGRAÇÃO: GITHUB + CURSOR + HOSTINGER - DEPLOY AUTOMÁTICO
+  ERP Ads Ativos
+================================================================================
+
+Objetivo: Quando o código for atualizado no Cursor e enviado (push) para o
+GitHub, o sistema deve fazer deploy automaticamente no servidor Hostinger,
+mantendo tudo sincronizado sem intervenção manual.
+
+
+================================================================================
+PARTE 1 - ESTRUTURA DO FLUXO
+================================================================================
+
+  Cursor (IDE)  -->  git push  -->  GitHub  -->  Webhook/Actions  -->  Hostinger
+       |                    |              |                              |
+   Edição do código    Commits         Repositório              Servidor atualizado
+   e commits           enviados        centralizado              automaticamente
+
+
+================================================================================
+PARTE 2 - PRÉ-REQUISITOS
+================================================================================
+
+1. Conta no GitHub (github.com)
+2. Cursor ou VS Code com o projeto aberto
+3. Hostinger com plano VPS ou Cloud (obrigatório para Node.js/Next.js)
+   - Hospedagem compartilhada NÃO suporta Next.js adequadamente
+   - Se for compartilhada, considerar migrar para VPS ou usar Vercel
+
+4. Acesso SSH ao servidor Hostinger
+5. Node.js 18+ instalado no servidor
+6. PM2 instalado no servidor (gerenciador de processos)
+
+
+================================================================================
+PARTE 3 - CONFIGURAR GITHUB
+================================================================================
+
+3.1 Criar repositório no GitHub
+   - Acesse github.com
+   - New Repository
+   - Nome sugerido: erp-ads-ativos
+   - Visibilidade: Private (recomendado) ou Public
+   - NÃO marcar "Initialize with README" se o projeto já existir localmente
+
+3.2 Conectar projeto local ao GitHub
+   No terminal (Cursor ou terminal do sistema), dentro da pasta do projeto:
+
+   git init
+   git add .
+   git commit -m "Setup inicial - ERP Ads Ativos"
+   git branch -M main
+   git remote add origin https://github.com/SEU_USUARIO/erp-ads-ativos.git
+   git push -u origin main
+
+   Substitua SEU_USUARIO pelo seu usuário do GitHub.
+
+3.3 Configurar variáveis de ambiente no GitHub (Secrets)
+   - Repositório > Settings > Secrets and variables > Actions
+   - New repository secret
+   - Criar os seguintes secrets:
+
+   Nome              | Valor                    | Descrição
+   ------------------|--------------------------|----------------------------------
+   DEPLOY_HOST       | IP ou domínio do servidor| Ex: 123.45.67.89 ou erp.seudominio.com
+   DEPLOY_USER       | usuário SSH              | Ex: root ou u123456789
+   DEPLOY_SSH_KEY    | Conteúdo da chave privada| Chave SSH (ver seção 4)
+   DEPLOY_PATH       | Caminho do app no servidor| Ex: /var/www/erp-ads-ativos
+
+
+================================================================================
+PARTE 4 - GERAR E CONFIGURAR CHAVE SSH
+================================================================================
+
+4.1 Gerar chave SSH (no computador do desenvolvedor)
+   ssh-keygen -t ed25519 -C "deploy-erp-ads" -f ~/.ssh/deploy_erp -N ""
+
+   Isso gera:
+   - ~/.ssh/deploy_erp      (chave privada - vai no GitHub Secret)
+   - ~/.ssh/deploy_erp.pub  (chave pública - vai no servidor)
+
+4.2 Adicionar chave pública no servidor Hostinger
+   - Conectar via SSH: ssh usuario@ip_do_servidor
+   - Editar: nano ~/.ssh/authorized_keys
+   - Colar o conteúdo de deploy_erp.pub
+   - Salvar e sair
+
+4.3 Copiar chave privada para o GitHub Secret
+   - No Windows: type %USERPROFILE%\.ssh\deploy_erp
+   - No Mac/Linux: cat ~/.ssh/deploy_erp
+   - Copiar TODO o conteúdo (incluindo -----BEGIN e -----END-----)
+   - Colar no GitHub Secret DEPLOY_SSH_KEY
+
+
+================================================================================
+PARTE 5 - PREPARAR O SERVIDOR HOSTINGER
+================================================================================
+
+5.1 Conectar via SSH
+   ssh usuario@ip_do_servidor
+
+5.2 Instalar Node.js 18 (se não tiver)
+   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+
+5.3 Instalar PM2
+   sudo npm install -g pm2
+
+5.4 Criar diretório do projeto
+   sudo mkdir -p /var/www/erp-ads-ativos
+   sudo chown $USER:$USER /var/www/erp-ads-ativos
+
+5.5 Clonar o repositório (primeira vez)
+   cd /var/www/erp-ads-ativos
+   git clone https://github.com/SEU_USUARIO/erp-ads-ativos.git .
+
+   Para repositório privado:
+   git clone https://TOKEN_GITHUB@github.com/SEU_USUARIO/erp-ads-ativos.git .
+
+   (Criar token em GitHub > Settings > Developer settings > Personal access tokens)
+
+5.6 Instalar dependências e criar .env
+   npm install
+   npm run build
+
+   Criar arquivo .env com todas as variáveis (DATABASE_URL, NEXTAUTH_SECRET, etc.)
+   Ver .env.example no projeto como referência.
+
+5.7 Configurar PM2 para iniciar com o sistema
+   pm2 start npm --name "erp-ads-ativos" -- start
+   pm2 save
+   pm2 startup
+   (Seguir as instruções exibidas)
+
+
+================================================================================
+PARTE 6 - WORKFLOW DE DEPLOY (GitHub Actions)
+================================================================================
+
+O arquivo .github/workflows/deploy.yml JÁ EXISTE no projeto. Basta fazer push
+para o GitHub que ele será incluído. Se precisar criar manualmente:
+
+Caminho: .github/workflows/deploy.yml
+
+Conteúdo:
+
+---
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '/var/www/erp-ads-ativos' }}
+            git pull origin main
+            npm ci
+            npm run build
+            pm2 restart erp-ads-ativos
+---
+
+Se o DEPLOY_PATH for diferente, ajustar no Secret ou no script.
+
+
+================================================================================
+PARTE 7 - CONFIGURAR SERVIDOR PARA PULL AUTOMÁTICO
+================================================================================
+
+O servidor precisa conseguir fazer "git pull" sem pedir senha.
+
+7.1 Se o repositório for PÚBLICO
+   - Nenhuma configuração adicional
+
+7.2 Se o repositório for PRIVADO
+   Opção A - Deploy key no GitHub:
+   - No servidor: ssh-keygen -t ed25519 -f ~/.ssh/github_deploy -N ""
+   - GitHub > Repositório > Settings > Deploy keys > Add deploy key
+   - Colar o conteúdo de ~/.ssh/github_deploy.pub
+   - No servidor: git remote set-url origin git@github.com:USUARIO/erp-ads-ativos.git
+   - Adicionar em ~/.ssh/config:
+     Host github.com
+       HostName github.com
+       User git
+       IdentityFile ~/.ssh/github_deploy
+
+   Opção B - Personal Access Token (HTTPS):
+   - GitHub > Settings > Developer settings > Personal access tokens > Generate
+   - Dar permissão "repo"
+   - No servidor: git remote set-url origin https://TOKEN@github.com/USUARIO/erp-ads-ativos.git
+
+
+================================================================================
+PARTE 8 - FLUXO DE TRABALHO DIÁRIO (CURSOR)
+================================================================================
+
+1. Abrir o projeto no Cursor
+2. Fazer as alterações no código
+3. Abrir o painel Source Control (Ctrl+Shift+G ou Cmd+Shift+G)
+4. Escrever mensagem do commit (ex: "Corrige cálculo de margem")
+5. Clicar em "Commit"
+6. Clicar em "Sync Changes" ou "Push"
+7. O GitHub Actions irá disparar automaticamente e fazer o deploy no Hostinger
+
+
+================================================================================
+PARTE 9 - REVERSÃO EM CASO DE PROBLEMA
+================================================================================
+
+Se um deploy quebrar o sistema:
+
+1. Conectar no servidor via SSH
+2. cd /var/www/erp-ads-ativos
+3. git log  (ver os últimos commits)
+4. git checkout COMMIT_ANTERIOR  (voltar para commit que funcionava)
+5. npm run build
+6. pm2 restart erp-ads-ativos
+
+Ou no GitHub: repositório > Commits > clicar nos 3 pontos do commit anterior >
+Revert commit.
+
+
+================================================================================
+PARTE 10 - CHECKLIST DE VALIDAÇÃO
+================================================================================
+
+[ ] Repositório criado no GitHub
+[ ] Projeto conectado e push inicial feito
+[ ] Secrets configurados (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH)
+[ ] Chave SSH gerada e configurada
+[ ] Servidor preparado (Node, PM2, pasta, .env)
+[ ] Arquivo .github/workflows/deploy.yml criado
+[ ] Deploy key ou token configurado para git pull no servidor
+[ ] Teste: fazer um commit pequeno e verificar se o deploy roda no GitHub Actions
+[ ] PM2 configurado para reiniciar com o servidor (pm2 startup)
+
+
+================================================================================
+CONTATOS E OBSERVAÇÕES
+================================================================================
+
+- Em caso de erro no GitHub Actions, verificar a aba "Actions" do repositório
+- Logs da aplicação no servidor: pm2 logs erp-ads-ativos
+- Reiniciar manualmente: pm2 restart erp-ads-ativos
+- Ver status: pm2 status
+
+- Documento gerado para o projeto ERP Ads Ativos
+- Referência: docs/DEPLOY-PRODUCAO.md para checklist de variáveis de ambiente
+
+================================================================================
