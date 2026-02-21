@@ -117,12 +117,12 @@ export function PlugPlayClient({ isAdmin = false }: { isAdmin?: boolean }) {
       <section className="pt-8">
         <h2 className="heading-2 mb-4">{isAdmin ? 'Operações' : 'Minhas operações'}</h2>
         <div className="card">
-        <div className="flex justify-between items-center mb-4">
-          <span className="font-medium text-gray-700">Lista de operações</span>
-          <button onClick={() => setShowForm(!showForm)} className="btn-primary">
-            {showForm ? 'Cancelar' : 'Nova operação'}
-          </button>
-        </div>
+          <div className="flex justify-between items-center mb-4">
+            <span className="font-medium text-gray-700">Lista de operações</span>
+            <button onClick={() => setShowForm(!showForm)} className="btn-primary">
+              {showForm ? 'Cancelar' : 'Nova operação'}
+            </button>
+          </div>
 
         {showForm && (
           <form onSubmit={handleCreate} className="p-4 bg-gray-50 rounded-lg mb-4 space-y-3">
@@ -221,7 +221,8 @@ export function PlugPlayClient({ isAdmin = false }: { isAdmin?: boolean }) {
             ))}
           </div>
         )}
-      </div>
+        </div>
+      </section>
     </div>
   )
 }
