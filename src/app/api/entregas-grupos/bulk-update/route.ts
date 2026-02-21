@@ -3,7 +3,7 @@
  * Input: array de { cliente (C235 ou nome), quantityContracted?, quantityDelivered?, status?: reposicao|devolucao }
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
           where: { status: { not: 'CANCELADA' } },
           orderBy: { createdAt: 'desc' },
           take: 1,
-          select: { id: true, orderId: true, currency: true, accountType: true, quantityDelivered: true, quantityContracted: true, expectedCompletionAt: true },
+          select: { id: true, orderId: true, currency: true, accountType: true, quantityDelivered: true, quantityContracted: true, expectedCompletionAt: true, status: true, groupNumber: true },
         },
       },
     })

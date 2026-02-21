@@ -30,10 +30,10 @@ export async function computeCohortMonthly(): Promise<number> {
 
   // Agrupar por coorte (mês de aquisição)
   const cohortMap = new Map<string, { clients: string[]; orders: Map<string, { value: number; paidAt: Date }[]> }>()
-  for (const [clientId, data] of byClient) {
+  for (const [clientId, data] of Array.from(byClient.entries())) {
     const cohortMonth = new Date(data.firstPaid.getFullYear(), data.firstPaid.getMonth(), 1)
     const key = cohortMonth.toISOString().slice(0, 7)
-    const existing = cohortMap.get(key) ?? { clients: [], orders: new Map() }
+    const existing = cohortMap.get(key) ?? { clients: [] as string[], orders: new Map<string, { value: number; paidAt: Date }[]>() }
     existing.clients.push(clientId)
     for (const o of data.orders) {
       const list = existing.orders.get(clientId) ?? []
@@ -45,7 +45,7 @@ export async function computeCohortMonthly(): Promise<number> {
 
   const now = new Date()
   let count = 0
-  for (const [key, data] of cohortMap) {
+  for (const [key, data] of Array.from(cohortMap.entries())) {
     const [y, m] = key.split('-').map(Number)
     const mesAquisicao = new Date(y, m - 1, 1)
 
@@ -60,11 +60,11 @@ export async function computeCohortMonthly(): Promise<number> {
 
     for (const clientId of data.clients) {
       const clientOrders = data.orders.get(clientId) ?? []
-      const r1 = clientOrders.filter((o) => o.paidAt.getTime() >= start && o.paidAt.getTime() < start + 1 * msPerMonth).reduce((s, o) => s + o.value, 0)
-      const r2 = clientOrders.filter((o) => o.paidAt.getTime() >= start + 1 * msPerMonth && o.paidAt.getTime() < start + 2 * msPerMonth).reduce((s, o) => s + o.value, 0)
-      const r3 = clientOrders.filter((o) => o.paidAt.getTime() >= start + 2 * msPerMonth && o.paidAt.getTime() < start + 3 * msPerMonth).reduce((s, o) => s + o.value, 0)
-      const r6 = clientOrders.filter((o) => o.paidAt.getTime() >= start + 5 * msPerMonth && o.paidAt.getTime() < start + 6 * msPerMonth).reduce((s, o) => s + o.value, 0)
-      const r12 = clientOrders.filter((o) => o.paidAt.getTime() >= start + 11 * msPerMonth && o.paidAt.getTime() < start + 12 * msPerMonth).reduce((s, o) => s + o.value, 0)
+      const r1 = clientOrders.filter((o: { paidAt: Date; value: number }) => o.paidAt.getTime() >= start && o.paidAt.getTime() < start + 1 * msPerMonth).reduce((s: number, o: { value: number }) => s + o.value, 0)
+      const r2 = clientOrders.filter((o: { paidAt: Date; value: number }) => o.paidAt.getTime() >= start + 1 * msPerMonth && o.paidAt.getTime() < start + 2 * msPerMonth).reduce((s: number, o: { value: number }) => s + o.value, 0)
+      const r3 = clientOrders.filter((o: { paidAt: Date; value: number }) => o.paidAt.getTime() >= start + 2 * msPerMonth && o.paidAt.getTime() < start + 3 * msPerMonth).reduce((s: number, o: { value: number }) => s + o.value, 0)
+      const r6 = clientOrders.filter((o: { paidAt: Date; value: number }) => o.paidAt.getTime() >= start + 5 * msPerMonth && o.paidAt.getTime() < start + 6 * msPerMonth).reduce((s: number, o: { value: number }) => s + o.value, 0)
+      const r12 = clientOrders.filter((o: { paidAt: Date; value: number }) => o.paidAt.getTime() >= start + 11 * msPerMonth && o.paidAt.getTime() < start + 12 * msPerMonth).reduce((s: number, o: { value: number }) => s + o.value, 0)
       receitaMes1.push(r1)
       receitaMes2.push(r2)
       receitaMes3.push(r3)

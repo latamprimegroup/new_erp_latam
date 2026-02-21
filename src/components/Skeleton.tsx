@@ -28,7 +28,7 @@ export function SkeletonCards({ count = 4 }: { count?: number }) {
   )
 }
 
-export function SkeletonTable({ rows = 5 }: { rows?: number }) {
+export function SkeletonTable({ rows = 5, cols }: { rows?: number; cols?: number }) {
   return (
     <div className="card overflow-hidden">
       <div className="flex gap-4 pb-3 mb-3 border-b border-gray-200">

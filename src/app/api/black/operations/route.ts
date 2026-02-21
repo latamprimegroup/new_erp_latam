@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
+import { BlackOperationStatus } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+
+const VALID_STATUSES = Object.values(BlackOperationStatus)
 import { audit } from '@/lib/audit'
 
 const STEP_TYPES = ['AQUECIMENTO_G2', 'DOMINIO_NICHO', 'AQUECIMENTO_CONTA', 'CLOAKER', 'PAGINA_WHITE', 'PAGINA_BLACK', 'YOUTUBE_CANAL', 'CRIATIVO_BLACK'] as const
@@ -28,10 +31,10 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status')
   const collaboratorId = searchParams.get('collaboratorId')
 
-  const where: { collaboratorId?: string; status?: string } = {}
+  const where: { collaboratorId?: string; status?: BlackOperationStatus } = {}
   if (isPlugPlay) where.collaboratorId = session.user!.id!
   if (collaboratorId && isAdmin) where.collaboratorId = collaboratorId
-  if (status) where.status = status
+  if (status && VALID_STATUSES.includes(status as BlackOperationStatus)) where.status = status as BlackOperationStatus
 
   const operations = await prisma.blackOperation.findMany({
     where,

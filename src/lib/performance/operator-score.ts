@@ -54,14 +54,14 @@ export async function computeOperatorScores(): Promise<number> {
     .filter((t) => t > 0)
   const tempoMedioGeral = tempos.length > 0 ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : null
 
-  const sorted = [...byCreator.entries()].sort((a, b) => b[1].aprovadas - a[1].aprovadas)
+  const sorted = Array.from(byCreator.entries()).sort((a, b) => b[1].aprovadas - a[1].aprovadas)
   let count = 0
   for (let i = 0; i < sorted.length; i++) {
     const [userId, data] = sorted[i]
     const totalUser = data.aprovadas + data.reprovadas
     const taxaAprovacao = totalUser > 0 ? (data.aprovadas / totalUser) * 100 : taxaAprovacaoGeral
     const taxaReprovacao = totalUser > 0 ? (data.reprovadas / totalUser) * 100 : taxaReprovacaoGeral
-    const tempoMedio = data.tempos.length > 0 ? Math.round(data.tempos.reduce((a, b) => a + b, 0) / data.tempos.length) : tempoMedioGeral
+    const tempoMedio = data.tempos.length > 0 ? Math.round(data.tempos.reduce((a: number, b: number) => a + b, 0) / data.tempos.length) : tempoMedioGeral
     const scoreQualidade = Math.min(100, Math.round(taxaAprovacao))
     const scoreProdutividade = metaMensal > 0 ? Math.min(100, Math.round((data.aprovadas / metaMensal) * 100)) : 0
     const scoreGeral = Math.round(scoreProdutividade * 0.5 + scoreQualidade * 0.5)

@@ -1,5 +1,5 @@
 import { withAuth } from 'next-auth/middleware'
-import { NextResponse } from 'next/server'
+import { NextFetchEvent, NextResponse } from 'next/server'
 import { checkLoginRateLimit } from '@/lib/rate-limit-login'
 
 // Rotas públicas
@@ -72,7 +72,7 @@ const dashboardAuth = withAuth(
   { callbacks: { authorized: ({ token }) => !!token } }
 )
 
-export default function middleware(req: Request) {
+export default function middleware(req: Request, event: NextFetchEvent) {
   const url = new URL(req.url)
   const pathname = url.pathname
 
@@ -101,7 +101,7 @@ export default function middleware(req: Request) {
 
   // 3. Dashboard: exigir autenticação
   if (pathname.startsWith('/dashboard')) {
-    return dashboardAuth(req)
+    return dashboardAuth(req as Parameters<typeof dashboardAuth>[0], event)
   }
 
   return NextResponse.next()

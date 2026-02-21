@@ -33,7 +33,7 @@ export function ShellEnterprise({
   user,
   children,
 }: {
-  user: { name?: string; email?: string; role?: string }
+  user: { name?: string | null; email?: string | null; role?: string }
   children: React.ReactNode
 }) {
   const pathname = usePathname()

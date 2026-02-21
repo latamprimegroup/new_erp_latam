@@ -3,7 +3,7 @@
  * Garante consistência e facilita governança.
  */
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { authOptions } from './auth'
 
 export type Role = 'ADMIN' | 'PRODUCER' | 'DELIVERER' | 'FINANCE' | 'COMMERCIAL' | 'CLIENT' | 'MANAGER' | 'PRODUCTION_MANAGER' | 'PLUG_PLAY'
@@ -21,8 +21,12 @@ export const ROLE_LEVELS: Record<Role, number> = {
   CLIENT: 10,
 }
 
+export type AuthSession = NonNullable<Awaited<ReturnType<typeof getServerSession>>> & {
+  user: { id: string; role?: string; name?: string | null; email?: string | null }
+}
+
 export type RequireAuthResult =
-  | { ok: true; session: NonNullable<Awaited<ReturnType<typeof getServerSession>>> }
+  | { ok: true; session: AuthSession }
   | { ok: false; response: NextResponse }
 
 /**
@@ -36,7 +40,7 @@ export async function requireAuth(): Promise<RequireAuthResult> {
       response: NextResponse.json({ error: 'Não autorizado' }, { status: 401 }),
     }
   }
-  return { ok: true, session }
+  return { ok: true, session: session as AuthSession }
 }
 
 /**

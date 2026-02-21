@@ -61,7 +61,7 @@ export async function fetchAccountSpend(
 
     if (!rows?.length) return null
 
-    let costMicros = 0n
+    let costMicros = BigInt(0)
     let impressions = 0
     let clicks = 0
     let currencyCode = 'BRL'

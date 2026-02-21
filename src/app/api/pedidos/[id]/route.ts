@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
+import { OrderStatus } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { syncClientLTV } from '@/lib/client-ltv'
@@ -38,7 +39,7 @@ export async function PATCH(
     })
     if (!order) return NextResponse.json({ error: 'Pedido não encontrado' }, { status: 404 })
 
-    const data: { status: string; paidAt?: Date } = { status }
+    const data: { status: OrderStatus; paidAt?: Date } = { status: status as OrderStatus }
     if (status === 'PAID' && !order.paidAt) {
       data.paidAt = new Date()
     }
@@ -53,10 +54,11 @@ export async function PATCH(
         },
       })
 
-      let itemsToProcess = updated.items
+      const items = updated.items ?? []
+      let itemsToProcess = items
 
       if (accountIds && accountIds.length > 0 && (status === 'PAID' || status === 'IN_SEPARATION')) {
-        const existingIds = new Set(updated.items.map((i) => i.accountId))
+        const existingIds = new Set(items.map((i: { accountId: string }) => i.accountId))
         for (const accountId of accountIds) {
           if (existingIds.has(accountId)) continue
           const account = await tx.stockAccount.findUnique({ where: { id: accountId } })
@@ -82,7 +84,7 @@ export async function PATCH(
         for (const item of itemsToProcess) {
           const acc = await tx.stockAccount.findUnique({ where: { id: item.accountId } })
           if (!acc) throw new Error(`Conta ${item.accountId} não encontrada`)
-          if (acc.status !== 'AVAILABLE' && acc.status !== 'RESERVED') {
+          if (acc.status !== 'AVAILABLE') {
             throw new Error(`Conta ${item.accountId} não está disponível (status: ${acc.status}). Bloqueio de estoque negativo.`)
           }
           await tx.stockAccount.update({
@@ -96,7 +98,7 @@ export async function PATCH(
             action: 'stock_decreased_on_order',
             entity: 'Order',
             entityId: id,
-            details: { accountIds: itemsToProcess.map((i) => i.accountId), qty: itemsToProcess.length },
+            details: { accountIds: itemsToProcess.map((i: { accountId: string }) => i.accountId), qty: itemsToProcess.length },
           })
         }
       }

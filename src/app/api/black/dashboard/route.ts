@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getPlugPlayConfig, calculateMonthlyAmount } from '@/lib/plugplay-payment'
@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
   }> = []
 
   if (isAdmin) {
-    const colaboradores = [...new Set(ops.map((o) => o.collaboratorId))]
+    const colaboradores = Array.from(new Set(ops.map((o) => o.collaboratorId)))
     porColaborador = colaboradores.map((cid) => {
       const userOps = ops.filter((o) => o.collaboratorId === cid)
       const coll = userOps[0]?.collaborator

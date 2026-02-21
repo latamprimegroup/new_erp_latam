@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
@@ -22,7 +22,6 @@ export async function GET() {
     ordersPending,
     ordersCompleted,
     deliveriesDelayed,
-    financialBalance,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.productionAccount.count({ where: { createdAt: { gte: startOfDay } } }),
@@ -31,11 +30,6 @@ export async function GET() {
     prisma.order.count({ where: { status: { in: ['PENDING', 'AWAITING_PAYMENT', 'PAID', 'IN_DELIVERY', 'IN_SEPARATION'] } } }),
     prisma.order.count({ where: { status: 'DELIVERED' } }),
     prisma.delivery.count({ where: { status: 'DELAYED' } }),
-    prisma.financialEntry.aggregate({
-      where: { date: { gte: startOfMonth } },
-      _sum: { value: true },
-      by: ['type'],
-    }),
   ])
 
   const income = prisma.financialEntry.aggregate({

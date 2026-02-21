@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
       userId: session.user!.id,
       action: 'production_validated_by_manager',
       entity: 'ProductionValidation',
-      entityId: null,
+      entityId: undefined,
       details: {
         productionAccountIds,
         productionG2Ids,

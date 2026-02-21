@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
+import { ContestationStatus } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+
+const VALID_STATUSES: ContestationStatus[] = Object.values(ContestationStatus)
 
 const updateSchema = z.object({
   id: z.string().min(1),
@@ -20,10 +23,12 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url)
-  const status = searchParams.get('status')
+  const statusParam = searchParams.get('status')
 
-  const where: { status?: string } = {}
-  if (status) where.status = status
+  const where: { status?: ContestationStatus } = {}
+  if (statusParam && VALID_STATUSES.includes(statusParam as ContestationStatus)) {
+    where.status = statusParam as ContestationStatus
+  }
 
   const tickets = await prisma.contestationTicket.findMany({
     where,

@@ -43,7 +43,12 @@ export async function GET(req: NextRequest) {
       }),
       prisma.strategicAlert.findMany({ where: { resolvedAt: null }, take: 10 }),
       prisma.productionG2.count({
-        where: { deletedAt: null, status: { in: ['PARA_CRIACAO', 'EM_CRIACAO', 'AGUARDANDO_APROVACAO'] } },
+        where: {
+          deletedAt: null,
+          status: {
+            in: ['PARA_CRIACAO', 'CRIANDO_GMAIL', 'CRIANDO_GOOGLE_ADS', 'VINCULANDO_CNPJ', 'CONFIGURANDO_PERFIL_PAGAMENTO', 'EM_REVISAO'],
+          },
+        },
       }),
       prisma.productionG2.findMany({
         where: {
@@ -278,7 +283,7 @@ export async function GET(req: NextRequest) {
       }),
       prisma.withdrawal.findMany({
         where: { status: 'PENDING' },
-        select: { id: true, amount: true },
+        select: { id: true, value: true },
       }),
     ])
     const receitaMes = receitas.reduce((s, r) => s + Number(r.value), 0)
@@ -286,7 +291,7 @@ export async function GET(req: NextRequest) {
     const lucroLiquido = receitaMes - despesaMes
     const margemPct = receitaMes > 0 ? (lucroLiquido / receitaMes) * 100 : 0
     const recebimentosPendentes = pendentes.reduce((s, o) => s + Number(o.value), 0)
-    const saquesPendentes = saques.reduce((s, w) => s + Number(w.amount), 0)
+    const saquesPendentes = saques.reduce((s, w) => s + Number(w.value), 0)
     const custosPorSetor = new Map<string, number>()
     for (const d of despesas) {
       const setor = d.costCenter ?? d.category ?? 'OUTROS'

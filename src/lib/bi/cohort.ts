@@ -38,7 +38,7 @@ export async function computeCohortMetrics(): Promise<void> {
   const retentionCutoff = new Date(now)
   retentionCutoff.setMonth(retentionCutoff.getMonth() - 1)
 
-  for (const [cohortKey, data] of cohortMap) {
+  for (const [cohortKey, data] of Array.from(cohortMap.entries())) {
     const [y, m] = cohortKey.split('-').map(Number)
     const cohortMonth = new Date(y, m - 1, 1)
     const marginTotal = data.revenue * 0.25

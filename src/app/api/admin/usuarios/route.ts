@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
 import { hash } from 'bcryptjs'
 import { authOptions } from '@/lib/auth'

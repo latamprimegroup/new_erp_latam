@@ -52,6 +52,7 @@ export function decrypt(encrypted: string | null | undefined): string | null {
   }
   try {
     const key = getKey()
+    if (!key) return null
     const combined = Buffer.from(encrypted.slice(PREFIX.length), 'base64')
     if (combined.length < IV_LENGTH + TAG_LENGTH) return null
     const iv = combined.subarray(0, IV_LENGTH)

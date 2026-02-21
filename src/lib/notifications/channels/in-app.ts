@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../prisma'
 
 export type InAppPayload = {
@@ -20,7 +21,7 @@ export async function sendInApp(payload: InAppPayload): Promise<string | null> {
         title: payload.title,
         message: payload.message,
         link: payload.link || null,
-        metadata: payload.metadata || undefined,
+        metadata: (payload.metadata || undefined) as Prisma.InputJsonValue | undefined,
         priority: payload.priority || 'NORMAL',
         sentAt: new Date(),
       },

@@ -13,13 +13,10 @@ const BATCH_SIZE = 500
  * CSV: email;senha;recuperação (ou email,senha,recuperação)
  */
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (session.user?.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
-  }
+  const auth = await requireRoles(['ADMIN'])
+  if (!auth.ok) return auth.response
 
-  const limited = withRateLimit(req, `upload:${session.user.id}`, { max: 10, windowMs: 60_000 })
+  const limited = withRateLimit(req, `upload:${auth.session.user.id}`, { max: 10, windowMs: 60_000 })
   if (limited) return limited
 
   try {
@@ -93,7 +90,7 @@ export async function POST(req: Request) {
     const batch = await prisma.emailBatch.create({
       data: {
         supplierId,
-        uploadedById: session.user!.id,
+        uploadedById: auth.session.user.id,
         filename: file.name,
         totalImported: 0,
         failedCount: failed,

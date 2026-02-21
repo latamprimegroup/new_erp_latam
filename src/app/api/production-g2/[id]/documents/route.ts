@@ -102,7 +102,7 @@ export async function POST(
         userId: session!.user!.id,
         action: 'document_upload_blocked_duplicate',
         entity: 'DocumentAsset',
-        entityId: null,
+        entityId: undefined,
         details: { productionG2Id: id, type, contentHash: contentHash.slice(0, 16) },
       })
       return NextResponse.json(

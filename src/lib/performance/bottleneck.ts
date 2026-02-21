@@ -33,7 +33,7 @@ export async function computeBottleneckReport(): Promise<void> {
     if (c) repoByClient.set(c, (repoByClient.get(c) ?? 0) + r._count.id)
   }
   const clienteMaiorReposicao = repoByClient.size > 0
-    ? [...repoByClient.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    ? Array.from(repoByClient.entries()).sort((a, b) => b[1] - a[1])[0][0]
     : null
 
   const tipoContaReprovacao = g2Reprovadas.length > 0

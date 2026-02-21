@@ -51,7 +51,7 @@ type Props = {
       twoFaSecret: string | null
       twoFaSms: string | null
     } | null
-    auditLogs: { action: string; details: unknown; createdAt: string; userId: string }[]
+    auditLogs: { action: string; details: unknown; createdAt: string | Date; userId: string }[]
     stockAccountId: string | null
   }
   sessionUserId: string

@@ -33,7 +33,7 @@ export async function computeSellerCommercialScores(): Promise<number> {
 
     const receitaGerada = orders.reduce((s, o) => s + Number(o.value), 0)
     const margemGerada = receitaGerada * 0.25
-    const clientIds = [...new Set(orders.map((o) => o.clientId).filter(Boolean))]
+    const clientIds = Array.from(new Set(orders.map((o) => o.clientId).filter(Boolean)))
 
     let ltvMedio = 0
     let taxaRetencao: number | null = null

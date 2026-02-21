@@ -7,7 +7,7 @@ const CLEANUP_INTERVAL = 60_000
 
 setInterval(() => {
   const now = Date.now()
-  for (const [key, val] of store.entries()) {
+  for (const [key, val] of Array.from(store.entries())) {
     if (val.resetAt < now) store.delete(key)
   }
 }, CLEANUP_INTERVAL)

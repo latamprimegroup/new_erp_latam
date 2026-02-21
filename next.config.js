@@ -8,6 +8,9 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    serverComponentsExternalPackages: ['next-auth'],
+  },
   async headers() {
     const csp = [
       "default-src 'self'",

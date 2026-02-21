@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     userId: session.user!.id,
     action: 'account_archive_exported',
     entity: 'StockAccount',
-    entityId: null,
+    entityId: undefined,
     details: { count: rows.length, format, includeArchived },
   })
 

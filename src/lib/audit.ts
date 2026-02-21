@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from './prisma'
 
 export type AuditParams = {
@@ -23,9 +24,9 @@ export async function audit(params: AuditParams) {
         action: params.action,
         entity: params.entity,
         entityId: params.entityId,
-        details: params.details ?? undefined,
-        oldValue: params.oldValue ?? undefined,
-        newValue: params.newValue ?? undefined,
+        details: (params.details ?? undefined) as Prisma.InputJsonValue | undefined,
+        oldValue: (params.oldValue ?? undefined) as Prisma.InputJsonValue | undefined,
+        newValue: (params.newValue ?? undefined) as Prisma.InputJsonValue | undefined,
         ip: params.ip,
       },
     })

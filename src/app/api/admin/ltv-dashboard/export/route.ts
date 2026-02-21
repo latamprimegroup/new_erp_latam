@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
 
-function escapeCsv(val: string | number | null | undefined): string {
+function escapeCsv(val: string | number | boolean | null | undefined): string {
   if (val == null) return ''
   const s = String(val)
   if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`

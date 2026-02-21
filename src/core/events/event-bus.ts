@@ -11,7 +11,7 @@ export type DomainEvent = {
 
 export type EventHandler<E extends DomainEvent = DomainEvent> = (event: E) => void | Promise<void>
 
-const handlers = new Map<string, EventHandler[][]>()
+const handlers = new Map<string, EventHandler[]>()
 
 /** Registra handler para um tipo de evento */
 export function subscribe(eventType: string, handler: EventHandler): void {

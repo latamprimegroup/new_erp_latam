@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (!isCron) {
     const auth = await requireRoles(['ADMIN'])
     if (!auth.ok) return auth.response
-    session = auth.session
+    session = auth.session as { user: { id: string } }
     const limited = withRateLimit(
       req,
       getAuthenticatedKey(session!.user!.id, 'admin:backup'),
@@ -122,7 +122,7 @@ export async function GET(req: NextRequest) {
       userId: session?.user?.id,
       action: 'backup_exported',
       entity: 'Backup',
-      entityId: null,
+      entityId: undefined,
       details: { counts: backup.counts, isCron: !!isCron },
     })
 

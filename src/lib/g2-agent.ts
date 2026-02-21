@@ -130,7 +130,7 @@ export async function getMetaEngine(producerId?: string): Promise<{
   const diasDecorridos = diaAtual
 
   const whereBase = {
-    validatedAt: { not: null as const, gte: startOfMonth, lte: endOfMonth },
+    validatedAt: { not: null, gte: startOfMonth, lte: endOfMonth },
     deletedAt: null,
   }
 
@@ -141,7 +141,7 @@ export async function getMetaEngine(producerId?: string): Promise<{
   }
   const whereG2 = {
     ...whereBase,
-    status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] } as const,
+    status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] as ['APROVADA', 'ENVIADA_ESTOQUE'] },
     ...(producerId ? { creatorId: producerId } : {}),
   }
 
@@ -207,14 +207,14 @@ export async function getProducerRanking(): Promise<
     map.set(g.creatorId, (map.get(g.creatorId) ?? 0) + g._count.id)
   }
 
-  const userIds = [...map.keys()]
+  const userIds = Array.from(map.keys())
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
     select: { id: true, name: true },
   })
   const userMap = Object.fromEntries(users.map((u) => [u.id, u.name]))
 
-  const sorted = [...map.entries()]
+  const sorted = Array.from(map.entries())
     .map(([id, count]) => ({ producerId: id, name: userMap[id] ?? null, count }))
     .sort((a, b) => b.count - a.count)
 

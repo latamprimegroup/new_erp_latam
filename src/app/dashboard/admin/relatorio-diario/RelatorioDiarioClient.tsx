@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 
 type Relatorio = {
   data: string
+  ranking?: { name: string | null; count: number; rank: number }[]
   vendas: {
     contasHoje: number
     valorHoje: number
@@ -174,7 +175,7 @@ export function RelatorioDiarioClient() {
         <div className="card">
           <h2 className="font-semibold text-slate-800 mb-3">🏆 Ranking do mês</h2>
           <ul className="space-y-2">
-            {rel.ranking.slice(0, 10).map((r) => (
+            {rel.ranking!.slice(0, 10).map((r: { name: string | null; count: number; rank: number }) => (
               <li key={r.rank} className="flex justify-between py-2 border-b border-gray-100 last:border-0">
                 <span>
                   <span className="font-medium text-slate-700">{r.rank}.</span> {r.name || '-'}

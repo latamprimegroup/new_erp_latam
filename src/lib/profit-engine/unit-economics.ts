@@ -59,7 +59,7 @@ export async function computeUnitEconomics(): Promise<number> {
   }
 
   let count = 0
-  for (const [key, data] of byTipoMoeda) {
+  for (const [key, data] of Array.from(byTipoMoeda.entries())) {
     const [tipoConta, moeda] = key.split('_')
     const receitaPorUnidade = data.quantidade > 0 ? data.receita / data.quantidade : 0
     const custoTotalTipo = custoPorTipo.get(key) ?? 0

@@ -52,7 +52,7 @@ export async function computeRiskRadar(): Promise<void> {
   })
   const producaoScore = Math.min(100, prodCount)
 
-  const estoqueCount = await prisma.stockAccount.count({ where: { status: 'ACTIVE' } })
+  const estoqueCount = await prisma.stockAccount.count({ where: { status: 'AVAILABLE' } })
   const estoqueScore = Math.min(100, estoqueCount * 5)
 
   const scoreGeral = Math.round(

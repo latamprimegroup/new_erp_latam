@@ -8,7 +8,7 @@ const MAX_ENTRIES = 10_000
 function cleanup() {
   if (store.size < MAX_ENTRIES) return
   const now = Date.now()
-  for (const [key, val] of store.entries()) {
+  for (const [key, val] of Array.from(store.entries())) {
     if (val.resetAt < now) store.delete(key)
   }
 }

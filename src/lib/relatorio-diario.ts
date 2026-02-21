@@ -165,7 +165,7 @@ export async function getRelatorioDiarioCompleto(date?: Date): Promise<Relatorio
     contasVendidasHoje,
     contasVendidasMesCount,
     metaVendas,
-    valorHoje,
+    valorHoje: Number(valorHoje),
     valorMes,
     pedidosHoje,
   }, rankingSimple)

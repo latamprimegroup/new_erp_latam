@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
@@ -49,8 +49,8 @@ export async function GET(req: NextRequest) {
     _sum: { costMicros: true },
   })
 
-  const totalCostMicros = totalSpend._sum.costMicros ?? 0n
-  const monthCostMicros = monthSpend._sum.costMicros ?? 0n
+  const totalCostMicros = totalSpend._sum.costMicros ?? BigInt(0)
+  const monthCostMicros = monthSpend._sum.costMicros ?? BigInt(0)
 
   return NextResponse.json({
     accounts: accounts.map((a) => ({
