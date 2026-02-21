@@ -40,6 +40,9 @@ export const metadata: Metadata = {
   },
 }
 
+// Evita prerender estático que causa "useContext null" e "preload is not a function"
+export const dynamic = 'force-dynamic'
+
 export const viewport: Viewport = {
   themeColor: '#15A2EB',
   width: 'device-width',

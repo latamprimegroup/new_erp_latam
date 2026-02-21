@@ -6,6 +6,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
 
+export const dynamic = 'force-dynamic'
+
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),

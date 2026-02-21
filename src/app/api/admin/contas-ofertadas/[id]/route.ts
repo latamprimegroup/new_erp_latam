@@ -6,6 +6,8 @@ import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
 import { notifyUser } from '@/lib/notifications'
 
+export const dynamic = 'force-dynamic'
+
 const bodySchema = z.object({
   action: z.enum(['approve', 'reject']),
   rejectionReason: z.string().optional(),
