@@ -6,9 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_DATABASE_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 // ============ MULTI-TENANCY ============
@@ -339,7 +338,7 @@ model PushSubscription {
   userAgent String?  @map("user_agent") @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([userId, endpoint])
+  @@unique([userId, endpoint(length: 191)])
   @@index([userId])
   @@map("push_subscriptions")
 }
