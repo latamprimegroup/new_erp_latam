@@ -90,6 +90,7 @@ model User {
   onboardingParticipations   OnboardingParticipant[]
   sellerCommercialScores     SellerCommercialScore[]
   operatorScores             OperatorScore[]
+  suggestions                Suggestion[]
 }
 
 model ProducerProfile {
@@ -425,6 +426,15 @@ model ProductionAccount {
   createdAt           DateTime       @default(now()) @map("created_at")
   updatedAt           DateTime       @updatedAt @map("updated_at")
 
+  // Campos extras - Passo 2 melhoria
+  googleAdsCustomerId String?        @map("google_ads_customer_id") // Formato 000-000-0000
+  currency            String?        @default("BRL") @db.VarChar(5) // BRL, USD, EUR, etc.
+  a2fCode             String?        @map("a2f_code") @db.Text
+  g2ApprovalCode      String?        @map("g2_approval_code") @db.VarChar(100)
+  siteUrl             String?        @map("site_url") @db.Text
+  cnpjBizLink         String?        @map("cnpj_biz_link") @db.Text
+  cnpjPdfUrl          String?        @map("cnpj_pdf_url") @db.Text // Path ou URL do PDF
+
   // Referências aos dados consumidos (unicidade - nunca reutilizar)
   emailId             String?        @unique @map("email_id")
   emailConsumed       Email?         @relation(fields: [emailId], references: [id])
@@ -487,6 +497,7 @@ model StockAccount {
   description           String?        @db.Text
   deliveredAt           DateTime?      @map("delivered_at")
   lastSpendSyncAt       DateTime?      @map("last_spend_sync_at")
+  isPlugPlay            Boolean        @default(false) @map("is_plug_play") // G2 + 1ª campanha White aprovada
   productionAccount     ProductionAccount?
   productionG2          ProductionG2?
   credential            StockAccountCredential?  // Credenciais de importação (quando não vem de ProductionG2)
@@ -1307,6 +1318,7 @@ model ProductionG2 {
   rejectedReason         String?             @map("rejected_reason") @db.Text
   rejectedAt             DateTime?           @map("rejected_at")
   approvedAt             DateTime?           @map("approved_at")
+  firstCampaignWhiteApproved Boolean         @default(false) @map("first_campaign_white_approved") // Plug & Play: 1ª campanha White aprovada
   sentToStockAt          DateTime?           @map("sent_to_stock_at")
   archivedAt             DateTime?           @map("archived_at")
   deletedAt              DateTime?           @map("deleted_at")   // Soft delete: nunca apagar
@@ -1769,4 +1781,25 @@ model AuditLog {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([entity, entityId])
+}
+
+// ============ FEEDBACK E MELHORIAS ============
+
+enum SuggestionCategory {
+  SYSTEM   // Melhoria do sistema (bugs, funções) -> backlog TI
+  COMPANY  // Melhoria da empresa (processos, cultura) -> direção
+}
+
+model Suggestion {
+  id          String            @id @default(cuid())
+  category    SuggestionCategory
+  title       String            @db.VarChar(200)
+  description String            @db.Text
+  userId      String?           @map("user_id") // Opcional: anônimo permitido para COMPANY
+  user        User?             @relation(fields: [userId], references: [id])
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@index([category])
+  @@index([createdAt])
+  @@map("suggestions")
 }

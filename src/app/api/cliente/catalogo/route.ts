@@ -17,13 +17,19 @@ export async function GET(req: NextRequest) {
   const yearMin = searchParams.get('yearMin')
   const consumoMin = searchParams.get('consumoMin')
   const niche = searchParams.get('niche')
+  const plugPlayOnly = searchParams.get('plugPlayOnly') === 'true'
 
-  const where: Record<string, unknown> = { status: 'AVAILABLE' }
+  const where: Record<string, unknown> = {
+    status: 'AVAILABLE',
+    deletedAt: null,
+    archivedAt: null,
+  }
   if (platform) where.platform = platform
   if (type) where.type = { contains: type, mode: 'insensitive' }
   if (yearMin) where.yearStarted = { gte: parseInt(yearMin, 10) }
   if (consumoMin) where.minConsumed = { gte: parseFloat(consumoMin) }
   if (niche) where.niche = { contains: niche, mode: 'insensitive' }
+  if (plugPlayOnly) where.isPlugPlay = true
 
   const accounts = await prisma.stockAccount.findMany({
     where,
@@ -36,6 +42,7 @@ export async function GET(req: NextRequest) {
       minConsumed: true,
       salePrice: true,
       description: true,
+      isPlugPlay: true,
     },
   })
 
@@ -58,6 +65,7 @@ export async function GET(req: NextRequest) {
       minConsumed: a.minConsumed ? Number(a.minConsumed) : null,
       salePrice: a.salePrice ? Number(a.salePrice) : null,
       description: a.description,
+      isPlugPlay: a.isPlugPlay ?? false,
     }))
   )
 }

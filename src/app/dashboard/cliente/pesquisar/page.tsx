@@ -21,6 +21,7 @@ type Account = {
   minConsumed: number | null
   salePrice: number | null
   description: string | null
+  isPlugPlay: boolean
 }
 
 export default function PesquisarContasPage() {
@@ -32,6 +33,7 @@ export default function PesquisarContasPage() {
     yearMin: '',
     consumoMin: '',
     niche: '',
+    plugPlayOnly: false,
   })
   const [cotando, setCotando] = useState<string | null>(null)
 
@@ -43,6 +45,7 @@ export default function PesquisarContasPage() {
     if (filters.yearMin) params.set('yearMin', filters.yearMin)
     if (filters.consumoMin) params.set('consumoMin', filters.consumoMin)
     if (filters.niche) params.set('niche', filters.niche)
+    if (filters.plugPlayOnly) params.set('plugPlayOnly', 'true')
     const res = await fetch(`/api/cliente/catalogo?${params}`)
     const data = await res.json()
     if (res.ok) setAccounts(data)
@@ -51,14 +54,14 @@ export default function PesquisarContasPage() {
 
   useEffect(() => {
     load()
-  }, [filters.platform, filters.type, filters.yearMin, filters.consumoMin, filters.niche])
+  }, [filters.platform, filters.type, filters.yearMin, filters.consumoMin, filters.niche, filters.plugPlayOnly])
 
-  async function solicitarCotacao(accountId: string) {
-    setCotando(accountId)
+  async function solicitarCotacao(account: Account) {
+    setCotando(account.id)
     const res = await fetch('/api/cliente/cotacao', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId }),
+      body: JSON.stringify({ accountId: account.id }),
     })
     const data = await res.json()
     setCotando(null)
@@ -82,7 +85,7 @@ export default function PesquisarContasPage() {
 
       <div className="card mb-6">
         <h2 className="font-semibold mb-4">Filtros</h2>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <div>
             <label className="block text-sm text-gray-500 mb-1">Plataforma</label>
             <select
@@ -135,6 +138,16 @@ export default function PesquisarContasPage() {
               placeholder="Saúde, E-commerce..."
             />
           </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 px-3 py-2 rounded border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filters.plugPlayOnly}
+                onChange={(e) => setFilters((f) => ({ ...f, plugPlayOnly: e.target.checked }))}
+              />
+              Apenas Plug & Play
+            </label>
+          </div>
         </div>
       </div>
 
@@ -151,21 +164,35 @@ export default function PesquisarContasPage() {
                 key={a.id}
                 className="p-4 border border-primary-600/10 rounded-lg flex flex-wrap justify-between items-center gap-4"
               >
-                <div>
-                  <p className="font-medium">{a.platformLabel} — {a.type}</p>
+                <div className="flex-1">
+                  <p className="font-medium">
+                    {a.platformLabel} — {a.type}
+                    {a.isPlugPlay && (
+                      <span className="ml-2 inline-flex px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                        [PLUG & PLAY]
+                      </span>
+                    )}
+                  </p>
                   <p className="text-sm text-gray-500">
-                    Ano: {a.yearStarted || '—'} | Nicho: {a.niche || '—'} | Consumo mín: {a.minConsumed ? `R$ ${a.minConsumed.toLocaleString()}` : '—'}
+                    Ano: {a.yearStarted || '—'} | Nicho: {a.niche || '—'} | Consumo mín: {a.minConsumed != null ? `R$ ${a.minConsumed.toLocaleString()}` : 'R$ 0 (sem saldo)'}
                   </p>
                   {a.description && <p className="text-sm text-gray-600 mt-1">{a.description}</p>}
+                  {a.isPlugPlay && (
+                    <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-2 font-medium">
+                      ✓ Conta G2 verificada + Campanha White aprovada. Pronta para troca de domínio/criativo.
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center gap-4">
-                  {a.salePrice && (
+                <div className="flex flex-col items-end gap-2">
+                  {a.salePrice != null && a.salePrice > 0 ? (
                     <span className="text-lg font-bold text-primary-600">
                       R$ {a.salePrice.toLocaleString('pt-BR')}
                     </span>
+                  ) : (
+                    <span className="text-sm text-gray-500">Consulte preço</span>
                   )}
                   <button
-                    onClick={() => solicitarCotacao(a.id)}
+                    onClick={() => solicitarCotacao(a)}
                     disabled={!!cotando}
                     className="btn-primary"
                   >

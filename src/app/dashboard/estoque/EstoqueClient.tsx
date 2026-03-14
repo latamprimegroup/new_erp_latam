@@ -34,6 +34,7 @@ type Account = {
   salePrice: { toString: () => string } | null
   createdAt: string
   manager: { user: { name: string | null } } | null
+  isPlugPlay?: boolean
 }
 
 function diasEmEstoque(createdAt: string): number {
@@ -50,6 +51,7 @@ export function EstoqueClient() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPlatform, setFilterPlatform] = useState('')
   const [filterArchived, setFilterArchived] = useState(false) // false = disponíveis para venda
+  const [filterPlugPlay, setFilterPlugPlay] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [archivingId, setArchivingId] = useState<string | null>(null)
@@ -61,6 +63,7 @@ export function EstoqueClient() {
     if (filterType) params.set('type', filterType)
     if (filterStatus) params.set('status', filterStatus)
     if (filterPlatform) params.set('platform', filterPlatform)
+    if (filterPlugPlay) params.set('plugPlayOnly', 'true')
     params.set('archived', String(filterArchived))
     fetch(`/api/estoque?${params}`)
       .then((r) => r.json())
@@ -74,7 +77,7 @@ export function EstoqueClient() {
 
   useEffect(() => {
     load()
-  }, [filterType, filterStatus, filterPlatform, filterArchived])
+  }, [filterType, filterStatus, filterPlatform, filterArchived, filterPlugPlay])
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -212,6 +215,14 @@ export function EstoqueClient() {
             />
             Ver arquivadas (vault)
           </label>
+          <label className="flex items-center gap-2 px-3 py-1.5 rounded border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 text-sm">
+            <input
+              type="checkbox"
+              checked={filterPlugPlay}
+              onChange={(e) => setFilterPlugPlay(e.target.checked)}
+            />
+            Apenas Plug & Play
+          </label>
           <select
             value={filterPlatform}
             onChange={(e) => setFilterPlatform(e.target.value)}
@@ -273,7 +284,14 @@ export function EstoqueClient() {
                   >
                     <td className="py-3 pr-4 font-mono text-xs">{a.id.slice(0, 8)}</td>
                     <td className="py-3 pr-4">{PLATFORMS.find((p) => p.value === a.platform)?.label || a.platform}</td>
-                    <td className="py-3 pr-4">{a.type}</td>
+                    <td className="py-3 pr-4">
+                      <span className="mr-1">{a.type}</span>
+                      {a.isPlugPlay && (
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                          [PLUG & PLAY]
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 pr-4 text-xs">{a.createdAt ? new Date(a.createdAt).toLocaleDateString('pt-BR') : '—'}</td>
                     <td className="py-3 pr-4">{a.createdAt ? diasEmEstoque(a.createdAt) : '—'}</td>
                     <td className="py-3 pr-4">{a.yearStarted ?? '—'}</td>

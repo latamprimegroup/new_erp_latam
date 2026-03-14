@@ -32,6 +32,7 @@ type Props = {
     codeG2: string
     itemId: string
     status: string
+    firstCampaignWhiteApproved?: boolean
     cnpjLink: string | null
     cnpjNumber: string | null
     siteUrl: string | null
@@ -71,6 +72,27 @@ export function ProductionG2DetailClient({ item, sessionUserId, canApprove }: Pr
   const [uploading, setUploading] = useState<string | null>(null)
   const [rentingSms, setRentingSms] = useState(false)
   const [rentedPhone, setRentedPhone] = useState<string | null>(item.credentials?.twoFaSms || null)
+  const [plugPlayChecked, setPlugPlayChecked] = useState(item.firstCampaignWhiteApproved ?? false)
+  const [plugPlayUpdating, setPlugPlayUpdating] = useState(false)
+
+  useEffect(() => {
+    setPlugPlayChecked(item.firstCampaignWhiteApproved ?? false)
+  }, [item.firstCampaignWhiteApproved])
+
+  async function togglePlugPlay(checked: boolean) {
+    setPlugPlayUpdating(true)
+    const res = await fetch(`/api/production-g2/${item.id}/plug-play`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstCampaignWhiteApproved: checked }),
+    })
+    if (res.ok) setPlugPlayChecked(checked)
+    else {
+      const d = await res.json()
+      alert(d.error || 'Erro')
+    }
+    setPlugPlayUpdating(false)
+  }
 
   const showDocs =
     !['APROVADA', 'ENVIADA_ESTOQUE', 'REPROVADA'].includes(item.status) ||
@@ -244,6 +266,28 @@ export function ProductionG2DetailClient({ item, sessionUserId, canApprove }: Pr
           <p className="text-xs text-slate-500">ID Google Ads</p>
           <p className="font-mono text-sm">{item.googleAdsCustomerId || '-'}</p>
         </div>
+        {['EM_REVISAO', 'APROVADA', 'ENVIADA_ESTOQUE'].includes(item.status) && (
+          <div className="col-span-full">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={plugPlayChecked}
+                onChange={(e) => togglePlugPlay(e.target.checked)}
+                disabled={plugPlayUpdating || item.status === 'ENVIADA_ESTOQUE'}
+                className="rounded border-gray-300 text-primary-600"
+              />
+              <span className="text-sm font-medium">
+                Primeira Campanha White Aprovada?{' '}
+                <span className="text-xs text-slate-500">(Plug & Play)</span>
+              </span>
+            </label>
+            {plugPlayChecked && (
+              <span className="inline-flex mt-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
+                [PLUG & PLAY]
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {!['REPROVADA', 'ARQUIVADA'].includes(item.status) && (

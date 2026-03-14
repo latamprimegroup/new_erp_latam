@@ -32,6 +32,7 @@ export const MODULES_ERP: NavItem[] = [
   { href: '/dashboard/admin/contestacoes', label: 'Contestações', roles: ['ADMIN', 'COMMERCIAL'] },
   { href: '/dashboard/admin/tickets', label: 'Tickets & OS', roles: ['ADMIN', 'COMMERCIAL'] },
   { href: '/dashboard/admin/solicitacoes', label: 'Solicitações de contas', roles: ['ADMIN', 'COMMERCIAL'] },
+  { href: '/dashboard/admin/sugestoes', label: 'Sugestões de Melhoria', roles: ['ADMIN'] },
   { href: '/dashboard/admin/contas-entregues', label: 'Contas entregues', roles: ['ADMIN', 'COMMERCIAL'] },
   { href: '/dashboard/admin/black', label: 'Plug & Play Black', roles: ['ADMIN'] },
   { href: '/dashboard/admin/fornecedores', label: 'Fornecedores', roles: ['ADMIN'] },

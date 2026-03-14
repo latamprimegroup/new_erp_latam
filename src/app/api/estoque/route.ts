@@ -30,11 +30,13 @@ export async function GET(req: Request) {
   const status = searchParams.get('status')
   const platform = searchParams.get('platform')
   const archived = searchParams.get('archived') // 'true' = só arquivadas, 'false' ou omitido = só não arquivadas (venda)
+  const plugPlayOnly = searchParams.get('plugPlayOnly') === 'true'
 
   const where: Record<string, unknown> = { deletedAt: null }  // Soft delete: nunca mostrar excluídas
   if (type) where.type = type
   if (status) where.status = status
   if (platform) where.platform = platform
+  if (plugPlayOnly) where.isPlugPlay = true
   if (archived === 'true') where.archivedAt = { not: null }
   else where.archivedAt = null  // Padrão: só contas disponíveis para venda
 

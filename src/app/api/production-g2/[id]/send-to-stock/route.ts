@@ -46,6 +46,7 @@ export async function POST(
         status: 'AVAILABLE',
         googleAdsCustomerId: g2.googleAdsCustomerId || undefined,
         niche: null,
+        isPlugPlay: g2.firstCampaignWhiteApproved ?? false,
       },
     })
 

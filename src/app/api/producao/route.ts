@@ -12,6 +12,13 @@ const createSchema = z.object({
   platform: z.enum(['GOOGLE_ADS', 'META_ADS', 'KWAI_ADS', 'TIKTOK_ADS', 'OTHER']),
   type: z.string().min(1),
   countryId: z.string().optional(),
+  // Campos extras - Passo 2
+  googleAdsCustomerId: z.string().optional(),
+  currency: z.string().max(5).optional(),
+  a2fCode: z.string().optional(),
+  g2ApprovalCode: z.string().optional(),
+  siteUrl: z.string().optional().refine((v) => !v || v.startsWith('http'), { message: 'URL inválida' }),
+  cnpjBizLink: z.string().optional().refine((v) => !v || v.startsWith('http'), { message: 'URL inválida' }),
   // Modo 1: IDs de itens reservados (usa estoque com atribuição exclusiva)
   emailId: z.string().optional(),
   cnpjId: z.string().optional(),
@@ -136,7 +143,30 @@ export async function POST(req: Request) {
         }
       }
     } else {
-      // Modo manual: validar duplicidade
+      // Modo manual: validar duplicidade (mensagem com nome do produtor)
+      const formatProducerMsg = (name: string | null) =>
+        name ? `Esta conta já foi produzida por ${name}.` : 'Esta conta já foi produzida por outro colaborador.'
+
+      if (data.googleAdsCustomerId) {
+        const normalized = data.googleAdsCustomerId.replace(/\D/g, '')
+        if (normalized.length >= 10) {
+          const formatted = `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}-${normalized.slice(6, 10)}`
+          const prodWithId = await prisma.productionAccount.findFirst({
+            where: {
+              googleAdsCustomerId: formatted,
+              status: { in: ['PENDING', 'APPROVED'] },
+              deletedAt: null,
+            },
+            include: { producer: { select: { name: true } } },
+          })
+          if (prodWithId) {
+            return NextResponse.json(
+              { error: formatProducerMsg(prodWithId.producer?.name ?? null) },
+              { status: 400 }
+            )
+          }
+        }
+      }
       if (data.email) {
         const existingEmail = await prisma.email.findUnique({ where: { email: data.email } })
         if (existingEmail) {
@@ -146,10 +176,14 @@ export async function POST(req: Request) {
           )
         }
         const prodWithEmail = await prisma.productionAccount.findFirst({
-          where: { email: data.email, status: { in: ['PENDING', 'APPROVED'] } },
+          where: { email: data.email, status: { in: ['PENDING', 'APPROVED'] }, deletedAt: null },
+          include: { producer: { select: { name: true } } },
         })
         if (prodWithEmail) {
-          return NextResponse.json({ error: 'E-mail já em uso em outra conta.' }, { status: 400 })
+          return NextResponse.json(
+            { error: formatProducerMsg(prodWithEmail.producer?.name ?? null) },
+            { status: 400 }
+          )
         }
         emailVal = data.email
       }
@@ -165,14 +199,23 @@ export async function POST(req: Request) {
           )
         }
         const prodWithCnpj = await prisma.productionAccount.findFirst({
-          where: { cnpj: { contains: cleanCnpj }, status: { in: ['PENDING', 'APPROVED'] } },
+          where: { cnpj: { contains: cleanCnpj }, status: { in: ['PENDING', 'APPROVED'] }, deletedAt: null },
+          include: { producer: { select: { name: true } } },
         })
         if (prodWithCnpj) {
-          return NextResponse.json({ error: 'CNPJ já em uso em outra conta.' }, { status: 400 })
+          return NextResponse.json(
+            { error: formatProducerMsg(prodWithCnpj.producer?.name ?? null) },
+            { status: 400 }
+          )
         }
         cnpjVal = cleanCnpj
       }
     }
+
+    const digits = data.googleAdsCustomerId?.replace(/\D/g, '') ?? ''
+    const googleAdsId = digits.length >= 10
+      ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`
+      : data.googleAdsCustomerId || null
 
     const account = await prisma.productionAccount.create({
       data: {
@@ -182,6 +225,12 @@ export async function POST(req: Request) {
         cnpj: cnpjVal,
         countryId: data.countryId || null,
         producerId,
+        googleAdsCustomerId: googleAdsId || null,
+        currency: data.currency || 'BRL',
+        a2fCode: data.a2fCode || null,
+        g2ApprovalCode: data.g2ApprovalCode || null,
+        siteUrl: data.siteUrl || null,
+        cnpjBizLink: data.cnpjBizLink || null,
       },
       include: { producer: { select: { name: true } } },
     })
