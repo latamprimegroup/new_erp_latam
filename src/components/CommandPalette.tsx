@@ -107,7 +107,7 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
             ))
           )}
         </div>
-        <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-4 text-xs text-zinc-500">
+        <div className="px-5 py-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-4 text-xs text-zinc-500">
           <span>
             <kbd className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded">↑↓</kbd> navegar
           </span>
