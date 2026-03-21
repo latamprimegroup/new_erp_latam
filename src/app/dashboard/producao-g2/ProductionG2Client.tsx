@@ -63,14 +63,14 @@ export function ProductionG2Client() {
   const isDark = theme === 'dark'
 
   const darkStyles = {
-    metaCard: isDark ? { background: '#151d2e', borderColor: 'rgba(245, 158, 11, 0.5)', color: '#e5e7eb' } : {},
-    metaCardOk: isDark ? { background: '#151d2e', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#e5e7eb' } : {},
-    select: isDark ? { background: '#151d2e', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' } : {},
+    metaCard: isDark ? { background: '#151d2e', borderColor: 'rgba(245, 158, 11, 0.5)', color: '#f3f4f6' } : {},
+    metaCardOk: isDark ? { background: '#151d2e', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#f3f4f6' } : {},
+    select: isDark ? { background: '#151d2e', color: '#f9fafb', borderColor: 'rgba(255,255,255,0.25)' } : {},
     card: isDark ? { background: '#151d2e' } : {},
     thead: isDark ? { background: 'rgba(21, 29, 46, 0.95)' } : {},
-    th: isDark ? { color: '#d1d5db' } : {},
-    td: isDark ? { color: '#e5e7eb' } : {},
-    muted: isDark ? { color: '#9ca3af' } : {},
+    th: isDark ? { color: '#e5e7eb' } : {},
+    td: isDark ? { color: '#f3f4f6' } : {},
+    muted: isDark ? { color: '#d1d5db' } : {},
     accent: isDark ? { color: '#60a5fa' } : {},
   }
   const canApprove = session?.user?.role === 'ADMIN' || session?.user?.role === 'FINANCE'
