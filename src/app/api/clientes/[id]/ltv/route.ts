@@ -19,14 +19,27 @@ export async function GET(
   const { id } = await params
   if (!id) return NextResponse.json({ error: 'ID do cliente obrigatório' }, { status: 400 })
 
-  const [ltv, metrics] = await Promise.all([
+  const [ltv, metrics, profile] = await Promise.all([
     getClientLTV(id),
     prisma.customerMetrics.findUnique({ where: { clientId: id } }),
+    prisma.clientProfile.findUnique({
+      where: { id },
+      select: { reputationScore: true, refundCount: true, nicheTag: true, plugPlayErrorCount: true, averageAccountLifetimeDays: true },
+    }),
   ])
   if (!ltv) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
 
   return NextResponse.json({
     ...ltv,
+    reputation: profile
+      ? {
+          score: profile.reputationScore,
+          refundCount: profile.refundCount,
+          nicheTag: profile.nicheTag,
+          plugPlayErrorCount: profile.plugPlayErrorCount,
+          averageAccountLifetimeDays: profile.averageAccountLifetimeDays,
+        }
+      : null,
     metricas: metrics
       ? {
           receitaBrutaTotal: Number(metrics.revenueTotal),

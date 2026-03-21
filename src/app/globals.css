@@ -2,22 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Paleta oficial ADS Ativos */
+/* Style Guide ADS - Design Tokens */
 :root {
-  --ads-azul: #15A2EB;
-  --ads-azul-secondary: #1F70EE;
-  --ads-ciano: #07E5E9;
+  --ads-navy: #0D1B2A;
+  --ads-royal: #2563EB;
+  --ads-royal-light: #3B82F6;
+  --ads-charcoal: #374151;
+  --ads-grey: #9CA3AF;
+  --ads-accent-green: #22C55E;
+  --ads-accent-yellow: #EAB308;
+  --ads-accent-orange: #F97316;
+  --ads-accent-red: #EF4444;
   --ads-offwhite: #F8FAFC;
-  --ads-antracite: #1F2937;
   --foreground: #1F2937;
-  --background: #F1F5F9;
+  --background: #F8FAFC;
 }
 
-/* Tema dark premium – tech + escala */
 .dark {
   --foreground: #FFFFFF;
-  --background: #0E1117;
-  --ads-card: #161B22;
+  --background: #0D1B2A;
+  --ads-card: #151d2e;
   --ads-muted: #9CA3AF;
 }
 
@@ -32,34 +36,35 @@ body {
 }
 
 @layer components {
-  /* CTA Principal – gradiente azul oficial */
+  /* Style Guide ADS - Botões */
   .btn-primary {
-    @apply bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 
-           text-white font-semibold py-2.5 px-5 rounded-xl 
-           transition-all duration-300 shadow-md hover:shadow-glow 
-           hover:-translate-y-0.5 disabled:hover:translate-y-0 disabled:hover:shadow-md
-           focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-2 active:translate-y-0;
+    @apply bg-primary-600 hover:bg-primary-700 active:bg-primary-800
+           text-white font-semibold py-2 px-4 rounded-lg
+           transition-all duration-200 shadow-ads hover:shadow-ads-md
+           focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  /* CTA Forte – ciano para destaque estratégico (ex: Meta 100M) */
   .btn-accent {
-    @apply bg-gradient-to-r from-accent-500 to-accent-600 hover:from-accent-400 hover:to-accent-500 
-           text-black font-semibold py-2.5 px-5 rounded-xl 
-           transition-all duration-300 shadow-md hover:shadow-glow-accent 
-           hover:-translate-y-0.5 focus:ring-2 focus:ring-accent-500/40 focus:ring-offset-2;
+    @apply bg-ads-green hover:bg-accent-600 active:bg-accent-700
+           text-white font-semibold py-2 px-4 rounded-lg
+           transition-all duration-200 shadow-ads hover:shadow-ads-md
+           focus:ring-2 focus:ring-accent-500/40 focus:ring-offset-2;
   }
   .btn-secondary {
-    @apply bg-white/90 hover:bg-white dark:bg-ads-dark-card/90 dark:hover:bg-ads-dark-card 
-           text-ads-antracite dark:text-gray-200 font-medium py-2.5 px-5 
-           rounded-xl border border-gray-200 dark:border-white/10 hover:border-primary-600/30 dark:hover:border-primary-500/30
-           transition-all duration-300 hover:shadow-ads-sm;
+    @apply bg-white dark:bg-ads-dark-card/90
+           text-ads-charcoal dark:text-gray-200 font-medium py-2 px-4
+           rounded-lg border border-gray-200 dark:border-white/15
+           hover:border-primary-500/40 dark:hover:border-primary-500/30
+           transition-all duration-200 hover:shadow-ads-sm;
   }
+  /* Style Guide ADS - Inputs */
   .input-field {
-    @apply w-full border border-gray-200 dark:border-white/20 dark:bg-white/5 rounded-xl px-4 py-2.5 
-           focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 outline-none 
+    @apply w-full border border-gray-200 dark:border-white/20 dark:bg-white/5
+           rounded-lg px-4 py-2.5
+           focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 outline-none
            transition-all duration-200 placeholder:text-gray-400 dark:placeholder:text-gray-500
            text-gray-900 dark:text-white;
   }
-  /* Área de produção: garantir contraste em dark mode */
   .production-form-area input,
   .production-form-area select,
   .production-form-area textarea {
@@ -69,23 +74,23 @@ body {
   .production-form-area textarea::placeholder {
     @apply text-gray-500 dark:text-gray-400;
   }
-  /* Cards */
+  /* Style Guide ADS - Cards */
   .card {
-    @apply bg-white dark:bg-ads-dark-card rounded-2xl shadow-ads dark:shadow-none 
+    @apply bg-white dark:bg-ads-dark-card rounded-xl shadow-ads
            border border-gray-100/80 dark:border-white/10 p-5
-           transition-all duration-300 hover:shadow-card-hover dark:hover:border-primary-500/20;
+           transition-all duration-200 hover:shadow-card-hover dark:hover:border-primary-500/20;
   }
   .card-elevated {
-    @apply bg-white dark:bg-ads-dark-card rounded-2xl shadow-ads-md dark:shadow-none 
+    @apply bg-white dark:bg-ads-dark-card rounded-xl shadow-ads-md
            border border-gray-100/80 dark:border-white/10 p-6
-           transition-all duration-300 hover:shadow-card-hover dark:hover:border-primary-500/20;
+           transition-all duration-200 hover:shadow-card-hover dark:hover:border-primary-500/20;
   }
-  /* Texto e headings */
+  /* Style Guide ADS - Tipografia */
   .heading-1 {
-    @apply text-2xl font-bold text-ads-antracite dark:text-gray-100;
+    @apply text-2xl font-bold text-ads-charcoal dark:text-gray-100;
   }
   .heading-2 {
-    @apply text-lg font-semibold text-ads-antracite dark:text-gray-100;
+    @apply text-lg font-semibold text-ads-charcoal dark:text-gray-100;
   }
   .text-muted {
     @apply text-gray-500 dark:text-gray-400 text-sm;
@@ -94,15 +99,17 @@ body {
     @apply text-accent-500 hover:text-accent-400 font-medium hover:underline;
   }
   .link-primary {
-    @apply text-primary-500 hover:text-primary-600 font-medium hover:underline;
+    @apply text-primary-600 hover:text-primary-700 font-medium hover:underline;
   }
-  /* Bento / Enterprise */
   .bento-card {
-    @apply rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-sm;
+    @apply rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-5 shadow-sm;
+  }
+  /* Formulários: fundo claro no light, azulado no dark */
+  .form-area {
+    @apply bg-gray-50 dark:bg-ads-dark-card/50 rounded-lg border border-gray-200 dark:border-white/10 p-4;
   }
 }
 
-/* Animações leves */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -117,4 +124,46 @@ body {
 }
 .animate-slide-up {
   animation: slideUp 0.35s ease-out;
+}
+
+/* Style Guide ADS - Scrollbar do menu e áreas com scroll */
+.scrollbar-ads {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(37, 99, 235, 0.5) transparent;
+}
+.scrollbar-ads::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-ads::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-ads::-webkit-scrollbar-thumb {
+  background: rgba(37, 99, 235, 0.4);
+  border-radius: 3px;
+}
+.scrollbar-ads::-webkit-scrollbar-thumb:hover {
+  background: rgba(37, 99, 235, 0.6);
+}
+.dark .scrollbar-ads {
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+.dark .scrollbar-ads::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+}
+.dark .scrollbar-ads::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Style Guide ADS - Checkbox, Radio e Seletores */
+input[type='checkbox'],
+input[type='radio'] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #2563EB;
+  cursor: pointer;
+}
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.5);
+  outline-offset: 2px;
 }

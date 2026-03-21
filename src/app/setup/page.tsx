@@ -80,7 +80,7 @@ export default function SetupPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-50 to-primary-50/30 dark:from-ads-dark-bg dark:to-ads-dark-bg relative">
+      <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-ads-offwhite dark:bg-ads-navy relative">
         <div className="absolute top-4 right-4"><ThemeToggle /></div>
         <div className="card w-full max-w-md animate-pulse mt-8">
           <div className="h-6 bg-gray-200 rounded w-2/3 mb-4" />
@@ -92,7 +92,7 @@ export default function SetupPage() {
 
   if (!ready) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-50 to-primary-50/30 dark:from-ads-dark-bg dark:to-ads-dark-bg relative">
+      <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-ads-offwhite dark:bg-ads-navy relative">
         <div className="absolute top-4 right-4"><ThemeToggle /></div>
         <div className="card w-full max-w-md mt-8">
           <h1 className="text-xl font-bold text-slate-800 dark:text-gray-100 mb-2">Configuração necessária</h1>
@@ -126,12 +126,13 @@ export default function SetupPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-50 to-primary-50/30 dark:from-ads-dark-bg dark:to-ads-dark-bg relative">
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-ads-offwhite dark:bg-ads-navy relative">
       <div className="absolute top-4 right-4"><ThemeToggle /></div>
       <div className="card w-full max-w-md animate-scale-in mt-8">
         <div className="text-center mb-6">
-          <Link href="/" className="inline-block">
-            <Image src="/logo-ads-ativos.png" alt="ADS Ativos" width={120} height={40} className="h-10 w-auto mx-auto" priority />
+          <Link href="/" className="inline-flex flex-col items-center">
+            <Image src="/logos/ads-azul-ativos-branco.png" alt="ADS Ativos" width={140} height={44} className="h-11 w-auto dark:hidden" priority />
+            <Image src="/logos/ads-branco-ativos-branco.png" alt="ADS Ativos" width={140} height={44} className="h-11 w-auto hidden dark:block" priority />
           </Link>
         </div>
         {showMigrate ? (

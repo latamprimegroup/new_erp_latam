@@ -14,7 +14,7 @@ export function DashboardShell({
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-white to-primary-50/30 dark:from-ads-dark-bg dark:via-ads-dark-bg dark:to-ads-dark-bg">
+    <div className="min-h-screen flex bg-ads-offwhite dark:bg-ads-navy">
       <DashboardNav
         user={user}
         open={sidebarOpen}

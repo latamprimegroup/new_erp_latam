@@ -15,8 +15,8 @@ export default async function DashboardPage() {
   return (
     <div>
       <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">Dashboard Executivo</h1>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Bem-vindo(a), <span className="font-medium text-zinc-700 dark:text-zinc-300">{session?.user?.name || session?.user?.email}</span>
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        Bem-vindo(a), <span className="font-medium text-gray-700 dark:text-gray-300">{session?.user?.name || session?.user?.email}</span>
         {' · '}Visão operacional em tempo real
       </p>
 

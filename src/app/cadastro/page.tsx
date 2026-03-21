@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 const STEPS = [
@@ -96,16 +97,15 @@ export default function CadastroPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-[#F8FAFC] dark:bg-ads-dark-bg relative">
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-ads-offwhite dark:bg-ads-navy relative">
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
       <div className="card w-full max-w-md mt-8">
         <div className="text-center mb-6">
-          <Link href="/" className="inline-block mb-4">
-            <span className="text-2xl font-bold bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent">
-              Ads Ativos
-            </span>
+          <Link href="/" className="inline-flex flex-col items-center mb-4">
+            <Image src="/logos/ads-azul-ativos-branco.png" alt="ADS Ativos" width={140} height={44} className="h-11 w-auto dark:hidden" />
+            <Image src="/logos/ads-branco-ativos-branco.png" alt="ADS Ativos" width={140} height={44} className="h-11 w-auto hidden dark:block" />
           </Link>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
             ERP — Passo {step} de 7 — {STEPS[step - 1].title}

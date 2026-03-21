@@ -68,6 +68,20 @@ export async function GET() {
       conectado: !!(process.env.BANCO_INTER_CLIENT_ID && process.env.BANCO_INTER_CLIENT_SECRET),
       envVars: ['BANCO_INTER_CLIENT_ID', 'BANCO_INTER_CLIENT_SECRET'],
     },
+    {
+      id: 'gtm',
+      nome: 'Google Tag Manager',
+      descricao: 'Rastreamento e evento whatsapp_click',
+      conectado: !!process.env.NEXT_PUBLIC_GTM_ID,
+      envVars: ['NEXT_PUBLIC_GTM_ID'],
+    },
+    {
+      id: 'joinchat',
+      nome: 'Join.Chat',
+      descricao: 'Widget WhatsApp (config via Admin → Configurações)',
+      conectado: true, // Sempre mostra; depende de joinchat_id no SystemSetting
+      envVars: ['joinchat_id (SystemSetting)'],
+    },
   ]
 
   return NextResponse.json({ integracoes })

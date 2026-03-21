@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { signOut } from 'next-auth/react'
 import { NotificationsBell } from './NotificationsBell'
 import { ThemeToggle } from './ThemeToggle'
@@ -90,8 +91,9 @@ export function DashboardHeader({
           </svg>
         </button>
         <nav className="flex items-center gap-1.5 text-sm" aria-label="Breadcrumb">
-          <Link href="/dashboard" className="hidden sm:block shrink-0 mr-2 font-bold text-primary-600 dark:text-primary-400" aria-label="ADS Ativos">
-            Ads Ativos
+          <Link href="/dashboard" className="hidden sm:flex shrink-0 mr-2 items-center" aria-label="ADS Ativos">
+            <Image src="/logos/ads-azul-ativos-branco.png" alt="ADS Ativos" width={100} height={32} className="h-7 w-auto dark:hidden" />
+            <Image src="/logos/ads-darkGray-ativos-darkGray-.png" alt="ADS Ativos" width={100} height={32} className="h-7 w-auto hidden dark:block" />
           </Link>
           <span className="text-gray-300 dark:text-gray-600 hidden sm:inline">|</span>
           <Link

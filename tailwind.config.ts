@@ -10,64 +10,91 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Paleta oficial ADS Ativos – Logo
+        // Style Guide ADS - Paleta primária
         ads: {
-          azul: '#15A2EB',           // Primária – botões, links, ações
-          'azul-light': '#15A2EB',
-          'azul-secondary': '#1F70EE', // Secundária – hover, destaques
-          'azul-deep': '#235CEE',      // Profundo
-          'azul-dark': '#2554EF',      // Escuro
-          ciano: '#07E5E9',            // CTA forte – alertas, destaque
-          offwhite: '#F8FAFC',
+          navy: '#0D1B2A',           // Dark Navy - sidebar, fundos escuros
+          'navy-light': '#1B263B',
+          royal: '#2563EB',           // Royal Blue - ações principais
+          'royal-light': '#3B82F6',   // Bright blue - quarter circle, hovers
+          cyan: '#06B6D4',
+          // Escala de cinzas
+          charcoal: '#374151',
+          'charcoal-light': '#6B7280',
+          grey: '#9CA3AF',
+          'grey-light': '#D1D5DB',
+          'grey-pale': '#F3F4F6',
+          white: '#FFFFFF',
+          black: '#000000',
+          // Accent palette (alerts, status, CTAs)
+          green: '#22C55E',
+          yellow: '#EAB308',
+          orange: '#F97316',
+          red: '#EF4444',
+          // Legacy / compatibilidade
+          azul: '#2563EB',
+          'azul-light': '#3B82F6',
           antracite: '#1F2937',
           'antracite-light': '#374151',
-          // Dark theme premium
-          'dark-bg': '#0E1117',
-          'dark-card': '#161B22',
+          'dark-bg': '#0D1B2A',
+          'dark-card': '#151d2e',
+          offwhite: '#F8FAFC',
         },
         primary: {
-          DEFAULT: '#15A2EB',
-          50: '#E6F6FD',
-          100: '#CCEEFB',
-          200: '#99DDF7',
-          300: '#66CCF3',
-          400: '#33BBEF',
-          500: '#15A2EB',
-          600: '#1F70EE',
-          700: '#235CEE',
-          800: '#2554EF',
-          900: '#1a3d99',
+          DEFAULT: '#2563EB',
+          50: '#EFF6FF',
+          100: '#DBEAFE',
+          200: '#BFDBFE',
+          300: '#93C5FD',
+          400: '#60A5FA',
+          500: '#3B82F6',
+          600: '#2563EB',
+          700: '#1D4ED8',
+          800: '#1E40AF',
+          900: '#1E3A8A',
         },
         accent: {
-          DEFAULT: '#07E5E9',         // Ciano – CTAs estratégicos
-          50: '#E6FCFC',
-          100: '#CCFAF9',
-          200: '#99F5F3',
-          300: '#66F0ED',
-          400: '#33EBE7',
-          500: '#07E5E9',
-          600: '#06B8BB',
-          700: '#058A8C',
+          DEFAULT: '#22C55E',
+          50: '#F0FDF4',
+          100: '#DCFCE7',
+          200: '#BBF7D0',
+          300: '#86EFAC',
+          400: '#4ADE80',
+          500: '#22C55E',
+          600: '#16A34A',
+          700: '#15803D',
         },
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)', 'Inter', 'Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+      },
+      spacing: {
+        // Style Guide ADS - 8px grid
+        'ads-1': '8px',
+        'ads-2': '16px',
+        'ads-3': '24px',
+        'ads-4': '32px',
+        'ads-5': '40px',
+        'ads-6': '48px',
+      },
+      borderRadius: {
+        'ads': '8px',
+        'ads-lg': '12px',
+        'ads-xl': '16px',
       },
       boxShadow: {
-        'ads-sm': '0 1px 2px 0 rgb(21 162 235 / 0.08)',
-        'ads': '0 4px 6px -1px rgb(21 162 235 / 0.12), 0 2px 4px -2px rgb(21 162 235 / 0.08)',
-        'ads-md': '0 10px 15px -3px rgb(21 162 235 / 0.1), 0 4px 6px -4px rgb(21 162 235 / 0.08)',
-        'ads-lg': '0 20px 25px -5px rgb(21 162 235 / 0.1), 0 8px 10px -6px rgb(21 162 235 / 0.06)',
-        'glow': '0 0 24px -4px rgb(21 162 235 / 0.3)',
-        'glow-accent': '0 0 24px -4px rgb(7 229 233 / 0.35)',
-        'glow-ciano': '0 0 24px -4px rgb(7 229 233 / 0.35)',
-        'card-hover': '0 12px 40px -12px rgb(21 162 235 / 0.12), 0 0 0 1px rgb(21 162 235 / 0.06)',
+        'ads-sm': '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+        'ads': '0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04)',
+        'ads-md': '0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04)',
+        'ads-lg': '0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04)',
+        'glow': '0 0 24px -4px rgb(37 99 235 / 0.25)',
+        'glow-accent': '0 0 24px -4px rgb(34 197 94 / 0.3)',
+        'card-hover': '0 12px 40px -12px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-hero': 'linear-gradient(90deg, #15A2EB 0%, #1F70EE 100%)',
-        'gradient-hero-full': 'linear-gradient(135deg, #15A2EB 0%, #1F70EE 50%, #235CEE 100%)',
-        'gradient-accent': 'linear-gradient(135deg, #07E5E9 0%, #15A2EB 100%)',
+        'gradient-hero': 'linear-gradient(90deg, #2563EB 0%, #1D4ED8 100%)',
+        'gradient-hero-full': 'linear-gradient(135deg, #3B82F6 0%, #2563EB 50%, #1D4ED8 100%)',
+        'gradient-accent': 'linear-gradient(135deg, #22C55E 0%, #2563EB 100%)',
         'gradient-card': 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.95) 100%)',
       },
       animation: {

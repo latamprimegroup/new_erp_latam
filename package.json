@@ -17,26 +17,14 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts",
+    "db:seed": "npx tsx prisma/seed.ts",
+    "db:seed:fresh": "prisma db push && npx tsx prisma/seed.ts",
     "icons:generate": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@prisma/client": "^5.14.0",
     "@tanstack/react-query": "^5.28.4",
-    "bcryptjs": "^2.4.3",
-    "framer-motion": "^11.11.0",
-    "google-ads-api": "^22.0.0",
-    "googleapis": "^144.0.0",
-    "lucide-react": "^0.460.0",
-    "next": "14.2.35",
-    "next-auth": "^4.24.13",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "recharts": "^2.14.0",
-    "web-push": "^3.6.7",
-    "zod": "^3.23.8",
-    "@ducanh2912/next-pwa": "^10.2.9",
-    "sharp": "^0.33.5",
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^14.0.0",
     "@types/bcryptjs": "^2.4.6",
@@ -45,15 +33,32 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.19",
+    "bcryptjs": "^2.4.3",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.35",
+    "framer-motion": "^11.11.0",
+    "google-ads-api": "^22.0.0",
+    "googleapis": "^144.0.0",
     "jsdom": "^24.0.0",
+    "lucide-react": "^0.460.0",
+    "next": "14.2.35",
+    "next-auth": "^4.24.13",
     "postcss": "^8.4.38",
     "prisma": "^5.14.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.14.0",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.3",
     "vitest": "^2.0.0",
-    "webpack": "^5.94.0"
+    "web-push": "^3.6.7",
+    "webpack": "^5.94.0",
+    "zod": "^3.23.8"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "sharp": "^0.34.5"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  }
 }

@@ -74,6 +74,7 @@ export function ProductionG2DetailClient({ item, sessionUserId, canApprove }: Pr
   const [rentedPhone, setRentedPhone] = useState<string | null>(item.credentials?.twoFaSms || null)
   const [plugPlayChecked, setPlugPlayChecked] = useState(item.firstCampaignWhiteApproved ?? false)
   const [plugPlayUpdating, setPlugPlayUpdating] = useState(false)
+  const [reclassifying, setReclassifying] = useState(false)
 
   useEffect(() => {
     setPlugPlayChecked(item.firstCampaignWhiteApproved ?? false)
@@ -141,6 +142,15 @@ export function ProductionG2DetailClient({ item, sessionUserId, canApprove }: Pr
     if (res.ok) window.location.reload()
     else alert((await res.json()).error)
     setLoading(false)
+  }
+
+  async function handleReclassifyToStock() {
+    if (!confirm('Mover esta conta G2 Rejeitada para o estoque como Google Verificação Anunciante?')) return
+    setReclassifying(true)
+    const res = await fetch(`/api/production-g2/${item.id}/reclassify-to-stock`, { method: 'POST' })
+    if (res.ok) window.location.reload()
+    else alert((await res.json()).error)
+    setReclassifying(false)
   }
 
   async function handleRentSms() {
@@ -442,6 +452,15 @@ export function ProductionG2DetailClient({ item, sessionUserId, canApprove }: Pr
           {item.status === 'APROVADA' && !item.stockAccountId && (
             <button onClick={handleSendToStock} disabled={loading} className="btn-primary">
               Enviar para Estoque
+            </button>
+          )}
+          {item.status === 'REPROVADA' && !item.stockAccountId && (
+            <button
+              onClick={handleReclassifyToStock}
+              disabled={reclassifying}
+              className="btn-secondary border-amber-300 text-amber-700 hover:bg-amber-50"
+            >
+              {reclassifying ? 'Reclassificando...' : 'Mover para estoque como Google Verificação Anunciante'}
             </button>
           )}
         </div>

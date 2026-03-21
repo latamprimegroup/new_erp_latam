@@ -5,6 +5,7 @@ import { hash } from 'bcryptjs'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
+import { generateNextClientId } from '@/lib/client-id-sequencial'
 
 const createSchema = z.object({
   email: z.string().email(),
@@ -82,8 +83,9 @@ export async function POST(req: Request) {
     })
 
     if (data.role === 'CLIENT') {
+      const clientCode = await generateNextClientId()
       await prisma.clientProfile.create({
-        data: { userId: user.id },
+        data: { userId: user.id, clientCode },
       })
     } else if (data.role === 'PRODUCER') {
       await prisma.producerProfile.create({

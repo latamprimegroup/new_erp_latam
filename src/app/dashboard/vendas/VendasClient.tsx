@@ -7,7 +7,16 @@ type Client = {
   user: { name: string | null; email: string }
 }
 
+type Reputation = {
+  score: number | null
+  refundCount: number
+  nicheTag: string | null
+  plugPlayErrorCount: number
+  averageAccountLifetimeDays: number | null
+}
+
 type ClientLTV = {
+  reputation?: Reputation | null
   client: {
     id: string
     user: { name: string | null; email: string; phone: string | null }
@@ -50,6 +59,22 @@ type Order = {
   seller: { name: string | null } | null
 }
 
+function ReputationBadge({ score }: { score: number | null | undefined }) {
+  if (score == null) return null
+  const badge = score >= 80 ? 'VIP' : score >= 50 ? 'Regular' : 'High Risk'
+  const style =
+    badge === 'VIP'
+      ? 'bg-emerald-100 text-emerald-800'
+      : badge === 'Regular'
+        ? 'bg-amber-100 text-amber-800'
+        : 'bg-red-100 text-red-800'
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${style}`}>
+      {badge === 'VIP' ? '🟢 VIP' : badge === 'Regular' ? '🟡 Regular' : '🔴 High Risk'}
+    </span>
+  )
+}
+
 function ClientLTVCard({ ltv, loading }: { ltv: ClientLTV | null; loading: boolean }) {
   if (loading) {
     return (
@@ -70,11 +95,29 @@ function ClientLTVCard({ ltv, loading }: { ltv: ClientLTV | null; loading: boole
       })
     : '—'
 
+  const rep = ltv.reputation
+  const score = rep?.score ?? null
+  const isHighRisk = score != null && score < 50
+
   return (
     <div className="p-4 bg-[#F8FAFC] rounded-lg border border-primary-600/10">
-      <h3 className="font-semibold text-[#1F2937] text-sm mb-3">
-        Dados do cliente para LTV
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-[#1F2937] text-sm">
+          Dados do cliente para LTV
+        </h3>
+        {score != null && (
+          <span className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">Score:</span>
+            <ReputationBadge score={score} />
+            <span className="text-gray-600">({score}/100)</span>
+          </span>
+        )}
+      </div>
+      {isHighRisk && (
+        <div className="mb-3 p-2 rounded bg-red-50 border border-red-200 text-red-800 text-sm">
+          ⚠️ Venda de contas G2 Premium bloqueada para este cliente (High Risk)
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
         <div>
           <span className="text-gray-500 block">Última compra</span>

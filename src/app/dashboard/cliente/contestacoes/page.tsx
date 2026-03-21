@@ -130,7 +130,7 @@ function ClienteContestacoesContent() {
         </div>
 
         {showForm && (
-          <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
+          <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-50 dark:bg-ads-dark-card/50 rounded-lg border border-gray-200 dark:border-white/10 space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">Conta *</label>
               <select

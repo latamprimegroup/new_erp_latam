@@ -131,32 +131,32 @@ export function ConferenciaClient() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Conferência Diária</h1>
-        <p className="text-slate-600 mt-1">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Conferência Diária</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
           Valide as contas aprovadas do dia com sua senha. Apenas contas conferidas entram para pagamento do produtor.
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-700">Data:</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Data:</span>
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="input-field w-auto px-3 py-2 text-sm"
           />
         </label>
         <div className="flex gap-2">
           <button
             onClick={selectAll}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-lg border border-gray-200 dark:border-white/20 bg-white dark:bg-ads-dark-card px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10"
           >
             Selecionar todas
           </button>
           <button
             onClick={deselectAll}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-lg border border-gray-200 dark:border-white/20 bg-white dark:bg-ads-dark-card px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10"
           >
             Limpar seleção
           </button>
@@ -164,7 +164,7 @@ export function ConferenciaClient() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
@@ -173,33 +173,32 @@ export function ConferenciaClient() {
         <SkeletonTable rows={8} cols={5} />
       ) : data && data.pending.total > 0 ? (
         <>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <span className="font-medium text-slate-800">
+          <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card shadow-sm overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10 flex items-center justify-between">
+              <span className="font-medium text-gray-800 dark:text-gray-200">
                 Pendentes: {data.pending.accounts} Produção + {data.pending.g2Items} G2
               </span>
               {totalSelected > 0 && (
-                <span className="text-sm text-slate-600">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
                   {totalSelected} selecionada{totalSelected > 1 ? 's' : ''}
                 </span>
               )}
             </div>
-            <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+            <div className="divide-y divide-gray-100 dark:divide-white/10 max-h-[400px] overflow-y-auto scrollbar-ads">
               {data.items.accounts.map((a) => (
                 <label
                   key={a.id}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer"
                 >
                   <input
                     type="checkbox"
                     checked={selectedAccounts.has(a.id)}
                     onChange={() => toggleAccount(a.id)}
-                    className="rounded border-slate-300"
                   />
-                  <span className="text-slate-500 w-20">Produção</span>
-                  <span className="font-mono text-sm">{a.platform}/{a.type}</span>
-                  <span className="text-slate-600">{a.producer.name || a.producer.email}</span>
-                  <span className="text-slate-400 text-sm ml-auto">
+                  <span className="text-gray-500 dark:text-gray-400 w-20">Produção</span>
+                  <span className="font-mono text-sm text-gray-900 dark:text-gray-100">{a.platform}/{a.type}</span>
+                  <span className="text-gray-600 dark:text-gray-300">{a.producer.name || a.producer.email}</span>
+                  <span className="text-gray-400 dark:text-gray-500 text-sm ml-auto">
                     {new Date(a.updatedAt).toLocaleString('pt-BR')}
                   </span>
                 </label>
@@ -207,18 +206,17 @@ export function ConferenciaClient() {
               {data.items.g2Items.map((g) => (
                 <label
                   key={g.id}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer"
                 >
                   <input
                     type="checkbox"
                     checked={selectedG2.has(g.id)}
                     onChange={() => toggleG2(g.id)}
-                    className="rounded border-slate-300"
                   />
-                  <span className="text-slate-500 w-20">G2</span>
-                  <span className="font-mono text-sm">{g.codeG2}</span>
-                  <span className="text-slate-600">{g.creator.name || g.creator.email}</span>
-                  <span className="text-slate-400 text-sm ml-auto">
+                  <span className="text-gray-500 dark:text-gray-400 w-20">G2</span>
+                  <span className="font-mono text-sm text-gray-900 dark:text-gray-100">{g.codeG2}</span>
+                  <span className="text-gray-600 dark:text-gray-300">{g.creator.name || g.creator.email}</span>
+                  <span className="text-gray-400 dark:text-gray-500 text-sm ml-auto">
                     {g.approvedAt ? new Date(g.approvedAt).toLocaleString('pt-BR') : '—'}
                   </span>
                 </label>
@@ -227,7 +225,7 @@ export function ConferenciaClient() {
           </div>
 
           {totalSelected > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-4 shadow-sm">
               {!showPassword ? (
                 <button
                   onClick={() => setShowPassword(true)}
@@ -238,13 +236,13 @@ export function ConferenciaClient() {
               ) : (
                 <div className="space-y-3 max-w-md">
                   <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Sua senha para assinar</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sua senha para assinar</span>
                     <input
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Digite sua senha"
-                      className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2"
+                      className="input-field mt-1"
                       autoFocus
                     />
                   </label>
@@ -258,7 +256,7 @@ export function ConferenciaClient() {
                     </button>
                     <button
                       onClick={() => { setShowPassword(false); setPassword('') }}
-                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                      className="rounded-lg border border-gray-200 dark:border-white/20 bg-white dark:bg-ads-dark-card px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/10"
                     >
                       Cancelar
                     </button>
@@ -269,7 +267,7 @@ export function ConferenciaClient() {
           )}
         </>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+        <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-8 text-center text-gray-500 dark:text-gray-400">
           Nenhuma conta pendente de conferência para {new Date(date).toLocaleDateString('pt-BR')}.
         </div>
       )}

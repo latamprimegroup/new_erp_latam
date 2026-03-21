@@ -1,21 +1,22 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8 bg-gradient-to-br from-slate-50 via-white to-primary-50/40 dark:from-ads-dark-bg dark:via-ads-dark-bg dark:to-ads-dark-bg relative overflow-hidden">
+    <main className="min-h-screen flex flex-col items-center justify-center p-8 bg-ads-offwhite dark:bg-ads-navy relative overflow-hidden">
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
-      {/* Decorative */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(21,162,235,0.12),transparent)] pointer-events-none" />
-      <div className="absolute top-20 right-20 w-72 h-72 bg-primary-400/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-20 left-20 w-96 h-96 bg-accent-400/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Quarter-circle accent Style Guide */}
+      <div className="absolute top-0 left-0 w-64 h-64 bg-primary-500/20 rounded-br-full pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(37,99,235,0.12),transparent)] pointer-events-none" />
 
       <div className="text-center max-w-2xl relative z-10 animate-fade-in mt-8">
-        <p className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent mb-4">
-          Ads Ativos
-        </p>
+        <Link href="/" className="inline-block mb-4">
+          <Image src="/logos/ads-azul-ativos-branco.png" alt="ADS Ativos" width={180} height={56} className="h-14 w-auto mx-auto dark:hidden" priority />
+          <Image src="/logos/ads-branco-ativos-branco.png" alt="ADS Ativos" width={180} height={56} className="h-14 w-auto mx-auto hidden dark:block" priority />
+        </Link>
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-gray-100 mb-3 tracking-tight">
           ERP – Gestão de produção, estoque e vendas
         </h1>

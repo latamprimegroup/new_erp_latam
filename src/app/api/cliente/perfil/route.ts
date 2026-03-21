@@ -11,6 +11,7 @@ const updateSchema = z.object({
   country: z.string().optional(),
   notifyEmail: z.boolean().optional(),
   notifyWhatsapp: z.boolean().optional(),
+  photo: z.string().url().optional().nullable(),
 })
 
 export async function GET() {
@@ -23,7 +24,7 @@ export async function GET() {
   const [user, client] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user!.id },
-      select: { id: true, email: true, name: true, phone: true },
+      select: { id: true, email: true, name: true, phone: true, photo: true },
     }),
     prisma.clientProfile.findUnique({
       where: { userId: session.user!.id },
@@ -57,6 +58,7 @@ export async function PATCH(req: Request) {
       data: {
         ...(data.name && { name: data.name }),
         ...(data.phone && { phone: data.phone }),
+        ...(data.photo !== undefined && { photo: data.photo }),
       },
     })
 

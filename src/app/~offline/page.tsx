@@ -2,7 +2,7 @@
 
 export default function OfflinePage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-ads-offwhite p-6">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-ads-offwhite dark:bg-ads-navy p-6">
       <div className="text-center max-w-md">
         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary-100 flex items-center justify-center">
           <svg
@@ -22,7 +22,7 @@ export default function OfflinePage() {
         <h1 className="text-xl font-semibold text-ads-antracite mb-2">
           Você está offline
         </h1>
-        <p className="text-slate-600 mb-6">
+        <p className="text-slate-600 dark:text-gray-400 mb-6">
           Verifique sua conexão com a internet e tente novamente.
         </p>
         <button

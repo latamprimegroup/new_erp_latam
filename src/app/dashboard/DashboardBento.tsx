@@ -102,10 +102,10 @@ export function DashboardBento() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 hover:shadow-lg hover:shadow-zinc-200/50 dark:hover:shadow-zinc-900/50 transition-shadow"
+              className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-4 hover:shadow-lg hover:shadow-zinc-200/50 dark:hover:shadow-primary-900/20 transition-shadow"
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">
                   {k.label}
                 </span>
                 <Icon className="w-4 h-4 text-zinc-400 shrink-0" />
@@ -119,7 +119,7 @@ export function DashboardBento() {
                     <span>{pct.toFixed(0)}%</span>
                     <span>Meta: {formatVal(k.meta, k.unit)}</span>
                   </div>
-                  <div className="h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${pct}%` }}
@@ -148,7 +148,7 @@ export function DashboardBento() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"
+          className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-5"
         >
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-white mb-4">
             Produção x Vendas (vs Meta)
@@ -166,7 +166,7 @@ export function DashboardBento() {
                       border: '1px solid rgb(228 228 231)',
                     }}
                   />
-                  <Bar dataKey="value" fill="#15A2EB" radius={[0, 4, 4, 0]} name="Atual" />
+                  <Bar dataKey="value" fill="#2563EB" radius={[0, 4, 4, 0]} name="Atual" />
                   <Bar dataKey="meta" fill="#71717a" fillOpacity={0.4} radius={[0, 4, 4, 0]} name="Meta" />
                 </BarChart>
               </ResponsiveContainer>
@@ -182,7 +182,7 @@ export function DashboardBento() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
-          className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5"
+          className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-5"
         >
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-white mb-4">
             Percentual da Meta
@@ -193,8 +193,8 @@ export function DashboardBento() {
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="gradPct" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#15A2EB" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#15A2EB" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#2563EB" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
@@ -206,7 +206,7 @@ export function DashboardBento() {
                   <Area
                     type="monotone"
                     dataKey="pct"
-                    stroke="#15A2EB"
+                    stroke="#2563EB"
                     fill="url(#gradPct)"
                     strokeWidth={2}
                   />

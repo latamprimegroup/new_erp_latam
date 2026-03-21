@@ -42,7 +42,7 @@ export default function SugestoesPage() {
           type="button"
           onClick={() => setFilter('all')}
           className={`px-4 py-2 rounded-lg text-sm font-medium ${
-            filter === 'all' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
+            filter === 'all' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-white/10'
           }`}
         >
           Todas
@@ -51,7 +51,7 @@ export default function SugestoesPage() {
           type="button"
           onClick={() => setFilter('SYSTEM')}
           className={`px-4 py-2 rounded-lg text-sm font-medium ${
-            filter === 'SYSTEM' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
+            filter === 'SYSTEM' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-white/10'
           }`}
         >
           Sistema
@@ -60,7 +60,7 @@ export default function SugestoesPage() {
           type="button"
           onClick={() => setFilter('COMPANY')}
           className={`px-4 py-2 rounded-lg text-sm font-medium ${
-            filter === 'COMPANY' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
+            filter === 'COMPANY' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-white/10'
           }`}
         >
           Empresa

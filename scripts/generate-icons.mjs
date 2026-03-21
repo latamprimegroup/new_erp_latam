@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
-const logoPath = join(root, 'public/logo-ads-ativos.png')
+const logoPath = join(root, 'public/logos/ads-azul-ativos-branco.png')
 const out192 = join(root, 'public/icons/icon-192.png')
 const out512 = join(root, 'public/icons/icon-512.png')
 
@@ -26,7 +26,7 @@ try {
 const meta = await sharp(logoPath).metadata()
 const w = meta.width || 1024
 const h = meta.height || 479
-const bg = { r: 14, g: 17, b: 23, alpha: 1 } // #0E1117
+const bg = { r: 13, g: 27, b: 42, alpha: 1 } // #0D1B2A Style Guide ADS
 
 function buildIcon(side) {
   const hNew = Math.round((h * side) / w)

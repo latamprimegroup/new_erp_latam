@@ -116,6 +116,12 @@ model ClientProfile {
   lastPurchaseAt        DateTime?             @map("last_purchase_at")
   totalSpent            Decimal?              @map("total_spent") @db.Decimal(12, 2)
   totalAccountsBought   Int                   @default(0) @map("total_accounts_bought")
+  // Perfil de Reputação (melhoria 004)
+  reputationScore       Int?                  @map("reputation_score")   // 0-100
+  averageAccountLifetimeDays Float?           @map("average_account_lifetime_days") @db.Float
+  refundCount           Int                   @default(0) @map("refund_count")
+  nicheTag              String?               @map("niche_tag") @db.VarChar(20)  // WHITE, BLACK, NUTRA, CASINO
+  plugPlayErrorCount    Int                   @default(0) @map("plug_play_error_count")  // Garantia reversa: 3 erros = blacklist
   user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders                Order[]
   quotations            Quotation[]

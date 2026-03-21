@@ -18,6 +18,11 @@ const STATUS_LABELS: Record<string, string> = {
   DELIVERED: 'Entregue',
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  G2: 'G2',
+  CONTA_VERIFICADA_ANUNCIANTE: 'Verif. Anunciante',
+}
+
 type Account = {
   id: string
   platform: string
@@ -243,13 +248,15 @@ export function EstoqueClient() {
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
-          <input
-            type="text"
+          <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            placeholder="Tipo"
-            className="input-field py-1.5 px-2 w-32 text-sm"
-          />
+            className="input-field py-1.5 px-2 w-40 text-sm"
+          >
+            <option value="">Tipo</option>
+            <option value="G2">G2</option>
+            <option value="CONTA_VERIFICADA_ANUNCIANTE">Verif. Anunciante</option>
+          </select>
         </div>
 
         <div className="overflow-x-auto">
@@ -285,12 +292,15 @@ export function EstoqueClient() {
                     <td className="py-3 pr-4 font-mono text-xs">{a.id.slice(0, 8)}</td>
                     <td className="py-3 pr-4">{PLATFORMS.find((p) => p.value === a.platform)?.label || a.platform}</td>
                     <td className="py-3 pr-4">
-                      <span className="mr-1">{a.type}</span>
+                      <span className="mr-1">{TYPE_LABELS[a.type] || a.type}</span>
                       {a.isPlugPlay && (
                         <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400">
                           [PLUG & PLAY]
                         </span>
                       )}
+                      <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-400 ml-1">
+                        ✓ Ativo Verificado Ads Ativos
+                      </span>
                     </td>
                     <td className="py-3 pr-4 text-xs">{a.createdAt ? new Date(a.createdAt).toLocaleDateString('pt-BR') : '—'}</td>
                     <td className="py-3 pr-4">{a.createdAt ? diasEmEstoque(a.createdAt) : '—'}</td>

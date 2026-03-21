@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
@@ -42,17 +43,16 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-50 via-white to-primary-50/40 dark:from-ads-dark-bg dark:via-ads-dark-bg dark:to-ads-dark-bg relative">
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-ads-offwhite dark:bg-ads-navy relative">
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
-      <div className="card w-full max-w-md animate-scale-in shadow-xl mt-8">
+      <div className="card w-full max-w-md animate-scale-in shadow-ads-lg mt-8">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block mb-4">
-            <span className="text-2xl font-bold bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent">
-              Ads Ativos
-            </span>
-            <span className="block text-xs text-gray-500 mt-1 font-medium">ERP</span>
+          <Link href="/" className="inline-flex flex-col items-center mb-4">
+            <Image src="/logos/ads-azul-ativos-branco.png" alt="ADS Ativos" width={140} height={44} className="h-11 w-auto dark:hidden" />
+            <Image src="/logos/ads-branco-ativos-branco.png" alt="ADS Ativos" width={140} height={44} className="h-11 w-auto hidden dark:block" />
+            <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">ERP</span>
           </Link>
           <p className="text-gray-500 dark:text-gray-400">ERP – Acesse sua conta</p>
         </div>
@@ -131,5 +131,18 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen flex flex-col items-center justify-center p-4 bg-ads-offwhite dark:bg-ads-navy relative">
+        <div className="absolute top-4 right-4"><ThemeToggle /></div>
+        <div className="card w-full max-w-md animate-pulse h-96" />
+      </main>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

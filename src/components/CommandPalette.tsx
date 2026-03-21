@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, LayoutDashboard, ChevronRight } from 'lucide-react'
+import { Search, ChevronRight } from 'lucide-react'
 import { getModulesForRole } from '@/lib/nav-modules'
+import { getNavIcon } from '@/lib/nav-icons'
 
 type CommandPaletteProps = {
   userRole?: string
@@ -64,26 +65,26 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
       onClick={() => setOpen(false)}
     >
       <div
-        className="w-full max-w-xl rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden animate-fade-in"
+        className="w-full max-w-xl rounded-2xl bg-white dark:bg-ads-dark-card border border-zinc-200 dark:border-white/10 shadow-2xl overflow-hidden animate-fade-in scrollbar-ads"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-white/10">
           <Search className="w-5 h-5 text-zinc-400 shrink-0" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar módulos..."
-            className="flex-1 bg-transparent text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 outline-none text-base"
+            className="flex-1 bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none text-base"
             autoFocus
           />
-          <kbd className="hidden sm:inline px-2 py-1 text-xs font-mono bg-zinc-100 dark:bg-zinc-800 rounded text-zinc-500">
+          <kbd className="hidden sm:inline px-2 py-1 text-xs font-mono bg-gray-100 dark:bg-white/10 rounded text-gray-500 dark:text-gray-400">
             ESC
           </kbd>
         </div>
         <div className="max-h-[60vh] overflow-y-auto py-2">
           {modules.length === 0 ? (
-            <p className="px-4 py-8 text-center text-zinc-500 text-sm">Nenhum módulo encontrado</p>
+            <p className="px-4 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">Nenhum módulo encontrado</p>
           ) : (
             modules.map((m, i) => (
               <button
@@ -97,22 +98,25 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                   i === selected
                     ? 'bg-primary-500/10 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400'
-                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10'
                 }`}
               >
-                <LayoutDashboard className="w-4 h-4 shrink-0 text-zinc-400" />
+                {(() => {
+                  const Icon = getNavIcon(m.icon)
+                  return <Icon className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" />
+                })()}
                 <span className="flex-1 font-medium">{m.label}</span>
                 <ChevronRight className="w-4 h-4 shrink-0 opacity-50" />
               </button>
             ))
           )}
         </div>
-        <div className="px-5 py-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-4 text-xs text-zinc-500">
+        <div className="px-5 py-2 border-t border-gray-200 dark:border-white/10 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
           <span>
-            <kbd className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded">↑↓</kbd> navegar
+            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-white/10 rounded">↑↓</kbd> navegar
           </span>
           <span>
-            <kbd className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded">↵</kbd> abrir
+            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-white/10 rounded">↵</kbd> abrir
           </span>
         </div>
       </div>

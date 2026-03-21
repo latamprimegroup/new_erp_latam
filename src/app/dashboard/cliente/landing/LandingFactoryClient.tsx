@@ -148,7 +148,7 @@ export function LandingFactoryClient() {
           <button
             type="button"
             onClick={() => setGoogleAdsStructure(null)}
-            className="text-sm text-zinc-500 hover:text-zinc-700"
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
           >
             ← Voltar
           </button>
@@ -161,11 +161,11 @@ export function LandingFactoryClient() {
             Copiar Estrutura Completa
           </button>
         </div>
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-          <h3 className="font-semibold text-zinc-900 dark:text-white mb-4">
+        <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
             Estrutura Google Ads – Rede de Pesquisa
           </h3>
-          <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-700 dark:text-zinc-300 overflow-x-auto max-h-[70vh] overflow-y-auto pr-4">
+          <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 dark:text-gray-300 overflow-x-auto max-h-[70vh] overflow-y-auto pr-4">
             {googleAdsStructure}
           </pre>
         </div>
@@ -180,7 +180,7 @@ export function LandingFactoryClient() {
           <button
             type="button"
             onClick={() => setPreviewHtml(null)}
-            className="text-sm text-zinc-500 hover:text-zinc-700"
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
           >
             ← Voltar
           </button>
@@ -193,7 +193,7 @@ export function LandingFactoryClient() {
             Copiar HTML
           </button>
         </div>
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+        <div className="rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden">
           <iframe
             srcDoc={previewHtml}
             title="Preview"
@@ -207,11 +207,11 @@ export function LandingFactoryClient() {
 
   if (step === 'form') {
     return (
-      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">
+      <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           Briefing Oficial – Site Profissional para Negócio Local
         </h2>
-        <p className="text-sm text-zinc-500 mb-6">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
           Padrão Google Ads | SEO Local | Conversão | Compliance Total. Após preencher, o briefing será convertido em prompt avançado e a IA gerará todo o site.
         </p>
         <form onSubmit={handleCreateBriefing} className="space-y-6">
@@ -222,12 +222,12 @@ export function LandingFactoryClient() {
           )}
 
           <section>
-            <h3 className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-200 mb-3">
+            <h3 className="flex items-center gap-2 font-medium text-gray-800 dark:text-gray-200 mb-3">
               1️⃣ <Building2 className="w-4 h-4" /> Identidade da Empresa
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Nome da empresa (exatamente como será exibido) *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome da empresa (exatamente como será exibido) *</label>
                 <input
                   type="text"
                   value={form.nomeEmpresa}
@@ -238,7 +238,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Nome fantasia</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome fantasia</label>
                 <input
                   type="text"
                   value={form.nomeFantasia}
@@ -248,7 +248,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Nicho *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nicho *</label>
                 <input
                   type="text"
                   value={form.nicho}
@@ -259,7 +259,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Subnicho (se houver)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subnicho (se houver)</label>
                 <input
                   type="text"
                   value={form.subnicho}
@@ -269,7 +269,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">CNPJ (se houver)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CNPJ (se houver)</label>
                 <input
                   type="text"
                   value={form.cnpj}
@@ -279,7 +279,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Endereço físico completo</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Endereço físico completo</label>
                 <input
                   type="text"
                   value={form.endereco}
@@ -292,12 +292,12 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="flex items-center gap-2 font-medium text-zinc-800 dark:text-zinc-200 mb-3">
+            <h3 className="flex items-center gap-2 font-medium text-gray-800 dark:text-gray-200 mb-3">
               <MapPin className="w-4 h-4" /> Cidade e Estado
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Cidade *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cidade *</label>
                 <input
                   type="text"
                   value={form.cidade}
@@ -308,7 +308,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Estado *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Estado *</label>
                 <input
                   type="text"
                   value={form.estado}
@@ -323,10 +323,10 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200 mb-3">2️⃣ Contato Oficial</h3>
+            <h3 className="font-medium text-gray-800 dark:text-gray-200 mb-3">2️⃣ Contato Oficial</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Telefone principal (ligação)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefone principal (ligação)</label>
                 <input
                   type="text"
                   value={form.telefone}
@@ -336,7 +336,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">WhatsApp (atendimento)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">WhatsApp (atendimento)</label>
                 <input
                   type="text"
                   value={form.whatsapp}
@@ -346,7 +346,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">E-mail profissional</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-mail profissional</label>
                 <input
                   type="email"
                   value={form.email}
@@ -356,7 +356,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Horário de atendimento</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Horário de atendimento</label>
                 <input
                   type="text"
                   value={form.horarioAtendimento}
@@ -369,8 +369,8 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200 mb-3">3️⃣ Serviços Oferecidos</h3>
-            <p className="text-xs text-zinc-500 mb-2">Liste TODOS os serviços que deseja divulgar (um por linha)</p>
+            <h3 className="font-medium text-gray-800 dark:text-gray-200 mb-3">3️⃣ Serviços Oferecidos</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Liste TODOS os serviços que deseja divulgar (um por linha)</p>
             <textarea
               value={form.servicos}
               onChange={(e) => setForm((p) => ({ ...p, servicos: e.target.value }))}
@@ -381,10 +381,10 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200 mb-3">4️⃣ Diferenciais e Posicionamento</h3>
+            <h3 className="font-medium text-gray-800 dark:text-gray-200 mb-3">4️⃣ Diferenciais e Posicionamento</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Anos de experiência (se houver)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Anos de experiência (se houver)</label>
                 <input
                   type="number"
                   min={0}
@@ -397,7 +397,7 @@ export function LandingFactoryClient() {
               </div>
             </div>
             <div className="mt-4">
-              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Diferenciais reais do negócio</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Diferenciais reais do negócio</label>
               <textarea
                 value={form.diferenciais}
                 onChange={(e) => setForm((p) => ({ ...p, diferenciais: e.target.value }))}
@@ -408,8 +408,8 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200 mb-3">5️⃣ Objetivo Principal do Site</h3>
-            <p className="text-xs text-zinc-500 mb-2">Marque apenas UM</p>
+            <h3 className="font-medium text-gray-800 dark:text-gray-200 mb-3">5️⃣ Objetivo Principal do Site</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Marque apenas UM</p>
             <div className="space-y-2">
               {OBJETIVOS.map((o) => (
                 <label key={o.value} className="flex items-center gap-2 cursor-pointer">
@@ -421,7 +421,7 @@ export function LandingFactoryClient() {
                     onChange={() => setForm((p) => ({ ...p, objetivo: o.value }))}
                     className="rounded-full text-primary-600"
                   />
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">{o.label}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{o.label}</span>
                 </label>
               ))}
               {form.objetivo === 'OUTRO' && (
@@ -437,10 +437,10 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200 mb-3">6️⃣ Perfil do Cliente Ideal</h3>
+            <h3 className="font-medium text-gray-800 dark:text-gray-200 mb-3">6️⃣ Perfil do Cliente Ideal</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Tipo de cliente</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de cliente</label>
                 <input
                   type="text"
                   value={form.tipoCliente}
@@ -450,7 +450,7 @@ export function LandingFactoryClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Problemas/demandas mais comuns</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Problemas/demandas mais comuns</label>
                 <textarea
                   value={form.problemasDemandas}
                   onChange={(e) => setForm((p) => ({ ...p, problemasDemandas: e.target.value }))}
@@ -462,7 +462,7 @@ export function LandingFactoryClient() {
           </section>
 
           <section>
-            <h3 className="font-medium text-zinc-800 dark:text-zinc-200 mb-3">7️⃣ Restrições Importantes (se houver)</h3>
+            <h3 className="font-medium text-gray-800 dark:text-gray-200 mb-3">7️⃣ Restrições Importantes (se houver)</h3>
             <input
               type="text"
               value={form.restricoes}
@@ -497,7 +497,7 @@ export function LandingFactoryClient() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-zinc-500">Seus briefings e sites gerados</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Seus briefings e sites gerados</p>
         <button
           type="button"
           onClick={() => setStep('form')}
@@ -513,15 +513,15 @@ export function LandingFactoryClient() {
           {[1, 2].map((i) => (
             <div
               key={i}
-              className="h-24 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 animate-pulse"
+              className="h-24 rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-ads-dark-card animate-pulse"
             />
           ))}
         </div>
       ) : briefings.length === 0 ? (
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-12 text-center">
-          <FileText className="w-12 h-12 text-zinc-400 mx-auto mb-4" />
-          <p className="text-zinc-600 dark:text-zinc-400 mb-2">Nenhum briefing ainda</p>
-          <p className="text-sm text-zinc-500 mb-4">
+        <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-ads-dark-card/50 p-12 text-center">
+          <FileText className="w-12 h-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400 mb-2">Nenhum briefing ainda</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Crie um briefing completo e gere seu site profissional em um clique
           </p>
           <button
@@ -537,16 +537,16 @@ export function LandingFactoryClient() {
           {briefings.map((b) => (
             <div
               key={b.id}
-              className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 flex items-center justify-between gap-4"
+              className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-4 flex items-center justify-between gap-4"
             >
               <div className="min-w-0">
-                <p className="font-medium text-zinc-900 dark:text-white truncate">
+                <p className="font-medium text-gray-900 dark:text-white truncate">
                   {b.nomeFantasia || b.nomeEmpresa || b.nicho}
                 </p>
-                <p className="text-sm text-zinc-500 truncate">
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                   {b.nicho} · {b.cidade}/{b.estado}
                 </p>
-                <p className="text-xs text-zinc-400 mt-1">
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                   {b._count.pages} página(s) · {b.status}
                 </p>
               </div>
@@ -577,7 +577,7 @@ export function LandingFactoryClient() {
                   )}
                   Google Ads
                 </button>
-                <ChevronRight className="w-5 h-5 text-zinc-400" />
+                <ChevronRight className="w-5 h-5 text-gray-400 dark:text-gray-500" />
               </div>
             </div>
           ))}

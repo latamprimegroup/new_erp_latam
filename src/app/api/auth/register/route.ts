@@ -3,6 +3,7 @@ import { hash } from 'bcryptjs'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { getClientIdentifier, withRateLimit } from '@/lib/rate-limit-api'
+import { generateNextClientId } from '@/lib/client-id-sequencial'
 
 const schema = z.object({
   email: z.string().email(),
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     }
 
     const passwordHash = await hash(password, 12)
+    const clientCode = await generateNextClientId()
 
     const user = await prisma.user.create({
       data: {
@@ -42,6 +44,7 @@ export async function POST(req: Request) {
     await prisma.clientProfile.create({
       data: {
         userId: user.id,
+        clientCode,
         whatsapp: whatsapp || null,
       },
     })

@@ -13,7 +13,7 @@ export default async function LandingFactoryPage() {
       <h1 className="text-xl font-bold text-zinc-900 dark:text-white mb-1">
         Fábrica de Landing Pages & Ads
       </h1>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
         Crie seu site, configure tracking e campanhas em minutos
       </p>
       <LandingFactoryClient />
