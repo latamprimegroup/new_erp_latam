@@ -24,6 +24,89 @@
   --ads-card: #151d2e;
   --ads-muted: #9CA3AF;
 }
+.dark select {
+  color-scheme: dark;
+}
+
+/* Produção G2 - dark mode (usa classe producao-g2-dark aplicada pelo useTheme) */
+.producao-g2-page.producao-g2-dark .motor-meta-card {
+  background: #151d2e !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+}
+.producao-g2-page.producao-g2-dark .motor-meta-card.no-risco {
+  border-color: rgba(16, 185, 129, 0.5) !important;
+}
+.producao-g2-page.producao-g2-dark .motor-meta-card h2,
+.producao-g2-page.producao-g2-dark .motor-meta-card .meta-label,
+.producao-g2-page.producao-g2-dark .motor-meta-card .meta-value {
+  color: #e5e7eb !important;
+}
+.producao-g2-page.producao-g2-dark .motor-meta-card .meta-muted {
+  color: #9ca3af !important;
+}
+.producao-g2-page.producao-g2-dark .motor-meta-card .meta-primary {
+  color: #60a5fa !important;
+}
+.producao-g2-page.producao-g2-dark .motor-meta-card .meta-amber {
+  color: #fbbf24 !important;
+}
+.producao-g2-page.producao-g2-dark select,
+.producao-g2-page.producao-g2-dark .producao-g2-select {
+  background-color: #151d2e !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+.producao-g2-page.producao-g2-dark select option {
+  background-color: #151d2e !important;
+  color: #ffffff !important;
+}
+.producao-g2-page.producao-g2-dark thead {
+  background-color: rgba(21, 29, 46, 0.9) !important;
+}
+.producao-g2-page.producao-g2-dark thead th {
+  color: #d1d5db !important;
+}
+.producao-g2-page.producao-g2-dark .card {
+  background-color: #151d2e !important;
+}
+.producao-g2-page.producao-g2-dark tbody td,
+.producao-g2-page.producao-g2-dark tbody td span {
+  color: #e5e7eb !important;
+}
+.producao-g2-page.producao-g2-dark .card p {
+  color: #9ca3af !important;
+}
+.producao-g2-page.producao-g2-dark .card p.text-2xl {
+  color: #e5e7eb !important;
+}
+.producao-g2-page.producao-g2-dark .card .text-primary-600 { color: #60a5fa !important; }
+.producao-g2-page.producao-g2-dark .card .text-amber-600 { color: #fbbf24 !important; }
+.producao-g2-page.producao-g2-dark .card .text-red-600 { color: #f87171 !important; }
+.producao-g2-page.producao-g2-dark .card .text-emerald-600 { color: #34d399 !important; }
+.producao-g2-page.producao-g2-dark tbody a,
+.producao-g2-page.producao-g2-dark tbody button {
+  color: #60a5fa !important;
+}
+.producao-g2-page.producao-g2-dark tbody a:hover,
+.producao-g2-page.producao-g2-dark tbody button:hover {
+  color: #93c5fd !important;
+}
+.producao-g2-page.producao-g2-dark tbody span[class*="bg-"] {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #e5e7eb !important;
+}
+.producao-g2-page.producao-g2-dark tbody span[class*="emerald"] {
+  background-color: rgba(16, 185, 129, 0.3) !important;
+  color: #34d399 !important;
+}
+.producao-g2-page.producao-g2-dark tbody span[class*="red"] {
+  background-color: rgba(239, 68, 68, 0.3) !important;
+  color: #f87171 !important;
+}
+.producao-g2-page.producao-g2-dark tbody span[class*="amber"] {
+  background-color: rgba(245, 158, 11, 0.3) !important;
+  color: #fbbf24 !important;
+}
 
 body {
   color: var(--foreground);
@@ -68,7 +151,7 @@ body {
   .production-form-area input,
   .production-form-area select,
   .production-form-area textarea {
-    @apply text-gray-900 dark:text-white border-gray-200 dark:border-white/20;
+    @apply text-gray-900 dark:text-white bg-white dark:bg-ads-dark-card border-gray-200 dark:border-white/20;
   }
   .production-form-area input::placeholder,
   .production-form-area textarea::placeholder {

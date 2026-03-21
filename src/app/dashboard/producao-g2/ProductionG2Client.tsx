@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
+import { useTheme } from '@/contexts/ThemeContext'
 
 const STATUS_LABELS: Record<string, string> = {
   PARA_CRIACAO: 'Para Criação',
@@ -58,6 +59,20 @@ type MetaEngine = {
 
 export function ProductionG2Client() {
   const { data: session } = useSession()
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
+
+  const darkStyles = {
+    metaCard: isDark ? { background: '#151d2e', borderColor: 'rgba(245, 158, 11, 0.5)', color: '#e5e7eb' } : {},
+    metaCardOk: isDark ? { background: '#151d2e', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#e5e7eb' } : {},
+    select: isDark ? { background: '#151d2e', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' } : {},
+    card: isDark ? { background: '#151d2e' } : {},
+    thead: isDark ? { background: 'rgba(21, 29, 46, 0.95)' } : {},
+    th: isDark ? { color: '#d1d5db' } : {},
+    td: isDark ? { color: '#e5e7eb' } : {},
+    muted: isDark ? { color: '#9ca3af' } : {},
+    accent: isDark ? { color: '#60a5fa' } : {},
+  }
   const canApprove = session?.user?.role === 'ADMIN' || session?.user?.role === 'FINANCE'
   const [items, setItems] = useState<Item[]>([])
   const [kpis, setKpis] = useState<Kpis | null>(null)
@@ -128,7 +143,7 @@ export function ProductionG2Client() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-ads-antracite">Produção Google G2</h1>
+        <h1 className="text-2xl font-bold" style={isDark ? { color: '#f3f4f6' } : {}}>Produção Google G2</h1>
         <Link
           href="/dashboard/producao-g2/nova"
           className="btn-primary"
@@ -139,44 +154,41 @@ export function ProductionG2Client() {
 
       {meta && (
         <div
-          className={`card border-2 transition-all duration-300 ${
+          className={`motor-meta-card rounded-xl border-2 p-5 shadow-ads transition-all duration-300 ${
             meta.metaEmRisco
               ? 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-orange-50/50'
-              : 'border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 to-teal-50/50'
+              : 'no-risco border-emerald-200/80 bg-gradient-to-br from-emerald-50/80 to-teal-50/50'
           }`}
+          style={meta.metaEmRisco ? darkStyles.metaCard : darkStyles.metaCardOk}
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-slate-800">
+            <h2 className="text-lg font-semibold" style={darkStyles.metaCard}>
               Motor de meta — {meta.metaEmRisco ? '⚠ Meta em risco' : '✓ No ritmo'}
             </h2>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-primary-600">{meta.producaoAtual}</span>
-              <span className="text-slate-500">/ {meta.metaMaxima}</span>
-              <span className="text-sm font-medium text-slate-600">({meta.percentual}%)</span>
+              <span className="text-2xl font-bold" style={isDark ? { color: '#60a5fa' } : {}}>{meta.producaoAtual}</span>
+              <span style={darkStyles.muted}>/ {meta.metaMaxima}</span>
+              <span className="text-sm font-medium" style={darkStyles.muted}>({meta.percentual}%)</span>
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 text-sm">
             <div>
-              <p className="text-slate-500">Projeção do mês</p>
-              <p className="font-semibold text-slate-800">{meta.projecao}</p>
+              <p style={darkStyles.muted}>Projeção do mês</p>
+              <p className="font-semibold" style={darkStyles.metaCard}>{meta.projecao}</p>
             </div>
             <div>
-              <p className="text-slate-500">Ritmo médio/dia</p>
-              <p className="font-semibold text-slate-800">{meta.producaoDiariaMedia}</p>
+              <p style={darkStyles.muted}>Ritmo médio/dia</p>
+              <p className="font-semibold" style={darkStyles.metaCard}>{meta.producaoDiariaMedia}</p>
             </div>
             <div>
-              <p className="text-slate-500">Necessário/dia</p>
-              <p
-                className={`font-semibold ${
-                  meta.metaEmRisco ? 'text-amber-700' : 'text-slate-800'
-                }`}
-              >
+              <p style={darkStyles.muted}>Necessário/dia</p>
+              <p className="font-semibold" style={meta.metaEmRisco && isDark ? { color: '#fbbf24' } : darkStyles.metaCard}>
                 {meta.producaoDiariaNecessaria}
               </p>
             </div>
             <div>
-              <p className="text-slate-500">Dias restantes</p>
-              <p className="font-semibold text-slate-800">{meta.diasRestantes}</p>
+              <p style={darkStyles.muted}>Dias restantes</p>
+              <p className="font-semibold" style={darkStyles.metaCard}>{meta.diasRestantes}</p>
             </div>
           </div>
         </div>
@@ -184,30 +196,19 @@ export function ProductionG2Client() {
 
       {kpis && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className="card">
-            <p className="text-sm text-slate-600">Produzido hoje</p>
-            <p className="text-2xl font-bold text-primary-600">{kpis.totalToday}</p>
-          </div>
-          <div className="card">
-            <p className="text-sm text-slate-600">Produzido no mês</p>
-            <p className="text-2xl font-bold text-primary-600">{kpis.totalMonth}</p>
-          </div>
-          <div className="card">
-            <p className="text-sm text-slate-600">Em revisão</p>
-            <p className="text-2xl font-bold text-amber-600">{kpis.inReview}</p>
-          </div>
-          <div className="card">
-            <p className="text-sm text-slate-600">Reprovadas</p>
-            <p className="text-2xl font-bold text-red-600">{kpis.rejected}</p>
-          </div>
-          <div className="card">
-            <p className="text-sm text-slate-600">Aprovadas</p>
-            <p className="text-2xl font-bold text-emerald-600">{kpis.approved}</p>
-          </div>
-          <div className="card">
-            <p className="text-sm text-slate-600">Taxa aprovação</p>
-            <p className="text-2xl font-bold text-primary-600">{kpis.approvalRate}%</p>
-          </div>
+          {[
+            { label: 'Produzido hoje', value: kpis.totalToday, color: '#60a5fa' },
+            { label: 'Produzido no mês', value: kpis.totalMonth, color: '#60a5fa' },
+            { label: 'Em revisão', value: kpis.inReview, color: '#fbbf24' },
+            { label: 'Reprovadas', value: kpis.rejected, color: '#f87171' },
+            { label: 'Aprovadas', value: kpis.approved, color: '#34d399' },
+            { label: 'Taxa aprovação', value: `${kpis.approvalRate}%`, color: '#60a5fa' },
+          ].map((k) => (
+            <div key={k.label} className="card" style={darkStyles.card}>
+              <p className="text-sm" style={darkStyles.muted}>{k.label}</p>
+              <p className="text-2xl font-bold" style={isDark ? { color: k.color } : {}}>{k.value}</p>
+            </div>
+          ))}
         </div>
       )}
 
@@ -215,7 +216,8 @@ export function ProductionG2Client() {
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded border-gray-300 text-sm"
+          className="rounded-lg border px-4 py-2 text-sm w-auto min-w-[140px] focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 outline-none"
+          style={darkStyles.select}
         >
           <option value="">Todos os status</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => (
@@ -225,7 +227,8 @@ export function ProductionG2Client() {
         <select
           value={filterCurrency}
           onChange={(e) => setFilterCurrency(e.target.value)}
-          className="rounded border-gray-300 text-sm"
+          className="rounded-lg border px-4 py-2 text-sm w-auto min-w-[140px] focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 outline-none"
+          style={darkStyles.select}
         >
           <option value="">Todas as moedas</option>
           <option value="BRL">BRL</option>
@@ -233,60 +236,55 @@ export function ProductionG2Client() {
         </select>
       </div>
 
-      <div className="card overflow-hidden p-0 rounded-2xl">
+      <div className="card overflow-hidden p-0 rounded-2xl" style={darkStyles.card}>
         {loading ? (
-          <div className="p-8 text-center text-slate-500">Carregando...</div>
+          <div className="p-8 text-center" style={darkStyles.muted}>Carregando...</div>
         ) : items.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">Nenhum registro encontrado</div>
+          <div className="p-8 text-center" style={darkStyles.muted}>Nenhum registro encontrado</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-200" style={darkStyles.thead}>
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Código</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Tarefa</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Responsável</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Status</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Criado em</th>
-                  <th className="text-right px-4 py-3 text-sm font-medium text-slate-600">Ações</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={darkStyles.th}>Código</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={darkStyles.th}>Tarefa</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={darkStyles.th}>Responsável</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={darkStyles.th}>Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium" style={darkStyles.th}>Criado em</th>
+                  <th className="text-right px-4 py-3 text-sm font-medium" style={darkStyles.th}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id} className="border-b border-gray-100 hover:bg-primary-50/30 transition-colors">
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" style={darkStyles.td}>
                       <Link
                         href={`/dashboard/producao-g2/${item.id}`}
-                        className="text-primary-600 hover:underline font-mono text-sm"
+                        className="hover:underline font-mono text-sm"
+                        style={darkStyles.accent}
                       >
                         {item.codeG2}
                       </Link>
-                      <span className="text-xs text-slate-400 block">{item.itemId}</span>
+                      <span className="text-xs block" style={darkStyles.muted}>{item.itemId}</span>
                     </td>
-                    <td className="px-4 py-3 text-sm">{item.taskName}</td>
-                    <td className="px-4 py-3 text-sm">{item.creator?.name || '-'}</td>
+                    <td className="px-4 py-3 text-sm" style={darkStyles.td}>{item.taskName}</td>
+                    <td className="px-4 py-3 text-sm" style={darkStyles.td}>{item.creator?.name || '-'}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                          item.status === 'APROVADA' || item.status === 'ENVIADA_ESTOQUE'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : item.status === 'REPROVADA'
-                              ? 'bg-red-100 text-red-700'
-                              : item.status === 'EM_REVISAO'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-gray-100 text-gray-700'
-                        }`}
+                        className="inline-flex px-2 py-0.5 rounded text-xs font-medium"
+                        style={isDark ? (item.status === 'APROVADA' || item.status === 'ENVIADA_ESTOQUE' ? { background: 'rgba(16,185,129,0.3)', color: '#34d399' } : item.status === 'REPROVADA' ? { background: 'rgba(239,68,68,0.3)', color: '#f87171' } : item.status === 'EM_REVISAO' ? { background: 'rgba(245,158,11,0.3)', color: '#fbbf24' } : { background: 'rgba(255,255,255,0.1)', color: '#e5e7eb' }) : {}}
                       >
                         {STATUS_LABELS[item.status] || item.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-600">
+                    <td className="px-4 py-3 text-sm" style={darkStyles.td}>
                       {new Date(item.createdAt).toLocaleDateString('pt-BR')}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/dashboard/producao-g2/${item.id}`}
-                        className="text-primary-600 hover:underline text-sm mr-2"
+                        className="hover:underline text-sm mr-2"
+                        style={darkStyles.accent}
                       >
                         Ver
                       </Link>
@@ -294,13 +292,15 @@ export function ProductionG2Client() {
                         <>
                           <button
                             onClick={() => handleApprove(item.id)}
-                            className="text-emerald-600 hover:underline text-sm mr-2"
+                            className="hover:underline text-sm mr-2"
+                            style={darkStyles.accent}
                           >
                             Aprovar
                           </button>
                           <button
                             onClick={() => handleReject(item.id)}
-                            className="text-red-600 hover:underline text-sm mr-2"
+                            className="hover:underline text-sm mr-2"
+                            style={isDark ? { color: '#f87171' } : {}}
                           >
                             Reprovar
                           </button>
@@ -309,7 +309,8 @@ export function ProductionG2Client() {
                       {canApprove && item.status === 'APROVADA' && !item.stockAccountId && (
                         <button
                           onClick={() => handleSendToStock(item.id)}
-                          className="text-primary-600 hover:underline text-sm"
+                          className="hover:underline text-sm"
+                          style={darkStyles.accent}
                         >
                           Enviar p/ Estoque
                         </button>
