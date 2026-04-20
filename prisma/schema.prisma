@@ -44,8 +44,12 @@ model User {
   name          String?
   phone         String?
   photo         String?
+  /// Preferência de idioma (UI): pt-BR | en-US | es — i18n área cliente
+  languageCode  String    @default("pt-BR") @map("language_code") @db.VarChar(12)
   role          Role      @default(CLIENT)
   emailVerified DateTime? @map("email_verified")
+  /// Último login (credenciais) — follow-up comercial pós-compra Tintim
+  lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -85,18 +89,44 @@ model User {
   productionG2Validated       ProductionG2[]      @relation("ProductionG2ValidatedBy")
   accountArchiveBatches      AccountArchiveBatch[]
   productionAlerts           ProductionAlert[]
+  g2ManagerFeedbackReceived  G2ManagerFeedback[] @relation("G2FeedbackTarget")
+  g2ManagerFeedbackAuthored  G2ManagerFeedback[] @relation("G2FeedbackAuthor")
   documentAssetsUploaded     DocumentAsset[]
   onboardingMeetingsCreated  OnboardingMeeting[] @relation("OnboardingMeetingCreator")
   onboardingParticipations   OnboardingParticipant[]
   sellerCommercialScores     SellerCommercialScore[]
   operatorScores             OperatorScore[]
   suggestions                Suggestion[]
+  commercialLeadsAssigned    CommercialLead[] @relation("CommercialLeadAssignee")
+  intelligenceLeadsAssigned  IntelligenceLead[] @relation("IntelligenceLeadAssignee")
+  commercialContactLogs    CommercialContactLog[]
+  chargebacksAuthored      ChargebackRecord[]       @relation("ChargebackCreatedBy")
+  producerVaultCycles      ProducerVaultCycle[]
+  adsRefundRequests        AdsRefundRequest[]
+  domainProvisionBatches   DomainProvisionBatch[]
+  rmaMessages              RmaMessage[]
+  rmaAssigned              AccountReplacementRequest[] @relation("RmaAssignedTo")
+  clientsAsAccountManager  ClientProfile[] @relation("ClientAccountManager")
+  clientTechnicalNotesAuthored ClientTechnicalNote[]
+
+  adsCoreAssetsCreated     AdsCoreAsset[] @relation("AdsCoreAssetCreatedBy")
+  adsCoreAssetsAsProducer  AdsCoreAsset[] @relation("AdsCoreAssetProducer")
+  adsCoreAssetsAsAdmin     AdsCoreAsset[] @relation("AdsCoreAssetAdmin")
+  /// Nichos ADS CORE em que o produtor pode receber atribuições (vazio no nicho = todos os produtores)
+  adsCoreProducerNiches    AdsCoreProducerNiche[] @relation("AdsCoreProducerNicheProducer")
+  trafficShieldIpBlocks    TrafficShieldIpBlock[]
+  warRoomLiveMessages      WarRoomLiveMessage[]
+  commercialDataAuditLogs  CommercialDataAuditLog[]
+
+  @@index([phone])
 }
 
 model ProducerProfile {
   id     String @id @default(cuid())
   userId String @unique @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Chave PIX para pagamento de saques (cadastro pelo produtor)
+  pixKey String? @map("pix_key") @db.VarChar(120)
 }
 
 model DelivererProfile {
@@ -113,6 +143,10 @@ model ClientProfile {
   whatsapp              String?
   notifyEmail           Boolean               @default(true) @map("notify_email")
   notifyWhatsapp        Boolean               @default(true) @map("notify_whatsapp")
+  /// Google Tag Manager (container por cliente — atribuição / conversões)
+  gtmId                 String?               @map("gtm_id") @db.VarChar(32)
+  /// Texto do nicho para mensagem do widget WhatsApp / Join.Chat (sites e ERP)
+  widgetNiche           String?               @map("widget_niche") @db.VarChar(200)
   lastPurchaseAt        DateTime?             @map("last_purchase_at")
   totalSpent            Decimal?              @map("total_spent") @db.Decimal(12, 2)
   totalAccountsBought   Int                   @default(0) @map("total_accounts_bought")
@@ -120,7 +154,7 @@ model ClientProfile {
   reputationScore       Int?                  @map("reputation_score")   // 0-100
   averageAccountLifetimeDays Float?           @map("average_account_lifetime_days") @db.Float
   refundCount           Int                   @default(0) @map("refund_count")
-  nicheTag              String?               @map("niche_tag") @db.VarChar(20)  // WHITE, BLACK, NUTRA, CASINO
+  nicheTag              ClientNicheTag?       @map("niche_tag")
   plugPlayErrorCount    Int                   @default(0) @map("plug_play_error_count")  // Garantia reversa: 3 erros = blacklist
   user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders                Order[]
@@ -137,6 +171,157 @@ model ClientProfile {
   landingBriefings     LandingBriefing[]
   landingPages         LandingPage[]
   landingDomains       LandingDomain[]
+  leadsFromFunnel      CommercialLead[] @relation("LeadToClient")
+  tintimLeadEvents     TintimLeadEvent[]
+
+  /// CRM ROI — status comercial para remarketing
+  roiCrmStatus           String    @default("ATIVO") @map("roi_crm_status") @db.VarChar(20)
+  /// Última campanha atribuída (ex.: TinTim / UTM)
+  roiAttributionCampaign String?   @map("roi_attribution_campaign") @db.VarChar(300)
+  roiLastAttributionAt   DateTime? @map("roi_last_attribution_at")
+  /// Notas internas do comercial (preferências, follow-up)
+  commercialNotes       String?   @map("commercial_notes") @db.Text
+  lastContactDate       DateTime? @map("last_contact_date")
+  commercialContactLogs CommercialContactLog[]
+  walletLedger          ClientWalletLedger[]
+  domainProvisionBatches DomainProvisionBatch[]
+  accountReplacementRequests AccountReplacementRequest[]
+  /// Scripts UTMify/Redtrack replicados em landers (ecossistema)
+  globalTrackingScript  String?  @map("global_tracking_script") @db.Text
+  /// Rodapé sugerido (CNPJ/políticas) — compliance
+  complianceFooterDefault String? @map("compliance_footer_default") @db.Text
+  /// Origem atribuída (Meta / Google / orgânico) — webhook Tintim & UTM
+  leadAcquisitionSource   String?  @map("lead_acquisition_source") @db.VarChar(24)
+  /// True até o cliente fazer primeiro login após compra Tintim (alerta comercial 24h)
+  tintimFollowupPending   Boolean  @default(false) @map("tintim_followup_pending")
+  /// CNPJ / Tax ID / EIN (Brasil ou internacional)
+  taxId                   String?  @map("tax_id") @db.VarChar(32)
+  companyName             String?  @map("company_name") @db.VarChar(200)
+  jobTitle                String?  @map("job_title") @db.VarChar(120)
+  telegramUsername        String?  @map("telegram_username") @db.VarChar(64)
+  timezone                String?  @map("timezone") @db.VarChar(64)
+  /// E-mail AdsPower / chave de transferência de perfis
+  adsPowerEmail           String?  @map("adspower_email") @db.VarChar(150)
+  /// Nicho principal de operação (Black, Health, iGaming, White, etc.)
+  operationNiche          String?  @map("operation_niche") @db.VarChar(48)
+  /// 1–5 — experiência / confiança operacional (interno + comercial)
+  trustLevelStars         Int?     @map("trust_level_stars")
+  preferredCurrency       String   @default("BRL") @map("preferred_currency") @db.VarChar(8)
+  preferredPaymentMethod  String?  @map("preferred_payment_method") @db.VarChar(32)
+  accountManagerId        String?  @map("account_manager_id")
+  accountManager          User?    @relation("ClientAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
+  /// Histórico técnico suporte (proxies, BMs, padrões) — visível só admin/comercial
+  technicalSupportNotes   String?  @map("technical_support_notes") @db.Text
+  clientStatus            String   @default("ATIVO") @map("client_status") @db.VarChar(20)
+  technicalNoteEntries    ClientTechnicalNote[]
+  /// Ads Ativos — UNIs expostas na War Room do mentorado (atribuídas por admin/comercial).
+  mentoradoUniAccesses    ClientMentoradoUniAccess[]
+  /// Módulo 03 — Creative Vault & agência on-demand
+  creativeAgencyJobs         CreativeAgencyJob[]
+  creativeAdMetricsEntries   CreativeAdMetricsEntry[]
+  clienteVslWatches          ClienteVslWatch[]
+  vslAdjustmentRequests      VslAdjustmentRequest[]
+  /// Módulo 04 — Shield & Tracker (links blindados / pay + postback)
+  mentoradoShieldTrackerLinks MentoradoShieldTrackerLink[]
+  /// Módulo 05 — pré-flight de campanha (War Room Live)
+  campaignPreflightReviews    CampaignPreflightReview[]
+  /// Módulo 07 — Live Proof Labs (réplicas de ofertas validadas)
+  liveProofLabReplicates      LiveProofLabReplicateLog[]
+  liveProofTemplateUnlocks    LiveProofLabTemplateUnlock[]
+  /// Welcome Experience — modal de onboarding até "Finalizar setup" (equivalente a first_login)
+  welcomeOnboardingPending    Boolean  @default(true) @map("welcome_onboarding_pending")
+  /// Gamificação — patente e lucro em cache (atualizados na API summary)
+  gamificationRankCached             String?   @map("gamification_rank_cached") @db.VarChar(32)
+  gamificationTotalNetProfitBrl      Decimal?  @map("gamification_total_net_profit_brl") @db.Decimal(14, 2)
+  /// Última patente para a qual o mentorado já viu animação "level up" (evita repetir)
+  gamificationLastCelebratedRank     String?   @map("gamification_last_celebrated_rank") @db.VarChar(32)
+  gamificationRedemptions     ClientGamificationRedemption[]
+  /// 0–100 — qualidade / risco (antifraude, histórico)
+  trustScore            Int?     @map("trust_score")
+  /// Ticket médio (pedidos pagos)
+  averageTicketBrl      Decimal? @map("average_ticket_brl") @db.Decimal(12, 2)
+  /// Próxima oferta sugerida (upsell / motor comercial)
+  nextBestOfferSlug     String?  @map("next_best_offer_slug") @db.VarChar(120)
+  /// Hash do último IP visto (login / checkout) — não armazenamos IP em claro
+  lastSeenIpHash        String?  @map("last_seen_ip_hash") @db.VarChar(64)
+  /// Bloqueio automático de nova compra até revisão manual
+  riskBlockCheckout     Boolean  @default(false) @map("risk_block_checkout")
+  riskBlockReason       String?  @map("risk_block_reason") @db.VarChar(500)
+
+  @@index([whatsapp])
+  @@index([accountManagerId])
+  @@index([trustScore])
+  @@index([riskBlockCheckout])
+}
+
+/// Hall de patentes — pedidos de resgate de recompensas (logística comercial)
+model ClientGamificationRedemption {
+  id           String        @id @default(cuid())
+  clientId     String        @map("client_id")
+  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  rewardKey    String        @map("reward_key") @db.VarChar(80)
+  requestedAt  DateTime      @default(now()) @map("requested_at")
+  fulfilledAt  DateTime?     @map("fulfilled_at")
+  /// Endereço e contacto para envio físico (JSON)
+  shippingPayload Json?     @map("shipping_payload")
+
+  @@unique([clientId, rewardKey])
+  @@index([rewardKey])
+  @@map("client_gamification_redemptions")
+}
+
+/// Mentorado Ads Ativos — ligação explícita cliente ↔ UNI (permissões War Room).
+model ClientMentoradoUniAccess {
+  id        String   @id @default(cuid())
+  clientId  String   @map("client_id")
+  client    ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  uniId     String   @map("uni_id") @db.Char(36)
+  uni       VaultIndustrialUnit @relation(fields: [uniId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([clientId, uniId])
+  @@index([uniId])
+  @@map("client_mentorado_uni_access")
+}
+
+/// Histórico append-only — proxies, BMs, padrões de queda (War Room / suporte)
+model ClientTechnicalNote {
+  id        String        @id @default(cuid())
+  clientId  String        @map("client_id")
+  client    ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  authorId  String        @map("author_id")
+  author    User          @relation(fields: [authorId], references: [id])
+  body      String        @db.Text
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([clientId, createdAt])
+  @@map("client_technical_notes")
+}
+
+enum ClientNicheTag {
+  WHITE
+  BLACK
+  NUTRA
+  CASINO
+}
+
+/// Módulo 03 — Creative Vault: nicho do criativo de referência
+enum CreativeVaultNiche {
+  SAUDE
+  FINANCEIRO
+  BLACK
+  ECOMMERCE
+  IGAMING
+  EDUCACAO
+  GERAL
+}
+
+/// Kanban agência interna — personalização de criativos
+enum CreativeAgencyJobStatus {
+  FILA
+  PRODUCAO
+  REVISAO
+  ENTREGUE
 }
 
 // ============ FÁBRICA DE LANDING PAGES & ADS ============
@@ -173,6 +358,9 @@ model LandingBriefing {
   dor              String?  @db.Text
   solucao          String?  @db.Text
   ofertaUnica      String?  @map("oferta_unica") @db.Text
+  templateMode     String   @default("WHITE") @map("template_mode") @db.VarChar(16)
+  vturbEmbed       String?  @map("vturb_embed") @db.Text
+  footerHtml       String?  @map("footer_html") @db.Text
   status           String   @default("DRAFT")    // DRAFT, GERADO, PUBLICADO
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
@@ -196,6 +384,10 @@ model LandingPage {
   conversionId String? @map("conversion_id") @db.VarChar(100)  // Google Ads
   conversionLabel String? @map("conversion_label") @db.VarChar(100)
   status      String   @default("GERADO")   // GERADO, PUBLICADO
+  templateMode String   @default("WHITE") @map("template_mode") @db.VarChar(16)
+  vturbEmbed   String?  @map("vturb_embed") @db.Text
+  footerHtml   String?  @map("footer_html") @db.Text
+  pageTrackingScript String? @map("page_tracking_script") @db.Text
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -213,6 +405,11 @@ model LandingDomain {
   domain          String   @unique @db.VarChar(253)
   cloudflareZoneId String? @map("cloudflare_zone_id") @db.VarChar(100)
   sslStatus       String   @default("PENDING") @map("ssl_status") @db.VarChar(20)
+  /// Blindagem Traffic Shield / proxy reverso (webhook Gerson)
+  shieldEnabled        Boolean   @default(false) @map("shield_enabled")
+  shieldRequestedAt    DateTime? @map("shield_requested_at")
+  shieldLastWebhookAt  DateTime? @map("shield_last_webhook_at")
+  shieldWebhookError   String?   @map("shield_webhook_error") @db.VarChar(500)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -239,6 +436,52 @@ model LandingDeployment {
   @@map("landing_deployments")
 }
 
+// ============ PROVISIONAMENTO DE DOMÍNIOS / LANDERS (MASSA) ============
+
+model DomainProvisionBatch {
+  id             String   @id @default(cuid())
+  createdById    String   @map("created_by_id")
+  createdBy      User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  targetServerIp String   @map("target_server_ip") @db.VarChar(45)
+  templateKey    String   @map("template_key") @db.VarChar(32)
+  metaPixelId    String?  @map("meta_pixel_id") @db.VarChar(64)
+  videoMasterKey String?  @map("video_master_key") @db.VarChar(120)
+  clientId       String?  @map("client_id")
+  client         ClientProfile? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  status         String   @default("QUEUED") @db.VarChar(20)
+  domainsRaw     String   @map("domains_raw") @db.Text
+  itemCount      Int      @default(0) @map("item_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  items DomainProvisionItem[]
+
+  @@index([createdById])
+  @@index([status, createdAt])
+  @@map("domain_provision_batches")
+}
+
+model DomainProvisionItem {
+  id               String   @id @default(cuid())
+  batchId          String   @map("batch_id")
+  batch            DomainProvisionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  domain           String   @db.VarChar(253)
+  registrarStatus  String   @default("PENDING") @map("registrar_status") @db.VarChar(20)
+  cloudflareStatus String   @default("PENDING") @map("cloudflare_status") @db.VarChar(20)
+  serverStatus     String   @default("PENDING") @map("server_status") @db.VarChar(20)
+  cloudflareZoneId String?  @map("cloudflare_zone_id") @db.VarChar(100)
+  videoVariantHash String?  @map("video_variant_hash") @db.VarChar(64)
+  publicUrl        String?  @map("public_url") @db.VarChar(500)
+  lastError        String?  @map("last_error") @db.Text
+  logs             String?  @map("logs") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([batchId, domain])
+  @@index([batchId])
+  @@map("domain_provision_items")
+}
+
 // Reunião de onboarding de cliente novo
 model OnboardingMeeting {
   id                   String    @id @default(cuid())
@@ -249,6 +492,8 @@ model OnboardingMeeting {
   scheduledAt          DateTime  @map("scheduled_at")
   durationMinutes      Int       @default(30) @map("duration_minutes")
   googleCalendarEventId String?  @map("google_calendar_event_id")
+  /// Link Google Meet retornado ao criar o evento (se conferência solicitada na API)
+  meetLink             String?   @map("meet_link") @db.VarChar(512)
   status               String    @default("SCHEDULED")  // SCHEDULED, COMPLETED, CANCELLED, RESCHEDULED
   createdById          String?   @map("created_by_id")
   createdBy            User?     @relation("OnboardingMeetingCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -286,8 +531,17 @@ model AccountSolicitation {
   accountType       String         @map("account_type")
   country           String?
   referenceOrderId  String?        @map("reference_order_id") // se baseado na última compra
-  status            String         @default("pending") // pending, in_progress, completed, cancelled
+  status            String         @default("pending") // pending, in_progress, provisioning, completed, cancelled
   notes             String?        @db.Text
+  /// Módulo 02 Armory: GOOGLE_ADS | META_ADS | TIKTOK_ADS
+  trafficSource     String?        @map("traffic_source") @db.VarChar(24)
+  /// BEGINNER | SCALE | BLACK
+  operationLevel    String?        @map("operation_level") @db.VarChar(24)
+  /// Checkout para preparar S2S / Tracker
+  checkoutUrl       String?        @map("checkout_url") @db.VarChar(2000)
+  /// LEGACY (solicitar contas) | ARMORY (Central de Ativos)
+  kind              String         @default("LEGACY") @map("kind") @db.VarChar(24)
+  expectedDeliveryAt DateTime?     @map("expected_delivery_at")
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
 
@@ -407,6 +661,7 @@ enum AccountPlatform {
 
 enum AccountStatus {
   PENDING
+  UNDER_REVIEW
   APPROVED
   REJECTED
   IN_USE
@@ -419,6 +674,9 @@ model ProductionAccount {
   id                  String         @id @default(cuid())
   platform            AccountPlatform
   type                String
+  /// Identificador operacional único (lista / PDF / referência interna)
+  accountCode         String?        @unique @map("account_code") @db.VarChar(120)
+  passwordHash        String?        @map("password_hash") @db.Text
   email               String?
   cnpj                String?
   countryId           String?        @map("country_id")
@@ -440,6 +698,13 @@ model ProductionAccount {
   siteUrl             String?        @map("site_url") @db.Text
   cnpjBizLink         String?        @map("cnpj_biz_link") @db.Text
   cnpjPdfUrl          String?        @map("cnpj_pdf_url") @db.Text // Path ou URL do PDF
+
+  // ADS CORE — nicho, meta de verificação, footprint
+  productionNiche     String         @default("OTHER") @map("production_niche") @db.VarChar(32)
+  verificationGoal    String         @default("G2_AND_ADVERTISER") @map("verification_goal") @db.VarChar(48)
+  primaryDomain       String?        @unique @map("primary_domain") @db.VarChar(253)
+  proxyNote           String?        @map("proxy_note") @db.VarChar(500)
+  proxyConfigured     Boolean        @default(false) @map("proxy_configured")
 
   // Referências aos dados consumidos (unicidade - nunca reutilizar)
   emailId             String?        @unique @map("email_id")
@@ -502,8 +767,21 @@ model StockAccount {
   markupPercent         Decimal?       @map("markup_percent") @db.Decimal(5, 2)
   description           String?        @db.Text
   deliveredAt           DateTime?      @map("delivered_at")
+  /// Chargeback / fraude: conta marcada para bloqueio operacional
+  compromisedAt         DateTime?      @map("compromised_at")
+  compromiseReason      String?        @map("compromise_reason") @db.VarChar(64)
   lastSpendSyncAt       DateTime?      @map("last_spend_sync_at")
+  /// Spend exibido na vitrine (moeda original USD/EUR) — fechamento continua em BRL (salePrice)
+  spentDisplayCurrency  String?        @map("spent_display_currency") @db.VarChar(8)
+  spentDisplayAmount    Decimal?       @map("spent_display_amount") @db.Decimal(14, 2)
+  /// Selo digital "Ativo Verificado Ads Ativos" (listagens / Telegram)
+  adsAtivosVerified     Boolean        @default(true) @map("ads_ativos_verified")
   isPlugPlay            Boolean        @default(false) @map("is_plug_play") // G2 + 1ª campanha White aprovada
+  /// UNI operacional (Módulo 02 — mentorado); preenchido pela equipa na entrega quando aplicável.
+  mentoradoLinkedUniId  String?        @map("mentorado_linked_uni_id") @db.Char(36)
+  mentoradoLinkedUni    VaultIndustrialUnit? @relation("StockAccountMentoradoUni", fields: [mentoradoLinkedUniId], references: [id], onDelete: SetNull)
+  /// Log de aquecimento exibido ao mentorado (JSON array de { t, msg }).
+  mentoradoWarmupLogJson Json?       @map("mentorado_warmup_log_json")
   productionAccount     ProductionAccount?
   productionG2          ProductionG2?
   credential            StockAccountCredential?  // Credenciais de importação (quando não vem de ProductionG2)
@@ -517,11 +795,21 @@ model StockAccount {
   quotations         Quotation[]
   spendLogs          AccountSpendLog[]
   contestationTickets ContestationTicket[]
+  rmaAsOriginal       AccountReplacementRequest[] @relation("RmaOriginalAccount")
+  rmaAsReplacement    AccountReplacementRequest[] @relation("RmaReplacementAccount")
   rentedPhones        RentedPhoneNumber[]
+  syntheticConversionIntents SyntheticConversionIntent[]
+  complianceRiskScore     Int?      @map("compliance_risk_score")
+  complianceScannedAt     DateTime? @map("compliance_scanned_at")
+  complianceScanSummary   Json?     @map("compliance_scan_summary")
+  /// Conferência admin em ofertas de gestor (checklist, notas). Não misturar com compliance de Ads Core.
+  offerReviewMeta         Json?     @map("offer_review_meta")
+  complianceHistories     ComplianceHistory[]
 
   @@index([status, platform, countryId])
   @@index([clientId])
   @@index([managerId])
+  @@index([mentoradoLinkedUniId])
   @@index([archivedAt])
   @@index([source])
   @@index([deletedAt])
@@ -618,6 +906,7 @@ model AccountSpendLog {
   costMicros    BigInt       @map("cost_micros") // cost em micros (÷ 1_000_000)
   impressions   Int          @default(0)
   clicks        Int          @default(0)
+  conversions   Int          @default(0) @map("conversions")
   currencyCode  String?      @map("currency_code")
   syncedAt      DateTime     @default(now()) @map("synced_at")
   createdAt     DateTime     @default(now()) @map("created_at")
@@ -667,6 +956,72 @@ model ContestationTicket {
   @@map("contestation_tickets")
 }
 
+/// RMA Plug & Play — reposição de conta (tb_reposicoes)
+enum AccountRmaStatus {
+  EM_ANALISE
+  EM_REPOSICAO
+  CONCLUIDO
+  NEGADO_TERMO
+}
+
+enum AccountRmaReason {
+  ERRO_CONFIGURACAO
+  FALHA_ATIVACAO
+  SUSPENSAO_IMEDIATA
+  LOGIN_INVALIDO
+  CHECKPOINT_BLOCK
+  BAN_IMMEDIATE
+  PROXY_ERROR
+  OUTRO
+}
+
+model AccountReplacementRequest {
+  id                   String           @id @default(cuid())
+  clientId             String           @map("client_id")
+  client               ClientProfile    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Venda de origem (garantia / rastreio)
+  orderId              String?          @map("order_id")
+  order                Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  originalAccountId    String           @map("id_conta_original")
+  originalAccount      StockAccount     @relation("RmaOriginalAccount", fields: [originalAccountId], references: [id])
+  replacementAccountId String?          @map("id_nova_conta")
+  replacementAccount   StockAccount?    @relation("RmaReplacementAccount", fields: [replacementAccountId], references: [id])
+  reason               AccountRmaReason   @map("motivo_id")
+  reasonDetail         String?          @db.Text
+  evidenceUrls         Json?            @map("evidencia_url")
+  additionalComments   String?          @map("comentarios") @db.Text
+  status               AccountRmaStatus   @default(EM_ANALISE)
+  openedAt             DateTime         @default(now()) @map("opened_at")
+  resolvedAt           DateTime?        @map("resolved_at")
+  resolutionMinutes    Int?             @map("tempo_resolucao")
+  assignedToId         String?          @map("assigned_to_id")
+  assignedTo           User?            @relation("RmaAssignedTo", fields: [assignedToId], references: [id])
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  messages RmaMessage[]
+
+  @@index([clientId])
+  @@index([originalAccountId])
+  @@index([orderId])
+  @@index([status, openedAt])
+  @@map("tb_reposicoes")
+}
+
+model RmaMessage {
+  id           String                    @id @default(cuid())
+  rmaId        String                    @map("reposicao_id")
+  rma          AccountReplacementRequest @relation(fields: [rmaId], references: [id], onDelete: Cascade)
+  userId       String                    @map("user_id")
+  user         User                      @relation(fields: [userId], references: [id])
+  body         String                    @db.Text
+  internalOnly Boolean                   @default(false) @map("internal_only")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+
+  @@index([rmaId, createdAt])
+  @@map("tb_reposicoes_mensagens")
+}
+
 // Ticket de suporte - área do cliente
 model SupportTicket {
   id          String   @id @default(cuid())
@@ -686,10 +1041,171 @@ model SupportTicket {
 
   serviceOrder ServiceOrder?
 
+  creativeAgencyJob    CreativeAgencyJob?
+  vslAdjustmentRequest VslAdjustmentRequest?
+  campaignPreflightReview CampaignPreflightReview?
+
   @@index([clientId])
   @@index([status])
   @@index([ticketNumber])
   @@map("support_tickets")
+}
+
+/// Módulo 05 — revisão de campanha antes do play (checklist do especialista)
+enum CampaignPreflightStatus {
+  SUBMITTED
+  IN_ANALYSIS
+  COMPLETED
+}
+
+model CampaignPreflightReview {
+  id            String                  @id @default(cuid())
+  clientId      String                  @map("client_id")
+  client        ClientProfile           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaignUrl   String                  @map("campaign_url") @db.VarChar(2000)
+  notes         String?                 @db.Text
+  status        CampaignPreflightStatus @default(SUBMITTED)
+  checklistJson Json?                   @map("checklist_json")
+  analystNotes  String?                 @map("analyst_notes") @db.Text
+  ticketId      String?                 @unique @map("ticket_id")
+  ticket        SupportTicket?          @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+
+  @@index([clientId, status])
+  @@map("campaign_preflight_reviews")
+}
+
+/// Chat ao vivo da War Room (sala partilhada entre mentorados)
+model WarRoomLiveMessage {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String   @db.VarChar(2000)
+  kind      String   @default("chat") @db.VarChar(24)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("war_room_live_messages")
+}
+
+/// Biblioteca de criativos validados (admin) — mentorado solicita versão personalizada
+model CreativeVaultTemplate {
+  id               String             @id @default(cuid())
+  slug             String             @unique @db.VarChar(96)
+  niche            CreativeVaultNiche @default(GERAL)
+  title            String             @db.VarChar(200)
+  description      String?            @db.Text
+  previewVideoUrl  String             @map("preview_video_url") @db.VarChar(2000)
+  thumbnailUrl     String?            @map("thumbnail_url") @db.VarChar(2000)
+  /// Etiqueta ROI exibida (ex.: ROI 120% — 24h Ads Ativos)
+  roiLabel         String             @map("roi_label") @db.VarChar(320)
+  /// Roteiro / copy — biblioteca de scripts
+  scriptCopy       String?            @map("script_copy") @db.Text
+  published        Boolean            @default(true)
+  sortOrder        Int                @default(0) @map("sort_order")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  jobs                     CreativeAgencyJob[]
+  liveProofCases           LiveProofLabCase[]
+  liveProofTemplateUnlocks LiveProofLabTemplateUnlock[]
+
+  @@index([niche, published, sortOrder])
+  @@map("creative_vault_templates")
+}
+
+/// Pedido de edição personalizada + workflow Kanban
+model CreativeAgencyJob {
+  id          String                  @id @default(cuid())
+  clientId    String                  @map("client_id")
+  client      ClientProfile           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  templateId  String                  @map("template_id")
+  template    CreativeVaultTemplate   @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  status      CreativeAgencyJobStatus @default(FILA)
+  checkoutUrl String                  @map("checkout_url") @db.VarChar(2000)
+  logoUrl     String?                 @map("logo_url") @db.VarChar(2000)
+  hookNotes   String?                 @map("hook_notes") @db.Text
+  iterationNumber Int                 @default(1) @map("iteration_number")
+  parentJobId String?                 @map("parent_job_id")
+  parentJob   CreativeAgencyJob?      @relation("CreativeJobChain", fields: [parentJobId], references: [id], onDelete: SetNull)
+  childJobs   CreativeAgencyJob[]     @relation("CreativeJobChain")
+  /// Primeiro job da cadeia (para histórico de iterações)
+  iterationRootId String?             @map("iteration_root_id")
+  iterationRoot CreativeAgencyJob?    @relation("CreativeJobIterationRoot", fields: [iterationRootId], references: [id], onDelete: SetNull)
+  sameRootJobs  CreativeAgencyJob[]   @relation("CreativeJobIterationRoot")
+  deliverableUrl String?              @map("deliverable_url") @db.VarChar(2000)
+  /// Processo Unique Hash / limpeza de metadados antes da entrega
+  uniqueMetadataHashDone Boolean      @default(false) @map("unique_metadata_hash_done")
+  /// CTR % registrado na entrega (para narrativa Versão 1 → Versão 2)
+  ctrSnapshotAtDelivery Decimal?      @map("ctr_snapshot_at_delivery") @db.Decimal(10, 4)
+  ticketId    String?                 @unique @map("support_ticket_id")
+  ticket      SupportTicket?          @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  createdAt   DateTime                @default(now()) @map("created_at")
+  updatedAt   DateTime                @updatedAt @map("updated_at")
+
+  metricsEntries           CreativeAdMetricsEntry[]
+  liveProofReplicateLogs   LiveProofLabReplicateLog[]
+
+  @@index([clientId, status])
+  @@index([templateId])
+  @@index([iterationRootId])
+  @@map("creative_agency_jobs")
+}
+
+/// Métricas diárias inseridas pelo mentorado (diagnóstico CTR / ROI)
+model CreativeAdMetricsEntry {
+  id          String   @id @default(cuid())
+  clientId    String   @map("client_id")
+  client      ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  jobId       String?  @map("job_id")
+  job         CreativeAgencyJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  metricDate  DateTime @map("metric_date") @db.Date
+  spend       Decimal  @db.Decimal(14, 2)
+  clicks      Int
+  ctrPercent  Decimal  @map("ctr_percent") @db.Decimal(10, 4)
+  cpc         Decimal  @db.Decimal(14, 4)
+  sales       Decimal  @db.Decimal(14, 2)
+  label       String?  @db.VarChar(160)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([clientId, metricDate])
+  @@index([jobId])
+  @@map("creative_ad_metrics_entries")
+}
+
+/// VSL Analytics — link da VSL e ponto de drop-off reportado
+model ClienteVslWatch {
+  id              String   @id @default(cuid())
+  clientId        String   @map("client_id")
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  vslUrl          String   @map("vsl_url") @db.VarChar(2000)
+  dropOffSeconds  Int?     @map("drop_off_seconds")
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  adjustments VslAdjustmentRequest[]
+
+  @@index([clientId])
+  @@map("cliente_vsl_watch")
+}
+
+/// Pedido de ajuste de VSL com timestamp — gera ticket para edição
+model VslAdjustmentRequest {
+  id               String   @id @default(cuid())
+  clientId         String   @map("client_id")
+  client           ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  vslWatchId       String   @map("vsl_watch_id")
+  vslWatch         ClienteVslWatch @relation(fields: [vslWatchId], references: [id], onDelete: Cascade)
+  dropOffSeconds   Int      @map("drop_off_seconds")
+  notes            String?  @db.Text
+  ticketId         String?  @unique @map("support_ticket_id")
+  ticket           SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([clientId])
+  @@map("vsl_adjustment_requests")
 }
 
 // Ordem de serviço - vinculada a ticket ou criada diretamente
@@ -718,11 +1234,15 @@ model ServiceOrder {
 }
 
 model Supplier {
-  id          String   @id @default(cuid())
-  name        String
-  contact     String?
-  notes       String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
+  id                String   @id @default(cuid())
+  name              String
+  contact           String?
+  /// CPF/CNPJ (apenas dígitos ou com máscara; exibido só a ADMIN/MANAGER na API completa)
+  taxId             String?  @map("tax_id") @db.VarChar(32)
+  /// Chave PIX cifrada em repouso (ver @/lib/encryption)
+  pixKeyEncrypted   String?  @map("pix_key_encrypted") @db.Text
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now()) @map("created_at")
   accounts    StockAccount[]
   emailBatches EmailBatch[]
   emails     Email[]
@@ -862,8 +1382,37 @@ model Order {
   seller      User?       @relation("OrderSeller", fields: [sellerId], references: [id])
   pixKey      String?     @map("pix_key")
   pixQrCode   String?     @map("pix_qr_code") @db.Text
+  interPixTxid String?    @unique @map("inter_pix_txid") @db.VarChar(120)
+  interPixCopiaECola String? @map("inter_pix_copia_e_cola") @db.Text
   paymentDueAt DateTime? @map("payment_due_at")
   paidAt      DateTime?  @map("paid_at")
+  /// Marcação única do bridge comercial (produção / P&amp;P / Telegram)
+  commercialBridgeAt DateTime? @map("commercial_bridge_at")
+  /// Markup comercial registrado (BRL) — opcional
+  markupBrl   Decimal?   @map("markup_brl") @db.Decimal(12, 2)
+  /// Cupom ou regra aplicada (ex.: AUTO_LOTE, código promocional)
+  discountCode String?   @map("discount_code") @db.VarChar(64)
+  /// Origem do pedido: MANUAL, TINTIM, COMMERCIAL, etc.
+  orderSource  String    @default("MANUAL") @map("order_source") @db.VarChar(32)
+  /// ID externo (ex.: venda Tintim)
+  externalRef  String?   @map("external_ref") @db.VarChar(120)
+  /// ADSPOWER_SHARE | SPREADSHEET | ERP_DIRECT
+  deliveryMethod String?  @map("delivery_method") @db.VarChar(32)
+  unitValue     Decimal?  @map("unit_value") @db.Decimal(12, 2)
+  /// Câmbio BRL→USD no fechamento (matriz EUA / conciliação)
+  fxRateBrlToUsd Decimal? @map("fx_rate_brl_usd") @db.Decimal(18, 8)
+  /// BANK_TRANSFER | STRIPE | CRYPTO | LEAD_BANK | PIX | OUTRO
+  paymentMethod String?  @map("payment_method") @db.VarChar(32)
+  paymentReferenceMemo String? @map("payment_reference_memo") @db.VarChar(120)
+  documentationUrl String? @map("documentation_url") @db.VarChar(500)
+  /// Nicho declarado na venda (Black Hat, Health, iGaming…)
+  saleUseNiche  String?  @map("sale_use_niche") @db.VarChar(48)
+  /// Prazo de garantia em horas (24 / 48 / 168…)
+  warrantyHours Int      @default(48) @map("warranty_hours")
+  /// Calculado na confirmação do pagamento
+  warrantyEndsAt DateTime? @map("warranty_ends_at")
+  /// IDs externos colados na venda (Ads, BM, AdsPower) — JSON string[]
+  deliveredAssetIdsJson Json? @map("delivered_asset_ids_json")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
@@ -871,6 +1420,8 @@ model Order {
   delivery    Delivery?
   deliveryGroups DeliveryGroup[]
   financialEntries FinancialEntry[]
+  chargebacks ChargebackRecord[]
+  replacementRequests AccountReplacementRequest[]
 
   @@index([clientId, status])
   @@index([paidAt])
@@ -885,6 +1436,11 @@ model OrderItem {
   accountId String      @map("account_id")
   account   StockAccount @relation(fields: [accountId], references: [id])
   quantity  Int         @default(1)
+  deliveryProxyIp String? @map("delivery_proxy_ip") @db.VarChar(64)
+  deliveryRegion  String? @map("delivery_region") @db.VarChar(64)
+  /// ACTIVE | WARMED | DOC_SENT — snapshot na entrega
+  accountStatusAtDelivery String? @map("account_status_at_delivery") @db.VarChar(24)
+  adsPowerProfileId String? @map("adspower_profile_id") @db.VarChar(128)
 }
 
 // ============ ENTREGAS ============
@@ -924,6 +1480,16 @@ enum DeliveryGroupStatus {
   CANCELADA
 }
 
+/// Gargalo operacional visível no Delivery Tracker (Plug & Play)
+enum DeliveryOperationalBottleneck {
+  AGUARDANDO_PRODUCAO
+  AGUARDANDO_URL
+  PRODUCAO_EM_ANDAMENTO
+  AGUARDANDO_CLIENTE
+  EM_VALIDACAO
+  NENHUM
+}
+
 enum DeliveryAccountType {
   USD
   BRL
@@ -956,6 +1522,12 @@ model DeliveryGroup {
   responsible           User                @relation(fields: [responsibleId], references: [id])
   groupCreatedAt        DateTime            @default(now()) @map("group_created_at")
   saleDate              DateTime?           @map("sale_date")
+  /// Notas rápidas para produção (ex.: aguardando URL do cliente)
+  observacoesProducao   String?             @map("observacoes_producao") @db.Text
+  /// Semáforo de gargalo no tracker
+  operationalBottleneck DeliveryOperationalBottleneck @default(AGUARDANDO_PRODUCAO) @map("operational_bottleneck")
+  /// Marcação urgente (filtro rápido)
+  trackerUrgent         Boolean             @default(false) @map("tracker_urgent")
   createdAt             DateTime            @default(now()) @map("created_at")
   updatedAt             DateTime            @updatedAt @map("updated_at")
 
@@ -1079,6 +1651,106 @@ model FinancialEntry {
   @@index([deliveryGroupId])
 }
 
+// ============ VAULT INTELLIGENCE (LEDGER, CHARGEBACK, CMV, WALLET) ============
+
+/// Lançamento de razão (partidas dobradas — débito = crédito por journal)
+model VaultLedgerJournal {
+  id          String   @id @default(cuid())
+  occurredAt  DateTime @map("occurred_at")
+  memo        String?  @db.VarChar(500)
+  source      String   @db.VarChar(64) // ORDER_PAID, GATEWAY_SETTLEMENT, PAYOUT_PROVISION, CMV, CHARGEBACK, WALLET, MANUAL
+  sourceId    String?  @map("source_id") @db.VarChar(64)
+  createdById String?  @map("created_by_id")
+  lines       VaultLedgerLine[]
+
+  @@index([occurredAt])
+  @@index([source, sourceId])
+  @@map("vault_ledger_journals")
+}
+
+model VaultLedgerLine {
+  id        String             @id @default(cuid())
+  journalId String             @map("journal_id")
+  journal   VaultLedgerJournal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account   String             @db.VarChar(48) // AR, REVENUE, GATEWAY_FEE, COGS, PAYOUT_PROVISION, CASH, CLIENT_WALLET, CHARGEBACK_LOSS
+  debit     Decimal            @default(0) @db.Decimal(16, 4)
+  credit    Decimal            @default(0) @db.Decimal(16, 4)
+  meta      Json?
+
+  @@index([journalId])
+  @@map("vault_ledger_lines")
+}
+
+model ChargebackRecord {
+  id                      String   @id @default(cuid())
+  orderId                 String   @map("order_id")
+  order                   Order    @relation(fields: [orderId], references: [id])
+  amount                  Decimal  @db.Decimal(14, 4)
+  gatewayRef              String?  @map("gateway_ref") @db.VarChar(120)
+  notes                   String?  @db.Text
+  status                  String   @default("OPEN") @db.VarChar(24) // OPEN, ASSETS_FLAGGED, CLOSED
+  affectedStockAccountIds Json?    @map("affected_stock_account_ids")
+  createdById             String?  @map("created_by_id")
+  createdBy               User?    @relation("ChargebackCreatedBy", fields: [createdById], references: [id])
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("chargeback_records")
+}
+
+/// Crédito pré-pago (baleias) — saldo = último balanceAfter ou soma auditada
+model ClientWalletLedger {
+  id           String        @id @default(cuid())
+  clientId     String        @map("client_id")
+  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type         String        @db.VarChar(32) // DEPOSIT, DEBIT_ORDER, REFUND, ADJUSTMENT
+  amount       Decimal       @db.Decimal(16, 4) // positivo aumenta saldo do cliente
+  balanceAfter Decimal       @map("balance_after") @db.Decimal(16, 4)
+  orderId      String?       @map("order_id")
+  memo         String?       @db.VarChar(500)
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@index([clientId, createdAt])
+  @@map("client_wallet_ledger")
+}
+
+/// Lotes de insumos (domínio/proxy) — CMV por abatimento
+model SupplyLot {
+  id               String    @id @default(cuid())
+  label            String    @db.VarChar(200)
+  category         String    @db.VarChar(32) // DOMAIN, PROXY_RESIDENTIAL, PROXY_MOBILE, OTHER
+  totalCost        Decimal   @map("total_cost") @db.Decimal(16, 4)
+  unitsPurchased   Int       @map("units_purchased")
+  unitsRemaining   Int       @map("units_remaining")
+  unitCostComputed Decimal   @map("unit_cost_computed") @db.Decimal(16, 4)
+  expiresAt        DateTime? @map("expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@index([category])
+  @@map("supply_lots")
+}
+
+/// Ciclo operacional do colaborador (extrato + “liquidar ciclo”)
+model ProducerVaultCycle {
+  id                      String    @id @default(cuid())
+  userId                  String    @map("user_id")
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openedAt                DateTime  @map("opened_at")
+  closedAt                DateTime? @map("closed_at")
+  status                  String    @default("OPEN") @db.VarChar(16)
+  provisionedProduction   Decimal   @default(0) @map("provisioned_production") @db.Decimal(16, 4)
+  provisionedElite        Decimal   @default(0) @map("provisioned_elite") @db.Decimal(16, 4)
+  unitsProductionCounted  Int       @default(0) @map("units_production_counted")
+  unitsEliteCounted       Int       @default(0) @map("units_elite_counted")
+  closedReportJson        Json?     @map("closed_report_json")
+
+  @@index([userId, status])
+  @@index([openedAt])
+  @@map("producer_vault_cycles")
+}
+
 // ============ SAQUES ============
 
 enum WithdrawalStatus {
@@ -1120,6 +1792,9 @@ model Goal {
   monthlyTarget   Int      @map("monthly_target")
   productionCurrent Int    @default(0) @map("production_current")
   bonus           Decimal? @db.Decimal(12, 2)
+  /// Taxa mínima de aprovação no mês (0–100) para liberar qualityBonus; null = não aplicável
+  minApprovalRatePercent Int?     @map("min_approval_rate_percent")
+  qualityBonus          Decimal? @map("quality_bonus") @db.Decimal(12, 2)
   status          String   @default("active")
   periodStart     DateTime @map("period_start")
   periodEnd       DateTime @map("period_end")
@@ -1176,6 +1851,372 @@ model Quotation {
   createdAt  DateTime     @default(now()) @map("created_at")
 }
 
+// ============ OS CONTINGÊNCIA — FUNIL COMERCIAL & PIXEL / WEBHOOKS ============
+
+enum LeadFunnelStep {
+  STEP_1_CAPTURA
+  STEP_2_WHATSAPP
+  STEP_3_FOTO
+  STEP_4_VALIDACAO
+  STEP_5_QUALIFICACAO
+  STEP_6_PROPOSTA
+  STEP_7_CONVERSAO
+}
+
+model CommercialLead {
+  id                   String         @id @default(cuid())
+  name                 String?        @db.VarChar(200)
+  phone                String?        @db.VarChar(30)
+  whatsapp             String?        @db.VarChar(30)
+  email                String?        @db.VarChar(200)
+  photoPath            String?        @map("photo_path") @db.VarChar(500)
+  funnelStep           LeadFunnelStep @default(STEP_1_CAPTURA) @map("funnel_step")
+  validatedAt          DateTime?      @map("validated_at")
+  assignedCommercialId String?        @map("assigned_commercial_id")
+  assignedCommercial   User?          @relation("CommercialLeadAssignee", fields: [assignedCommercialId], references: [id])
+  convertedClientId    String?        @map("converted_client_id")
+  convertedClient      ClientProfile? @relation("LeadToClient", fields: [convertedClientId], references: [id])
+  notes                String?        @db.Text
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  @@index([funnelStep, createdAt])
+  @@index([assignedCommercialId])
+  @@map("commercial_leads")
+}
+
+/// Central de Inteligência de Leads (Ecossistema 9D) — captura WordPress/Elementor + LTV
+enum IntelligenceLeadStatus {
+  NOVO
+  QUENTE
+  CLIENTE_ATIVO
+  CHURN
+}
+
+model IntelligenceLead {
+  id             String                @id @default(cuid())
+  name           String                @map("nome") @db.VarChar(200)
+  email          String                @unique @db.VarChar(254)
+  whatsapp       String?               @db.VarChar(30)
+  /// Último toque (atribuição multi-touch — quem ajudou a fechar)
+  utmSource      String?               @map("utm_source") @db.VarChar(120)
+  utmMedium      String?               @map("utm_medium") @db.VarChar(120)
+  utmCampaign    String?               @map("utm_campaign") @db.VarChar(200)
+  utmContent     String?               @map("utm_content") @db.VarChar(512)
+  utmTerm        String?               @map("utm_term") @db.VarChar(200)
+  /// Primeiro toque (quem apresentou a marca) — imutável após criação
+  utmFirstSource   String?            @map("utm_first_source") @db.VarChar(120)
+  utmFirstMedium   String?            @map("utm_first_medium") @db.VarChar(120)
+  utmFirstCampaign String?            @map("utm_first_campaign") @db.VarChar(200)
+  utmFirstContent  String?            @map("utm_first_content") @db.VarChar(512)
+  utmFirstTerm     String?            @map("utm_first_term") @db.VarChar(200)
+  status         IntelligenceLeadStatus @default(NOVO)
+  lastPurchaseAt DateTime?             @map("data_ultima_compra")
+  totalSales     Decimal               @default(0) @map("total_vendas") @db.Decimal(14, 2)
+  /// Ticket médio (LTV ÷ compras) — atualizado no sync ERP
+  averageTicketBrl Decimal?            @map("average_ticket_brl") @db.Decimal(12, 2)
+  /// 0–100 confiança / qualidade do lead (webhook ou derivado do sync)
+  trustScore     Int?                  @map("trust_score")
+  /// Nº de pedidos pagos no ERP (sincronizado)
+  purchaseCount  Int                   @default(0) @map("purchase_count")
+  /// Último produto (texto do pedido) para mensagens / timeline
+  lastProductName String?              @map("last_product_name") @db.VarChar(200)
+  /// Identificador da LP de origem (webhook) — +10 pts no score
+  landingPageKey String?               @map("landing_page_key") @db.VarChar(120)
+  /// Intenção checkout (webhook) — +20 pts
+  checkoutIntentAt DateTime?           @map("checkout_intent_at")
+  /// Score 0–100 (regras: LP + checkout + histórico compra)
+  engagementScore Int                 @default(0) @map("engagement_score")
+  assignedCommercialId String?       @map("assigned_commercial_id")
+  assignedCommercial   User?          @relation("IntelligenceLeadAssignee", fields: [assignedCommercialId], references: [id], onDelete: SetNull)
+  /// Score 0–100: confiança “humano vs bot” (heurística)
+  confidenceScore    Decimal         @default(50) @map("confidence_score") @db.Decimal(5, 2)
+  /// Hash SHA-256 (IP|UA) — não armazenamos IP em claro
+  fingerprintHash    String?         @map("fingerprint_hash") @db.VarChar(64)
+  fingerprintUserAgent String?       @map("fingerprint_user_agent") @db.VarChar(512)
+  /// Mesmo fingerprint noutro e-mail — alerta fraude / reembolso
+  digitalFingerprintAlert Boolean   @default(false) @map("digital_fingerprint_alert")
+  /// Tags: ["viu_vsl","abandonou_carrinho",...] (webhook + eventos)
+  behaviorTags       Json?           @map("behavior_tags")
+  /// Produtos já comprados (sync ERP) — base da esteira de upsell
+  purchasedProductSlugs Json?        @map("purchased_product_slugs")
+  /// Última interação comercial ou webhook (alerta de arrefecimento)
+  lastInteractionAt  DateTime?     @map("last_interaction_at")
+  /// CPA atribuído ao lead (custo de aquisição por conversão conhecida)
+  cpaBrl           Decimal?        @map("cpa_brl") @db.Decimal(12, 2)
+  /// Muita intenção em poucas horas sem compra — prioridade comercial
+  hotStalledAlert  Boolean         @default(false) @map("hot_stalled_alert")
+  /// Resumo IA (2 linhas) para o comercial — triagem virtual
+  commercialAiBrief String?        @map("commercial_ai_brief") @db.VarChar(600)
+  /// Carrinho/checkout iniciado sem aprovação a tempo — coluna “Resgate imediato”
+  cartRescueImmediate Boolean     @default(false) @map("cart_rescue_immediate")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  events         IntelligenceLeadEvent[]
+  checkoutSessions IntelligenceCheckoutSession[]
+
+  @@index([status, createdAt])
+  @@index([utmSource])
+  @@index([trustScore])
+  @@index([lastPurchaseAt])
+  @@index([engagementScore])
+  @@index([assignedCommercialId])
+  @@index([fingerprintHash])
+  @@index([digitalFingerprintAlert])
+  @@index([hotStalledAlert])
+  @@index([cartRescueImmediate])
+  @@map("intelligence_leads")
+}
+
+/// Sessão de checkout (abandono / recuperação nativa)
+enum IntelligenceCheckoutSessionStatus {
+  STARTED
+  PAYMENT_PENDING
+  APPROVED
+  ABANDONED
+  RESCUE_IMMEDIATE
+}
+
+model IntelligenceCheckoutSession {
+  id           String                           @id @default(cuid())
+  email        String                           @db.VarChar(254)
+  leadId       String?                          @map("lead_id")
+  lead         IntelligenceLead?                @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  status       IntelligenceCheckoutSessionStatus @default(STARTED)
+  gatewayCode  String?                          @map("gateway_code") @db.VarChar(32)
+  externalRef  String?                          @map("external_ref") @db.VarChar(200)
+  valueBrl     Decimal?                         @map("value_brl") @db.Decimal(12, 2)
+  startedAt    DateTime                         @default(now()) @map("started_at")
+  updatedAt    DateTime                         @updatedAt @map("updated_at")
+  approvedAt   DateTime?                        @map("approved_at")
+  metadata     Json?
+
+  @@index([email, status])
+  @@index([status, startedAt])
+  @@index([leadId])
+  @@map("intelligence_checkout_sessions")
+}
+
+/// Contagem de webhooks de lead por minuto (saúde do tráfego)
+model LeadIngestPulse {
+  id          String   @id @default(cuid())
+  minuteUtc   DateTime @map("minute_utc")
+  ingestCount Int      @default(0) @map("ingest_count")
+
+  @@unique([minuteUtc])
+  @@index([minuteUtc])
+  @@map("lead_ingest_pulses")
+}
+
+/// Evita spam de Telegram em alertas de tráfego
+model TrafficAlertState {
+  id                      String    @id @default("default")
+  lastVolumeDropAlertAt   DateTime? @map("last_volume_drop_alert_at")
+  lastSilenceAlertAt      DateTime? @map("last_silence_alert_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  @@map("traffic_alert_state")
+}
+
+/// Auditoria: quem viu/exportou dados comerciais sensíveis
+model CommercialDataAuditLog {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       String   @db.VarChar(24)
+  action     String   @db.VarChar(64)
+  entityType String   @map("entity_type") @db.VarChar(48)
+  entityId   String?  @map("entity_id") @db.VarChar(191)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("commercial_data_audit_logs")
+}
+
+/// Gasto de mídia por UTM + mês (lucro real = LTV leads − spend)
+model IntelligenceCampaignSpend {
+  id           String   @id @default(cuid())
+  utmSource    String   @map("utm_source") @db.VarChar(120)
+  utmCampaign  String   @map("utm_campaign") @db.VarChar(200)
+  periodMonth  DateTime @map("period_month") @db.Date
+  spendBrl     Decimal  @map("spend_brl") @db.Decimal(14, 2)
+  notes        String?  @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([utmSource, utmCampaign, periodMonth])
+  @@index([periodMonth])
+  @@map("intelligence_campaign_spend")
+}
+
+/// Saúde dos checkouts externos (webhook “pulse”) — contingência multi-gateway
+model CheckoutGatewayPulse {
+  id               String    @id @default(cuid())
+  code             String    @unique @db.VarChar(32)
+  label            String?   @db.VarChar(120)
+  enabled          Boolean   @default(true)
+  lastWebhookAt    DateTime? @map("last_webhook_at")
+  lastApprovedAt   DateTime? @map("last_approved_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("checkout_gateway_pulses")
+}
+
+/// Linha do tempo do lead (captura, intenção, compras — eventos webhook ou sync ERP)
+model IntelligenceLeadEvent {
+  id          String           @id @default(cuid())
+  leadId      String           @map("lead_id")
+  lead        IntelligenceLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  occurredAt  DateTime         @map("occurred_at")
+  eventType   String           @map("event_type") @db.VarChar(64)
+  title       String           @db.VarChar(300)
+  detail      String?          @db.Text
+  metadata    Json?
+
+  @@index([leadId, occurredAt])
+  @@map("intelligence_lead_events")
+}
+
+/// Cupons criados pelo comercial (ex.: CLIENTE10 — 10% em lote mínimo)
+model CommercialCoupon {
+  id           String   @id @default(cuid())
+  code         String   @unique @db.VarChar(40)
+  percentOff   Int      @map("percent_off")
+  minQuantity  Int      @default(1) @map("min_quantity")
+  active       Boolean  @default(true)
+  description  String?  @db.VarChar(200)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("commercial_coupons")
+}
+
+/// Log de contato WhatsApp / follow-up pelo comercial
+model CommercialContactLog {
+  id        String        @id @default(cuid())
+  clientId  String        @map("client_id")
+  client    ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId    String        @map("user_id")
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId   String?       @map("order_id")
+  channel   String        @default("WHATSAPP") @db.VarChar(20)
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([clientId, createdAt])
+  @@map("commercial_contact_logs")
+}
+
+model AffiliateWebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String   @db.VarChar(32)
+  externalId  String?  @map("external_id") @db.VarChar(200)
+  payload     Json
+  processed   Boolean  @default(false)
+  processedAt DateTime? @map("processed_at")
+  roiValueBrl Decimal? @map("roi_value_brl") @db.Decimal(12, 2)
+  notes       String?  @db.Text
+  /// Click ID Google (GCLID) extraído do postback — usado no ROI atribuído a tráfego pago.
+  gclid              String?               @map("gclid") @db.VarChar(512)
+  /// MOBILE | DESKTOP | TABLET | UNKNOWN
+  deviceCategory     String?               @map("device_category") @db.VarChar(24)
+  /// CONFIRMED = compensado; PENDING = boleto/pix aguardando (caixa previsto).
+  paymentStatus      String                @default("CONFIRMED") @map("payment_status") @db.VarChar(24)
+  uniId              String?               @map("uni_id") @db.Char(36)
+  uni                VaultIndustrialUnit?  @relation(fields: [uniId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  syntheticIntents SyntheticConversionIntent[]
+
+  @@index([provider, externalId])
+  @@index([provider, createdAt])
+  @@index([processed])
+  @@index([gclid])
+  @@index([uniId])
+  @@index([paymentStatus, createdAt])
+  @@map("affiliate_webhook_events")
+}
+
+model SyntheticConversionIntent {
+  id             String                 @id @default(cuid())
+  stockAccountId String?                @map("stock_account_id")
+  stockAccount   StockAccount?          @relation(fields: [stockAccountId], references: [id], onDelete: SetNull)
+  webhookEventId String?                @map("webhook_event_id")
+  webhookEvent   AffiliateWebhookEvent? @relation(fields: [webhookEventId], references: [id], onDelete: SetNull)
+  provider       String                 @db.VarChar(32)
+  status         String                 @default("PENDING") @db.VarChar(24)
+  meta           Json?
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  @@index([stockAccountId])
+  @@index([status])
+  @@map("synthetic_conversion_intents")
+}
+
+// ============ ADS ATIVOS GUARD (COMPLIANCE SCANNER) ============
+
+/// Termos instantâneos (regex/blacklist) — Camada A
+model BlacklistTerm {
+  id        String   @id @default(cuid())
+  term      String   @unique @db.VarChar(200)
+  active    Boolean  @default(true)
+  category  String?  @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([active])
+  @@map("tb_blacklist_terms")
+}
+
+/// Histórico de análises (ML futuro / auditoria)
+model ComplianceHistory {
+  id                String   @id @default(cuid())
+  tipoMidia         String   @map("tipo_midia") @db.VarChar(16) // VSL, COPY, LP
+  /// 0–100: maior = mais risco (violação)
+  scoreRisco        Int      @map("score_risco")
+  termosDetectados  Json     @map("termos_detectados")
+  statusFinalGoogle String?  @map("status_final_google") @db.VarChar(64)
+  summary           String?  @db.Text
+  suggestedRewrites Json?    @map("suggested_rewrites")
+  layers            Json? // { blacklist, ai, vision }
+  stockAccountId    String?  @map("stock_account_id")
+  stockAccount      StockAccount? @relation(fields: [stockAccountId], references: [id], onDelete: SetNull)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([tipoMidia, createdAt])
+  @@index([stockAccountId])
+  @@map("tb_compliance_history")
+}
+
+/// Fila assíncrona (vídeo longo) — processada por cron
+model ComplianceScanJob {
+  id          String   @id @default(cuid())
+  status      String   @default("PENDING") @db.VarChar(24) // PENDING, PROCESSING, DONE, FAILED
+  tipoMidia   String   @map("tipo_midia") @db.VarChar(16)
+  tempPath    String?  @map("temp_path") @db.VarChar(500)
+  resultJson  Json?    @map("result_json")
+  error       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("tb_compliance_scan_jobs")
+}
+
+/// Snapshot da política Google Ads (diff semanal)
+model GoogleAdsPolicySnapshot {
+  id             String   @id @default(cuid())
+  sourceUrl      String   @map("source_url") @db.VarChar(500)
+  contentHash    String   @map("content_hash") @db.VarChar(64)
+  normalizedText String   @map("normalized_text") @db.LongText
+  fetchedAt      DateTime @default(now()) @map("fetched_at")
+
+  @@index([fetchedAt])
+  @@map("tb_google_ads_policy_snapshots")
+}
+
 // ============ CONFIGURAÇÃO GLOBAL ============
 
 model SystemSetting {
@@ -1183,6 +2224,15 @@ model SystemSetting {
   key       String   @unique
   value     String   @db.Text
   updatedAt DateTime @updatedAt @map("updated_at")
+}
+
+/// Sequência global para client_code (C001, C288…) — uma linha (id=1), incremento em transação com lock.
+model ClientCodeSequence {
+  id         Int      @id @default(1)
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("client_code_sequence")
 }
 
 // ============ CONTINGÊNCIA BLACK - PLUG & PLAY ============
@@ -1194,6 +2244,12 @@ enum BlackOperationStatus {
   LIVE
   SURVIVED_24H
   BANNED
+}
+
+/// Classificação para contestação em queda técnica (proxy vs credencial)
+enum BlackTechnicalBanReason {
+  PROXY
+  LOGIN
 }
 
 enum BlackStepType {
@@ -1214,9 +2270,12 @@ model BlackOperation {
   niche           String
   domain          String?
   stockAccountId  String?             @map("stock_account_id")
+  /// GOOGLE_ADS | FACEBOOK (comissão unitária diferenciada)
+  platform        String?             @map("platform")
   status          BlackOperationStatus @default(DRAFT)
   wentLiveAt      DateTime?           @map("went_live_at")
   bannedAt        DateTime?           @map("banned_at")
+  technicalBanReason BlackTechnicalBanReason? @map("technical_ban_reason")
   notes           String?             @db.Text
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
@@ -1487,6 +2546,20 @@ model ProductionAlert {
   @@index([type])
   @@index([resolvedAt])
   @@map("production_alerts")
+}
+
+/// Feedback rápido do gestor no dashboard Agente G2 (por produtor).
+model G2ManagerFeedback {
+  id         String   @id @default(cuid())
+  producerId String   @map("producer_id")
+  producer   User     @relation("G2FeedbackTarget", fields: [producerId], references: [id], onDelete: Cascade)
+  authorId   String   @map("author_id")
+  author     User     @relation("G2FeedbackAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  body       String   @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([producerId, createdAt])
+  @@map("g2_manager_feedback")
 }
 
 // ============ AGENTE DEPLOY ============
@@ -1769,6 +2842,173 @@ model BottleneckReport {
   @@map("bottleneck_reports")
 }
 
+// ============ ADS CORE (ativos CNPJ / documentos — escala, footprint, isolamento 1:1) ============
+
+enum AdsCoreAssetProductionStatus {
+  DISPONIVEL
+  EM_PRODUCAO
+  VERIFICACAO_G2
+  APROVADO
+  REPROVADO
+}
+
+/// Meta operacional da demanda (visível ao produtor e ao gerente)
+enum AdsCoreVerificationTrack {
+  G2_ANUNCIANTE
+  ANUNCIANTE_COMERCIAL
+}
+
+enum AdsCoreRgStockStatus {
+  DISPONIVEL
+  EM_USO
+  UTILIZADO
+}
+
+/// Nichos com briefing (Nutracêuticos, iGaming, etc.)
+model AdsCoreNiche {
+  id                     String                   @id @default(cuid())
+  name                   String                   @db.VarChar(120)
+  briefingInstructions   String?                  @map("briefing_instructions") @db.Text
+  /// Palavras-chave para congruência textual (CNAE / atividade) quando o código não bate sozinho
+  congruenceKeywords     Json?                    @map("congruence_keywords")
+  active                 Boolean                  @default(true)
+  createdAt              DateTime                 @default(now()) @map("created_at")
+  updatedAt              DateTime                 @updatedAt @map("updated_at")
+  assets                 AdsCoreAsset[]
+  allowedCnaes           AdsCoreNicheAllowedCnae[]
+  producerAssignments    AdsCoreProducerNiche[]
+
+  @@map("ads_core_niches")
+}
+
+/// Produtores habilitados por nicho (atribuição filtrada). Sem linhas para um nicho = qualquer produtor.
+model AdsCoreProducerNiche {
+  id         String       @id @default(cuid())
+  nicheId    String       @map("niche_id")
+  niche      AdsCoreNiche @relation(fields: [nicheId], references: [id], onDelete: Cascade)
+  producerId String       @map("producer_id")
+  producer   User         @relation("AdsCoreProducerNicheProducer", fields: [producerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  @@unique([nicheId, producerId])
+  @@index([producerId])
+  @@map("ads_core_producer_niches")
+}
+
+model AdsCoreNicheAllowedCnae {
+  id      String       @id @default(cuid())
+  nicheId String       @map("nicho_id")
+  niche   AdsCoreNiche @relation(fields: [nicheId], references: [id], onDelete: Cascade)
+  code    String       @db.VarChar(20)
+
+  @@unique([nicheId, code])
+  @@index([nicheId])
+  @@map("ads_core_niche_allowed_cnaes")
+}
+
+/// Ativo cadastral — CNPJ e site únicos (footprint); produtor só vê o que lhe foi atribuído
+model AdsCoreAsset {
+  id        String       @id @default(cuid())
+  nicheId   String       @map("niche_id")
+  niche     AdsCoreNiche @relation(fields: [nicheId], references: [id], onDelete: Restrict)
+  producerId String?     @map("producer_id")
+  producer   User?      @relation("AdsCoreAssetProducer", fields: [producerId], references: [id], onDelete: SetNull)
+  /// Gerente que supervisiona / atribui (opcional)
+  adminId    String?    @map("admin_id")
+  admin      User?      @relation("AdsCoreAssetAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  createdById String    @map("created_by_id")
+  createdBy   User       @relation("AdsCoreAssetCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  cnpj              String   @unique @db.VarChar(14)
+  razaoSocial       String?  @map("razao_social") @db.VarChar(300)
+  nomeFantasia      String?  @map("nome_fantasia") @db.VarChar(300)
+  dataAbertura      DateTime? @map("data_abertura")
+  situacaoCadastral String?  @map("situacao_cadastral") @db.VarChar(80)
+
+  endereco String? @db.Text
+  logradouro String? @db.VarChar(200)
+  numero     String? @db.VarChar(20)
+  bairro     String? @db.VarChar(120)
+  cidade     String? @db.VarChar(120)
+  estado     String? @db.VarChar(2)
+  cep        String? @db.VarChar(12)
+
+  nomeSocio           String?   @map("nome_socio") @db.VarChar(200)
+  cpfSocio            String?   @map("cpf_socio") @db.VarChar(14)
+  dataNascimentoSocio DateTime? @map("data_nascimento_socio")
+
+  emailEmpresa   String? @map("email_empresa") @db.VarChar(255)
+  telefone       String? @db.VarChar(40)
+  cnae           String? @db.VarChar(20)
+  cnaeDescricao  String? @map("cnae_descricao") @db.Text
+  statusReceita  String  @map("status_receita") @db.VarChar(120)
+  siteUrl        String? @unique @map("site_url") @db.VarChar(500)
+
+  congruenciaCheck Boolean @default(false) @map("congruencia_check")
+  historicoUrls    Json?   @map("historico_urls")
+  /// Checklist gerente: legivel | rejeitado por tipo de documento (cnpj, rg-frente, rg-verso)
+  docReviewFlags   Json?   @map("doc_review_flags")
+  /// Notas do produtor ao finalizar verificação G2 (Bloco 4)
+  g2ProducerObservacoes String? @map("g2_producer_observacoes") @db.Text
+  /// Momento em que o produtor foi atribuído (SLA: até G2)
+  producerAssignedAt DateTime? @map("producer_assigned_at")
+  /// Momento em que o produtor enviou para verificação G2
+  g2FinalizedAt DateTime? @map("g2_finalized_at")
+  /// Motivo obrigatório quando status = REPROVADO (arquivo morto / contestação)
+  rejectionReason String? @map("rejection_reason") @db.Text
+  /// Admin reabre edição de URL / linha para o produtor (pós-aprovado ou exceção)
+  producerSiteEditUnlocked Boolean @default(false) @map("producer_site_edit_unlocked")
+
+  statusProducao AdsCoreAssetProductionStatus @map("status_producao")
+  /// G2 + Anunciante vs Anunciante + Operações Comerciais (especificação ADS CORE)
+  verificationTrack AdsCoreVerificationTrack @default(G2_ANUNCIANTE) @map("verification_track")
+
+  docCnpjPath      String? @map("doc_cnpj_path") @db.VarChar(500)
+  docRgFrentePath  String? @map("doc_rg_frente_path") @db.VarChar(500)
+  docRgVersoPath   String? @map("doc_rg_verso_path") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rgStockRows AdsCoreRgStock[]
+
+  @@index([nicheId])
+  @@index([producerId])
+  @@index([adminId])
+  @@index([statusProducao, createdAt])
+  @@index([createdAt])
+  @@map("ads_core_assets")
+}
+
+/// Bloqueio de reutilização de CNPJ após processamento (mesmo com exclusão do ativo)
+model AdsCoreCnpjRegistry {
+  cnpj         String   @id @db.VarChar(14)
+  producerId   String?  @map("producer_id")
+  producerName String?  @map("producer_name") @db.VarChar(200)
+  processedAt  DateTime @map("processed_at")
+  /// ATIVO | DELETE | REPROVADO — contexto do bloqueio
+  source       String   @default("ATIVO") @map("source") @db.VarChar(24)
+  blockReason  String?  @map("block_reason") @db.VarChar(500)
+
+  @@map("ads_core_cnpj_registry")
+}
+
+/// Pares RG do estoque (sorteio para ativos)
+model AdsCoreRgStock {
+  id         String               @id @default(cuid())
+  frentePath String               @map("frente_path") @db.VarChar(500)
+  versoPath  String               @map("verso_path") @db.VarChar(500)
+  status     AdsCoreRgStockStatus
+  assetId    String?              @map("asset_id")
+  asset      AdsCoreAsset?        @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  assignedAt DateTime?            @map("assigned_at")
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([assetId])
+  @@map("ads_core_rg_stock")
+}
+
 // ============ AUDITORIA ============
 
 model AuditLog {
@@ -1787,6 +3027,8 @@ model AuditLog {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([entity, entityId])
+  @@index([entity, entityId, createdAt])
+  @@index([action, createdAt])
 }
 
 // ============ FEEDBACK E MELHORIAS ============
@@ -1808,4 +3050,1067 @@ model Suggestion {
   @@index([category])
   @@index([createdAt])
   @@map("suggestions")
+}
+
+// ============ ROI & CRM — TinTim + Vendas ERP ============
+
+/// Evento de lead capturado via webhook TinTim (ou similar). Cruzamento por telefone ou e-mail.
+model TintimLeadEvent {
+  id                 String         @id @default(cuid())
+  phoneNormalized    String?        @map("phone_normalized") @db.VarChar(32)
+  emailNormalized    String?        @map("email_normalized") @db.VarChar(255)
+  campaignName       String?        @map("campaign_name") @db.VarChar(300)
+  utmSource          String?        @map("utm_source") @db.VarChar(120)
+  utmMedium          String?        @map("utm_medium") @db.VarChar(120)
+  utmCampaign        String?        @map("utm_campaign") @db.VarChar(200)
+  externalId         String?        @map("external_id") @db.VarChar(120)
+  matchedClientId    String?        @map("matched_client_id")
+  matchedClient      ClientProfile? @relation(fields: [matchedClientId], references: [id], onDelete: SetNull)
+  rawPayload         Json?          @map("raw_payload")
+  createdAt          DateTime       @default(now()) @map("created_at")
+
+  @@index([phoneNormalized])
+  @@index([emailNormalized])
+  @@index([createdAt])
+  @@map("tintim_lead_events")
+}
+
+/// Auditoria de webhooks externos (Tintim, etc.)
+model IntegrationWebhookLog {
+  id            String   @id @default(cuid())
+  provider      String   @default("TINTIM") @db.VarChar(32)
+  eventType     String?  @map("event_type") @db.VarChar(64)
+  payload       Json
+  httpStatus    Int?     @map("http_status")
+  result        Json?
+  orderId       String?  @map("order_id")
+  clientId      String?  @map("client_id")
+  errorMessage  String?  @map("error_message") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([provider, createdAt])
+  @@map("tb_integracoes_logs")
+}
+
+/// Investimento diário em mídia (manual ou sync futuro). Usado no ROI do dashboard.
+model AdsSpendDaily {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  amountBrl Decimal  @map("amount_brl") @db.Decimal(12, 2)
+  source    String   @default("MANUAL") @db.VarChar(40)
+  note      String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, source])
+  @@index([date])
+  @@map("ads_spend_daily")
+}
+
+/// Estatísticas diárias do “Traffic Shield” / edge (ingestão opcional via API).
+model AdsTrackerShieldDaily {
+  id                  String   @id @default(cuid())
+  day                 DateTime @unique @db.Date
+  blockedClicks       Int      @default(0) @map("blocked_clicks")
+  estimatedSavedBrl   Decimal  @default(0) @map("estimated_saved_brl") @db.Decimal(12, 2)
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("ads_tracker_shield_daily")
+}
+
+// ============ ADS TRACKER — Traffic Shield (WAF / borda legítima; sem cloaking) ============
+
+/// Configuração única (linha default). O ERP envia política ao edge via webhook; o edge aplica.
+model TrafficShieldSettings {
+  id                      String    @id @default("default")
+  /// Sugestão enviada ao edge: bloquear ASNs típicos de datacenter (abuso/automação).
+  blockDatacenterAsns     Boolean   @default(false) @map("block_datacenter_asns")
+  /// Sugestão: exigir parâmetro de clique (ex. gclid) para classificar pedido — política no edge.
+  requireClickIdParam     Boolean   @default(false) @map("require_click_id_param")
+  /// Enviar lista de sinais de ambiente ao edge (o edge interpreta; não é “deteção de revisor”).
+  pushEnvironmentHints    Boolean   @default(false) @map("push_environment_hints")
+  /// Módulo 12: enviar ao edge listas de IPs/UA de ferramentas de espionagem.
+  enableSpyToolBlocking   Boolean   @default(true) @map("enable_spy_tool_blocking")
+  edgeWebhookUrl          String?   @map("edge_webhook_url") @db.VarChar(800)
+  lastPushAt              DateTime? @map("last_push_at")
+  lastPushOk              Boolean   @default(false) @map("last_push_ok")
+  lastPushError           String?   @map("last_push_error") @db.VarChar(500)
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  @@map("traffic_shield_settings")
+}
+
+model TrafficShieldAccessLog {
+  id            String   @id @default(cuid())
+  ip            String   @db.VarChar(45)
+  country       String?  @db.VarChar(8)
+  region        String?  @db.VarChar(80)
+  userAgent     String?  @map("user_agent") @db.VarChar(600)
+  referer       String?  @db.VarChar(1200)
+  gclidPresent  Boolean  @default(false) @map("gclid_present")
+  verdict       String   @db.VarChar(24)
+  reason        String?  @db.VarChar(300)
+  asn           String?  @db.VarChar(32)
+  /// Contexto opcional (ex. campanha) — reportado pelo edge.
+  contextKey    String?  @map("context_key") @db.VarChar(120)
+  /// Valor bruto do gclid quando o edge o envia (atribuição / auditoria).
+  gclid         String?  @db.VarChar(512)
+  utmCampaign   String?  @map("utm_campaign") @db.VarChar(512)
+  utmContent    String?  @map("utm_content") @db.VarChar(512)
+  /// Rota/perfil operacional no edge: SAFE (pré-pagamento) vs MONEY (checkout).
+  shieldProfile String?  @map("shield_profile") @db.VarChar(16)
+  deviceCategory String? @map("device_category") @db.VarChar(24)
+  browserFamily String?  @map("browser_family") @db.VarChar(64)
+  /// Nome legível do ISP / rede (ex.: Google LLC), quando disponível.
+  ispName       String?  @map("isp_name") @db.VarChar(200)
+  sessionDurationMs Int? @map("session_duration_ms")
+  uniId         String?  @map("uni_id") @db.Char(36)
+  uni           VaultIndustrialUnit? @relation(fields: [uniId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([ip, createdAt])
+  @@index([verdict, createdAt])
+  @@index([uniId, createdAt])
+  @@map("traffic_shield_access_logs")
+}
+
+model TrafficShieldIpBlock {
+  id          String    @id @default(cuid())
+  cidrOrIp  String    @map("cidr_or_ip") @db.VarChar(64)
+  note        String?   @db.VarChar(400)
+  active      Boolean   @default(true)
+  createdById String?   @map("created_by_id")
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([cidrOrIp])
+  @@index([active])
+  @@map("traffic_shield_ip_blocks")
+}
+
+enum TrafficShieldSpyBlockKind {
+  IP_CIDR
+  USER_AGENT_SUBSTRING
+}
+
+/// Módulo 12 — regras anti-spy (merge no payload do edge).
+model TrafficShieldSpyBlock {
+  id        String                   @id @default(cuid())
+  kind      TrafficShieldSpyBlockKind @map("kind")
+  pattern   String                   @db.VarChar(500)
+  note      String?                  @db.VarChar(200)
+  active    Boolean                  @default(true)
+  createdAt DateTime                 @default(now()) @map("created_at")
+
+  @@index([active, kind])
+  @@map("traffic_shield_spy_blocks")
+}
+
+// ============ ADS TRACKER — Módulo 13: reputação de domínio (Safe Browsing) ============
+
+model TrackerDomainReputationCheck {
+  id             String   @id @default(cuid())
+  domainHost     String   @map("domain_host") @db.VarChar(253)
+  status         String   @db.VarChar(32)
+  detail         String?  @db.VarChar(500)
+  panicTriggered Boolean  @default(false) @map("panic_triggered")
+  checkedAt      DateTime @default(now()) @map("checked_at")
+
+  @@index([domainHost, checkedAt])
+  @@map("tracker_domain_reputation_checks")
+}
+
+// ============ ADS TRACKER — Módulo 14: LTV por identidade (postback) ============
+
+model TrackerLeadLtvAggregate {
+  id                   String   @id @default(cuid())
+  buyerIdentityHash    String   @unique @map("buyer_identity_hash") @db.Char(64)
+  buyerHint            String   @map("buyer_hint") @db.VarChar(48)
+  currency             String   @default("BRL") @db.VarChar(8)
+  totalGross           Decimal  @map("total_gross") @db.Decimal(14, 2)
+  purchaseCount        Int      @map("purchase_count")
+  attributedCampaignId String?  @map("attributed_campaign_id") @db.VarChar(64)
+  attributedOfferId    String?  @map("attributed_offer_id") @db.VarChar(64)
+  firstPurchaseAt      DateTime @map("first_purchase_at")
+  lastPurchaseAt       DateTime @map("last_purchase_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([attributedCampaignId])
+  @@index([totalGross])
+  @@map("tracker_lead_ltv_aggregates")
+}
+
+model TrackerLeadLtvPurchase {
+  id                   String   @id @default(cuid())
+  buyerIdentityHash    String   @map("buyer_identity_hash") @db.Char(64)
+  buyerHint            String   @map("buyer_hint") @db.VarChar(48)
+  offerId              String   @map("offer_id") @db.VarChar(64)
+  platformOrderId      String?  @map("platform_order_id") @db.VarChar(200)
+  amountGross          Decimal  @map("amount_gross") @db.Decimal(14, 2)
+  currency             String   @default("BRL") @db.VarChar(8)
+  saleSignalId         String   @unique @map("sale_signal_id") @db.VarChar(64)
+  attributedCampaignId String?  @map("attributed_campaign_id") @db.VarChar(64)
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([buyerIdentityHash])
+  @@index([offerId])
+  @@map("tracker_lead_ltv_purchases")
+}
+
+// ============ ADS MCC — Gestão de contas (dashboard / contingência) ============
+
+/// Snapshot de status por customer_id (Google) para diff de recuperação.
+model AdsMccSnapshot {
+  id        String   @id @default(cuid())
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("ads_mcc_snapshots")
+}
+
+/// Audit trail de quedas / recuperação alinhado ao painel de guerra.
+model AdsContingencyLog {
+  id                 String    @id @default(cuid())
+  googleCustomerId   String    @map("google_customer_id") @db.VarChar(32)
+  fellAt             DateTime  @map("fell_at")
+  reason             String    @db.VarChar(64)
+  policyDetail       String?   @map("policy_detail") @db.VarChar(512)
+  currentStatusLabel String    @map("current_status_label") @db.VarChar(40)
+  recoveredAt        DateTime? @map("recovered_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@index([googleCustomerId, recoveredAt])
+  @@map("ads_contingency_logs")
+}
+
+/// Pedido interno de reembolso / cancelamento (processamento manual).
+model AdsRefundRequest {
+  id               String   @id @default(cuid())
+  googleCustomerId String   @map("google_customer_id") @db.VarChar(32)
+  requestedById    String   @map("requested_by_id")
+  requestedBy      User     @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  notes            String?  @db.Text
+  status           String   @default("PENDING") @db.VarChar(32)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([googleCustomerId])
+  @@index([status])
+  @@map("ads_refund_requests")
+}
+
+// ============ GATEKEEPER / COFRE — INGESTÃO BLINDADA (MÓDULO 01 WAR ROOM OS) ============
+// Único ponto de entrada de ativos sensíveis: EXIF strip, unicidade cruzada, cifra em repouso.
+
+enum VaultGmailStatus {
+  AVAILABLE
+  IN_USE
+  BURNED
+}
+
+enum VaultCardStatus {
+  AVAILABLE
+  IN_USE
+  BURNED
+}
+
+/// Gmails do cofre (separado do legado Email — promovível depois via pipeline).
+model InventoryGmail {
+  id               String          @id @default(uuid()) @db.Char(36)
+  email            String          @unique @db.VarChar(320)
+  passwordEnc      String          @map("password_enc") @db.Text
+  /// E-mail de recuperação (cifrado em repouso).
+  recoveryEmailEnc String?        @map("recovery_email_enc") @db.Text
+  /// Ano de safra do ativo (ex.: 2014) — métricas tipo Vovô (mais de 10 anos).
+  harvestYear      Int?            @map("harvest_year")
+  /// JSON cifrado em repouso (serializado + AES-256-GCM via lib/encryption).
+  sessionCookiesEnc String?        @map("session_cookies") @db.Text
+  gmailSafra       String?         @map("gmail_safra") @db.VarChar(64)
+  status           VaultGmailStatus @default(AVAILABLE) @map("status")
+  twoFaEnc         String?         @map("two_fa_enc") @db.Text
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  vaultIndustrialUnits VaultIndustrialUnit[]
+
+  @@index([status])
+  @@map("inventory_gmails")
+}
+
+/// Identidades (CPF + documentos) — photoHash impede reuso da mesma foto processada.
+model InventoryId {
+  id         String   @id @default(uuid()) @db.Char(36)
+  fullName   String   @map("full_name") @db.VarChar(300)
+  cpf        String   @unique @db.VarChar(14)
+  /// Lista de referências de armazenamento (paths internos / keys), JSON.
+  docUrls    Json?    @map("doc_urls")
+  photoHash  String   @unique @map("photo_hash") @db.VarChar(32)
+  /// Nome do sócio / representante (Geo-Provision / G-Pay).
+  partnerLegalName String?   @map("partner_legal_name") @db.VarChar(300)
+  partnerBirthDate DateTime? @map("partner_birth_date") @db.Date
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  vaultIndustrialUnits VaultIndustrialUnit[]
+
+  @@map("inventory_ids")
+}
+
+/// CNPJs do cofre; nicho inferido a partir do CNAE na ingestão (Brasil API).
+model InventoryCnpj {
+  id            String   @id @default(uuid()) @db.Char(36)
+  cnpj          String   @unique @db.VarChar(14)
+  razaoSocial   String?  @map("razao_social") @db.VarChar(500)
+  cnae          String?  @db.VarChar(20)
+  nicheInferred String?  @map("niche_inferred") @db.VarChar(120)
+  /// Tag manual do operador (Nutra, Estética, …) — prevalece na UI sobre a inferida por CNAE.
+  nicheOperatorTag String? @map("niche_operator_tag") @db.VarChar(120)
+  /// { cidade, estado, cep }
+  geofencing    Json?    @map("geofencing")
+  situacaoRf    String?  @map("situacao_rf") @db.VarChar(40)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  vaultIndustrialUnits VaultIndustrialUnit[]
+
+  @@map("inventory_cnpjs")
+}
+
+/// Cartões: unicidade por hash determinístico do PAN; PAN cifrado em repouso.
+model InventoryCard {
+  id           String          @id @default(uuid()) @db.Char(36)
+  cardPanHash  String          @unique @map("card_pan_hash") @db.VarChar(64)
+  cardPanEnc   String          @map("card_pan_enc") @db.Text
+  holderName   String?         @map("holder_name") @db.VarChar(200)
+  status       VaultCardStatus @default(AVAILABLE) @map("status")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("inventory_cards")
+}
+
+// ============ GEO-PROVISION (MÓDULO 02) — AdsPower + proxy geográfico + UNI ============
+
+/// Lotes operacionais (Módulo 4 — escala / processo). Progresso é interno ao ERP, não “trust score” de terceiros.
+enum WarmupLotStatus {
+  PLANNING
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+model WarmupLot {
+  id                   String          @id @default(cuid())
+  name                 String          @db.VarChar(200)
+  nicheTag             String?         @map("niche_tag") @db.VarChar(120)
+  status               WarmupLotStatus @default(PLANNING)
+  /// Maturação operacional 0–100 (definida pelo gestor; métricas reais podem alimentar depois).
+  internalMaturityPct  Int             @default(0) @map("internal_maturity_pct")
+  notes                String?         @db.Text
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  units VaultIndustrialUnit[]
+
+  @@index([status])
+  @@map("warmup_lots")
+}
+
+enum VaultIndustrialUnitStatus {
+  DRAFT
+  PROVISIONING
+  READY_FOR_WARMUP
+  FAILED
+}
+
+/// Pool de proxies para ancoragem por cidade/UF/DDD (Bright Data / Asdl / manual).
+model GeoProxyPoolEntry {
+  id               String   @id @default(cuid())
+  provider         String   @db.VarChar(32)
+  label            String?  @db.VarChar(120)
+  city             String?  @db.VarChar(120)
+  stateUf          String?  @map("state_uf") @db.VarChar(4)
+  ddd              String?  @db.VarChar(3)
+  proxyHost        String   @map("proxy_host") @db.VarChar(255)
+  proxyPort        String   @map("proxy_port") @db.VarChar(8)
+  proxyUser        String?  @map("proxy_user") @db.VarChar(200)
+  proxyPasswordEnc String?  @map("proxy_password_enc") @db.Text
+  /// luminati | oxylabs | other — repasse ao AdsPower user_proxy_config.proxy_soft
+  proxySoft        String?  @map("proxy_soft") @db.VarChar(32)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  matchedUnits VaultIndustrialUnit[]
+
+  @@index([active, city])
+  @@index([active, stateUf])
+  @@map("geo_proxy_pool")
+}
+
+/// UNI — unidade industrial: Gmail + CNPJ do cofre (+ identidade opcional) → perfil AdsPower.
+model VaultIndustrialUnit {
+  id                String                    @id @default(uuid()) @db.Char(36)
+  inventoryGmailId  String                    @map("inventory_gmail_id") @db.Char(36)
+  inventoryGmail    InventoryGmail            @relation(fields: [inventoryGmailId], references: [id])
+  inventoryCnpjId   String                    @map("inventory_cnpj_id") @db.Char(36)
+  inventoryCnpj     InventoryCnpj           @relation(fields: [inventoryCnpjId], references: [id])
+  identityInventoryId String?               @map("inventory_id_id") @db.Char(36)
+  identityInventory   InventoryId?          @relation(fields: [identityInventoryId], references: [id])
+
+  adsPowerProfileId String?                   @map("ads_power_profile_id") @db.VarChar(64)
+  status            VaultIndustrialUnitStatus @default(DRAFT)
+  /// Protocolo de viagem 48h — proxy no estado, não na cidade exata.
+  geoTransition     Boolean                   @default(false) @map("geo_transition")
+  anchorCity        String?                   @map("anchor_city") @db.VarChar(120)
+  anchorState       String?                   @map("anchor_state") @db.VarChar(4)
+  matchedProxyId    String?                   @map("matched_proxy_id")
+  matchedProxy      GeoProxyPoolEntry?        @relation(fields: [matchedProxyId], references: [id])
+  lastPipelineLogs  Json?                     @map("last_pipeline_logs")
+  provisionError    String?                   @map("provision_error") @db.Text
+  warmupLotId       String?                   @map("warmup_lot_id")
+  warmupLot         WarmupLot?                @relation(fields: [warmupLotId], references: [id], onDelete: SetNull)
+
+  /// Nome operacional (ex.: Operação Nutra — Conta 05).
+  displayName       String?                   @map("display_name") @db.VarChar(200)
+  /// Domínio “cara” exclusivo planejado para esta UNI (validação suave vs campanhas).
+  primaryDomainHost String?                   @map("primary_domain_host") @db.VarChar(253)
+  timezoneIana      String?                   @map("timezone_iana") @db.VarChar(64)
+  preferredLocale   String?                   @map("preferred_locale") @db.VarChar(24)
+  /// Overrides de cabeçalhos para o edge (Accept-Language, hints; contrato com Gerson).
+  customHeadersJson Json?                   @map("custom_headers_json")
+  /// Nível de risco operacional (manual ou derivado na UI).
+  riskLevel         String                    @default("MEDIUM") @map("risk_level") @db.VarChar(16)
+  /// Kill-switch: UNI isolada de operação; proxy desativado no pool.
+  killedAt          DateTime?                 @map("killed_at")
+  killedReason      String?                   @map("killed_reason") @db.VarChar(500)
+  lastProxyProbeAt  DateTime?                 @map("last_proxy_probe_at")
+  lastProxyProbeOk  Boolean?                  @map("last_proxy_probe_ok")
+  lastProxyProbeMs  Int?                      @map("last_proxy_probe_ms")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([inventoryGmailId])
+  @@index([warmupLotId])
+  @@index([primaryDomainHost])
+  adsTrackerCampaigns   AdsTrackerCampaign[]
+  affiliateWebhookEvents AffiliateWebhookEvent[]
+  trafficShieldAccessLogs TrafficShieldAccessLog[]
+  activityLogs          VaultIndustrialUnitActivityLog[]
+  mentoradoUniAccesses  ClientMentoradoUniAccess[]
+  mentoradoLinkedStockAccounts StockAccount[] @relation("StockAccountMentoradoUni")
+  mentoradoShieldTrackerLinks MentoradoShieldTrackerLink[]
+
+  @@map("vault_industrial_units")
+}
+
+model VaultIndustrialUnitActivityLog {
+  id        String              @id @default(cuid())
+  uniId     String              @map("uni_id") @db.Char(36)
+  uni       VaultIndustrialUnit @relation(fields: [uniId], references: [id], onDelete: Cascade)
+  kind      String              @db.VarChar(32)
+  message   String              @db.VarChar(500)
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  @@index([uniId, createdAt])
+  @@map("vault_industrial_unit_activity_logs")
+}
+
+// ============ ADS ATIVOS TRACKER — Módulo 01: Central de Campanhas ============
+
+enum AdsTrackerCampaignStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+/// Campanha rastreada: vínculo obrigatório a UNI + URL de destino; métricas operacionais no ERP.
+model AdsTrackerCampaign {
+  id                      String                   @id @default(cuid())
+  name                    String                   @db.VarChar(300)
+  uniId                   String                   @map("uni_id") @db.Char(36)
+  uni                     VaultIndustrialUnit      @relation(fields: [uniId], references: [id], onDelete: Restrict)
+  /// URL completa usada para ping de latência e checagens.
+  landingUrl              String                   @map("landing_url") @db.VarChar(2000)
+  /// Host normalizado (ex.: lander.example.com) para detetar partilha entre campanhas.
+  domainHost              String                   @map("domain_host") @db.VarChar(253)
+  /// Snapshot proxy no momento da gravação: "host:port" ou host.
+  proxyHostKey            String?                  @map("proxy_host_key") @db.VarChar(400)
+  gclidTrackingRequired   Boolean                  @default(false) @map("gclid_tracking_required")
+  status                  AdsTrackerCampaignStatus @default(ACTIVE)
+  /// Contingência operacional (aciona webhook opcional; não descreve conteúdo servido no edge).
+  emergencyContingency    Boolean                  @default(false) @map("emergency_contingency")
+  clickTotal              Int                      @default(0) @map("click_total")
+  gclidCaptured           Int                      @default(0) @map("gclid_captured")
+  lastLatencyMs           Int?                     @map("last_latency_ms")
+  lastLatencyCheckedAt    DateTime?                @map("last_latency_checked_at")
+  /// Google Safe Browsing (malware/phishing) — não equivale a “flag Ads”.
+  safeBrowsingStatus      String?                  @map("safe_browsing_status") @db.VarChar(32)
+  safeBrowsingDetail      String?                  @map("safe_browsing_detail") @db.VarChar(500)
+  safeBrowsingCheckedAt   DateTime?                @map("safe_browsing_checked_at")
+  /// Webhook por campanha (sobrescreve variável global do .env, se definido).
+  edgeWebhookOverrideUrl  String?                  @map("edge_webhook_override_url") @db.VarChar(800)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([domainHost])
+  @@index([proxyHostKey])
+  @@index([uniId])
+  @@index([status])
+  @@map("ads_tracker_campaigns")
+}
+
+// ============ ADS TRACKER — Módulo 04: Cofre de landings (operacional; sem cloaking) ============
+
+enum TrackerLandingVaultStack {
+  HTML_PLAIN
+  WORDPRESS
+  ELEMENTOR
+  OTHER
+}
+
+enum TrackerLandingVaultStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+/// Repositório interno de destinos. Ambas as URLs devem respeitar as políticas das plataformas de anúncios.
+model TrackerLandingVault {
+  id                   String                   @id @default(cuid())
+  name                 String                   @db.VarChar(200)
+  /// Destino principal (campanhas / links curtos).
+  primaryUrl           String                   @map("primary_url") @db.VarChar(2000)
+  /// Destino secundário (institucional, homologação, espelho) — não implica entrega diferente por visitante.
+  secondaryUrl         String?                  @map("secondary_url") @db.VarChar(2000)
+  stack                TrackerLandingVaultStack @default(HTML_PLAIN)
+  status               TrackerLandingVaultStatus @default(DRAFT)
+  /// Tempo de resposta HTTP medido no servidor (aproximação; não é LCP real do browser).
+  lastProbeMsPrimary   Int?                     @map("last_probe_ms_primary")
+  lastProbeMsSecondary Int?                     @map("last_probe_ms_secondary")
+  lastProbeAt          DateTime?                @map("last_probe_at")
+  /// Notas de higiene (scripts de terceiros, PII em querystring, etc.).
+  scriptHygieneNotes   String?                  @map("script_hygiene_notes") @db.Text
+  /// Snapshot manual / futura integração (JSON livre).
+  conversionSnapshot   Json?                    @map("conversion_snapshot")
+  opsNotes             String?                  @map("ops_notes") @db.VarChar(800)
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+
+  tokens     TrackerLandingToken[]
+  migrations TrackerLandingDomainMigration[]
+
+  @@index([status])
+  @@map("tracker_landing_vault")
+}
+
+model TrackerLandingToken {
+  id        String              @id @default(cuid())
+  vaultId   String              @map("vault_id")
+  vault     TrackerLandingVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  token     String              @unique @db.VarChar(64)
+  expiresAt DateTime?           @map("expires_at")
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  @@index([vaultId])
+  @@index([token, active])
+  @@map("tracker_landing_tokens")
+}
+
+model TrackerLandingDomainMigration {
+  id        String              @id @default(cuid())
+  vaultId   String              @map("vault_id")
+  vault     TrackerLandingVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  fromHost  String              @map("from_host") @db.VarChar(253)
+  toHost    String              @map("to_host") @db.VarChar(253)
+  note      String?             @db.VarChar(500)
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  @@index([vaultId])
+  @@map("tracker_landing_domain_migrations")
+}
+
+// ============ ADS TRACKER — Módulo 05: Ofertas S2S (postback servidor) ============
+
+enum TrackerOfferPlatform {
+  KIWIFY
+  HOTMART
+  EDUZZ
+  KIRVANO
+  PERFECT_PAY
+  OTHER
+}
+
+enum TrackerOfferStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum TrackerSalePaymentState {
+  APPROVED
+  BOLETO_PENDING
+  PIX_PENDING
+  CHARGEBACK
+  REFUNDED
+  UNKNOWN
+}
+
+enum TrackerOfferIpTrust {
+  ALLOWLIST_DISABLED
+  ALLOWLIST_OK
+  ALLOWLIST_FAIL
+}
+
+/// Oferta com postback S2S e link de checkout rastreado no domínio da app (`/pay/{paySlug}`).
+model TrackerOffer {
+  id                        String                   @id @default(cuid())
+  name                      String                   @db.VarChar(200)
+  platform                  TrackerOfferPlatform     @default(OTHER)
+  status                    TrackerOfferStatus       @default(ACTIVE)
+  /// Token opaco na URL do webhook público (não expor o id interno).
+  postbackPublicToken       String                   @unique @map("postback_public_token") @db.VarChar(48)
+  /// Segredo para HMAC opcional (corpo bruto) — tratar como credencial.
+  webhookSecret             String                   @map("webhook_secret") @db.VarChar(128)
+  /// Campo JSON para o click id (ex.: gclid, data.xcid) ou "auto" para heurística.
+  clickIdField              String                   @default("auto") @map("click_id_field") @db.VarChar(120)
+  checkoutTargetUrl         String                   @map("checkout_target_url") @db.VarChar(2000)
+  /// Slug único para GET /pay/{paySlug} → redireciona para checkoutTargetUrl.
+  paySlug                   String                   @unique @map("pay_slug") @db.VarChar(80)
+  /// Minutos a aguardar antes de tentar enviar conversão offline ao Google (fila / antifraude).
+  googleOfflineDelayMinutes Int                      @default(120) @map("google_offline_delay_minutes")
+  /// Valor bruto de referência (BRL) para alertas de inconsistência no Módulo 10 (opcional).
+  referenceGrossBrl         Decimal?                 @map("reference_gross_brl") @db.Decimal(14, 2)
+  lastWebhookAt             DateTime?                @map("last_webhook_at")
+  lastWebhookOk             Boolean?                 @map("last_webhook_ok")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  signals             TrackerOfferSaleSignal[]
+  checkoutSettings    TrackerCheckoutSettings?
+  checkoutInitiations TrackerCheckoutInitiation[]
+  checkoutAccessTokens TrackerCheckoutAccessToken[]
+  conversionRules      TrackerConversionRule[]
+  mentoradoShieldLink  MentoradoShieldTrackerLink?
+  /// Módulo 07 — Live Proof Labs (oferta interna de referência; sem vínculo mentorado)
+  liveProofLabCase     LiveProofLabCase?
+
+  @@index([status])
+  @@map("tracker_offers")
+}
+
+/// Módulo 04 — mentorado: UNI + destino checkout/VSL + oferta S2S (`/pay` + webhook).
+model MentoradoShieldTrackerLink {
+  id               String   @id @default(cuid())
+  clientId         String   @map("client_id")
+  client           ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  uniId            String   @map("uni_id") @db.Char(36)
+  uni              VaultIndustrialUnit @relation(fields: [uniId], references: [id], onDelete: Restrict)
+  label            String?  @db.VarChar(200)
+  destinationUrl   String   @map("destination_url") @db.VarChar(2000)
+  /// Nicho para política no edge (ex.: SAUDE, FINANCEIRO, BLACK) — `shield_ctx` na URL.
+  protectionNiche  String   @map("protection_niche") @db.VarChar(48)
+  /// SAFE = página segura (pré-oferta); MONEY = oferta/checkout.
+  shieldProfile    String   @map("shield_profile") @db.VarChar(16)
+  offerId          String   @unique @map("offer_id")
+  offer            TrackerOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([clientId])
+  @@index([uniId])
+  @@map("mentorado_shield_tracker_links")
+}
+
+model TrackerOfferSaleSignal {
+  id                   String                   @id @default(cuid())
+  offerId              String                   @map("offer_id")
+  offer                TrackerOffer             @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  dedupeKey            String                   @map("dedupe_key") @db.VarChar(64)
+  platformOrderId      String?                  @map("platform_order_id") @db.VarChar(200)
+  amountGross          Decimal                  @default(0) @map("amount_gross") @db.Decimal(14, 2)
+  currency             String                   @default("BRL") @db.VarChar(8)
+  paymentState         TrackerSalePaymentState  @map("payment_state")
+  gclid                String?                  @db.VarChar(512)
+  payloadSnapshot      Json?                    @map("payload_snapshot")
+  sourceIp             String                   @default("") @map("source_ip") @db.VarChar(45)
+  ipTrust              TrackerOfferIpTrust      @map("ip_trust")
+  signatureValid       Boolean                  @default(false) @map("signature_valid")
+  countedForRevenue    Boolean                  @default(true) @map("counted_for_revenue")
+  googleOfflineSentAt  DateTime?                @map("google_offline_sent_at")
+  googleOfflineError   String?                  @map("google_offline_error") @db.VarChar(500)
+  /// Upsell / order bump inferido do postback (para regras de conversão).
+  isUpsell             Boolean                  @default(false) @map("is_upsell")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  conversionDispatches TrackerConversionDispatch[]
+
+  @@unique([offerId, dedupeKey])
+  @@index([offerId, createdAt])
+  @@map("tracker_offer_sale_signals")
+}
+
+// ============ ADS TRACKER — Módulo 08: Regras de conversão offline (Google Ads) ============
+
+enum TrackerConversionEventKind {
+  PURCHASE
+  LEAD
+  INITIATE_CHECKOUT
+  HIGH_INTENT_LEAD
+}
+
+enum TrackerConversionUpsellMode {
+  INCLUDE_ALL
+  PRIMARY_ONLY
+  UPSELL_ONLY
+}
+
+enum TrackerConversionValueMode {
+  FULL_GROSS
+  NET_AFTER_PLATFORM_FEE
+  MICRO_ZERO
+}
+
+enum TrackerConversionDispatchStatus {
+  QUEUED
+  SENT
+  SKIPPED_ORGANIC
+  SKIPPED_FILTER
+  FAILED
+}
+
+model TrackerConversionRule {
+  id     String        @id @default(cuid())
+  name   String        @db.VarChar(200)
+  slug   String        @unique @db.VarChar(80)
+  active Boolean       @default(true)
+  /// Tipo lógico; só PURCHASE está ligado a sinais S2S de oferta nesta versão.
+  eventKind TrackerConversionEventKind @map("event_kind")
+
+  offerId String?      @map("offer_id")
+  offer   TrackerOffer? @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  onlyApprovedPurchases Boolean @default(true) @map("only_approved_purchases")
+  upsellMode            TrackerConversionUpsellMode @default(INCLUDE_ALL) @map("upsell_mode")
+
+  valueMode                 TrackerConversionValueMode @default(FULL_GROSS) @map("value_mode")
+  /// Percentagem da plataforma a descontar quando valueMode = NET_AFTER_PLATFORM_FEE (ex.: 9.9).
+  platformFeePercent        Decimal?                 @map("platform_fee_percent") @db.Decimal(5, 2)
+  /// 100 = valor completo (após modo); 0 = micro-conversão sem valor monetário relevante.
+  conversionWeightPercent   Int                      @default(100) @map("conversion_weight_percent")
+
+  /// Customer ID Google Ads (só dígitos, sem hífenes) onde existe a ação de conversão.
+  googleAdsCustomerId       String?                  @map("google_ads_customer_id") @db.VarChar(32)
+  /// ID numérico da Conversion Action (offline upload).
+  googleConversionActionId  String?                  @map("google_conversion_action_id") @db.VarChar(32)
+  /// Etiqueta / nome de referência (painel antigo ou notas operacionais).
+  googleConversionLabel     String?                  @map("google_conversion_label") @db.VarChar(255)
+
+  /// Atraso mínimo antes de tentar enviar (antifraude, reconciliação — não “simular humano”).
+  delayMinutesBeforeSend Int @default(60) @map("delay_minutes_before_send")
+
+  backendAction String @default("OFFLINE_GCLIC_UPLOAD") @map("backend_action") @db.VarChar(64)
+
+  /// Reservado para conversão preditiva (requer métricas de tempo na página).
+  earlySignalMinSecondsOnPage Int? @map("early_signal_min_seconds_on_page")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  dispatches TrackerConversionDispatch[]
+
+  @@index([active, eventKind])
+  @@index([offerId])
+  @@map("tracker_conversion_rules")
+}
+
+model TrackerConversionDispatch {
+  id     String               @id @default(cuid())
+  ruleId String               @map("rule_id")
+  rule   TrackerConversionRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  saleSignalId String?               @map("sale_signal_id")
+  saleSignal   TrackerOfferSaleSignal? @relation(fields: [saleSignalId], references: [id], onDelete: Cascade)
+
+  status TrackerConversionDispatchStatus @map("status")
+
+  /// PAID_GCLID | ORGANIC_NO_GCLID — para monitor.
+  matchKind String @map("match_kind") @db.VarChar(32)
+
+  valueComputed Decimal? @map("value_computed") @db.Decimal(14, 2)
+  currency      String   @default("BRL") @db.VarChar(8)
+
+  scheduledFor  DateTime  @map("scheduled_for")
+  processedAt   DateTime? @map("processed_at")
+  errorMessage  String?   @map("error_message") @db.VarChar(500)
+  gclidSnapshot String?   @map("gclid_snapshot") @db.VarChar(512)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([ruleId, saleSignalId])
+  @@index([status, scheduledFor])
+  @@index([createdAt])
+  @@map("tracker_conversion_dispatches")
+}
+
+// ============ ADS TRACKER — Módulo 06: Checkout (túnel de parâmetros / logs) ============
+
+enum TrackerCheckoutParamMode {
+  /// Encaminha todos os query params recebidos no /pay/... (exceto colisão com keys já fixas no alvo).
+  PRESERVE_ALL_INBOUND
+  /// Só chaves em forwardedParamKeys.
+  ALLOWLIST_ONLY
+}
+
+enum TrackerCheckoutInitiationOutcome {
+  REDIRECT_302
+  OFFER_NOT_FOUND
+  INVALID_CHECKOUT_URL
+  TOKEN_EXPIRED
+  TOKEN_EXHAUSTED
+  OFFER_INACTIVE
+}
+
+/// Configuração de túnel de query por oferta (1:1).
+model TrackerCheckoutSettings {
+  id     String       @id @default(cuid())
+  offerId String      @unique @map("offer_id")
+  offer  TrackerOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  forwardedParamKeys Json @map("forwarded_param_keys")
+  paramMode          TrackerCheckoutParamMode @default(ALLOWLIST_ONLY) @map("param_mode")
+
+  /// Links de um uso / TTL (anti-scraping básico). O caminho público é /pay/t/{token}.
+  useEphemeralLinks   Boolean @default(false) @map("use_ephemeral_links")
+  ephemeralTtlMinutes Int     @default(60) @map("ephemeral_ttl_minutes")
+  ephemeralMaxUses    Int     @default(1) @map("ephemeral_max_uses")
+
+  /// Atraso opcional (ms) sugerido para scripts de terceiros no browser — cumprir políticas das plataformas.
+  pixelBackupDelayMs Int? @map("pixel_backup_delay_ms")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("tracker_checkout_settings")
+}
+
+model TrackerCheckoutInitiation {
+  id     String        @id @default(cuid())
+  offerId String?      @map("offer_id")
+  offer  TrackerOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  sourceIp  String  @map("source_ip") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(512)
+  referer   String? @map("referer") @db.VarChar(2000)
+
+  fromGoogleAds Boolean @map("from_google_ads")
+
+  /// Snapshot limitado dos query params do pedido ao /pay.
+  querySnapshot Json? @map("query_snapshot")
+
+  outcome TrackerCheckoutInitiationOutcome @map("outcome")
+
+  viaEphemeralToken Boolean @default(false) @map("via_ephemeral_token")
+  paySlugOrToken    String? @map("pay_slug_or_token") @db.VarChar(96)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([offerId, createdAt])
+  @@map("tracker_checkout_initiations")
+}
+
+model TrackerCheckoutAccessToken {
+  id      String       @id @default(cuid())
+  offerId String       @map("offer_id")
+  offer   TrackerOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  token     String   @unique @db.VarChar(32)
+  expiresAt DateTime @map("expires_at")
+  useCount  Int      @default(0) @map("use_count")
+  maxUses   Int      @default(1) @map("max_uses")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([offerId])
+  @@index([token, expiresAt])
+  @@map("tracker_checkout_access_tokens")
+}
+
+// ============ ADS TRACKER — Módulo 07: Fontes de tráfego (parâmetros / URL builder) ============
+
+enum TrackerTrafficSourceStatus {
+  ACTIVE
+  PAUSED
+}
+
+/// Dicionário de parâmetros por rede (ex.: Google Ads) + parâmetros globais para o gerador de URLs.
+model TrackerTrafficSource {
+  id          String                       @id @default(cuid())
+  slug        String                       @unique @db.VarChar(64)
+  name        String                       @db.VarChar(200)
+  status      TrackerTrafficSourceStatus   @default(ACTIVE)
+  /// Identificador de UI (google_ads, meta, tiktok, custom, …).
+  networkKind String                       @map("network_kind") @db.VarChar(32)
+  builtIn     Boolean                      @default(false) @map("built_in")
+  /// Blueprint: clickIdParam, assumeAutoTagging, utm{}, customPairs[{key,value}] (ValueTrack entre chaves).
+  paramBlueprint Json @map("param_blueprint")
+  /// Pares fixos adicionados a todas as URLs geradas desta fonte.
+  globalParams     Json @map("global_params")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("tracker_traffic_sources")
+}
+
+// ============ WAR ROOM OS — Módulo 07: Live Proof Labs (ofertas validadas / cemitério) ============
+
+enum LiveProofLabCaseStatus {
+  DRAFT
+  /// Equipa a testar — pode aparecer na área do mentorado se publicado
+  EM_TESTE
+  /// Oferta com métricas que fecharam positivo
+  VALIDADA
+  /// Cemitério / teste que não funcionou
+  REPROVADA
+  /// Operação a escalar na banca interna
+  EM_ESCALA
+}
+
+enum LiveProofLabInsightKind {
+  AUDIO
+  VIDEO
+}
+
+/// Caso publicado na área do mentorado: prova de operação interna + opção de replicar criativo/VSL.
+model LiveProofLabCase {
+  id                     String                 @id @default(cuid())
+  slug                   String                 @unique @db.VarChar(96)
+  status                 LiveProofLabCaseStatus @default(DRAFT)
+  title                  String                 @db.VarChar(200)
+  productLabel           String                 @map("product_label") @db.VarChar(200)
+  nicheLabel             String                 @map("niche_label") @db.VarChar(120)
+  headline               String?                @db.VarChar(320)
+  summary                String?                @db.Text
+  /// Oferta tracker interna (receita S2S em tempo real no dossiê)
+  internalTrackerOfferId String?                @unique @map("internal_tracker_offer_id")
+  internalTrackerOffer   TrackerOffer?          @relation(fields: [internalTrackerOfferId], references: [id], onDelete: SetNull)
+  creativeTemplateId     String?                @map("creative_template_id")
+  creativeTemplate       CreativeVaultTemplate? @relation(fields: [creativeTemplateId], references: [id], onDelete: SetNull)
+  /// URL de checkout sugerida ao mentorado (replicar / shield)
+  suggestedCheckoutUrl   String?                @map("suggested_checkout_url") @db.VarChar(2000)
+  defaultOfferPlatform   TrackerOfferPlatform?  @map("default_offer_platform")
+  vslScriptNotes         String?                @map("vsl_script_notes") @db.Text
+  analysisText           String?                @map("analysis_text") @db.Text
+  cpaIdealBrl            Decimal?               @map("cpa_ideal_brl") @db.Decimal(12, 2)
+  scaleBudgetHintBrl     Decimal?               @map("scale_budget_hint_brl") @db.Decimal(14, 2)
+  /// Gasto real 24h/7d (snapshot / webhook / Sheets)
+  spend24hBrl            Decimal?               @map("spend_24h_brl") @db.Decimal(14, 2)
+  spend7dBrl             Decimal?               @map("spend_7d_brl") @db.Decimal(14, 2)
+  /// Métricas sincronizadas (webhook interno / equipa)
+  gastoTotalBrl          Decimal?               @map("gasto_total_brl") @db.Decimal(14, 2)
+  cpaMedioBrl            Decimal?               @map("cpa_medio_brl") @db.Decimal(12, 4)
+  roiLiquidoPercent      Decimal?               @map("roi_liquido_percent") @db.Decimal(10, 4)
+  volumeVendas           Int?                   @map("volume_vendas")
+  metricsSyncedAt        DateTime?              @map("metrics_synced_at")
+  graveyardReason        String?                @map("graveyard_reason") @db.Text
+  graveyardLossBrl       Decimal?               @map("graveyard_loss_brl") @db.Decimal(14, 2)
+  sortOrder              Int                    @default(0) @map("sort_order")
+  validatedAt            DateTime?              @map("validated_at")
+  publishedToClients     Boolean                @default(false) @map("published_to_clients")
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @updatedAt @map("updated_at")
+
+  screenshots LiveProofLabScreenshot[]
+  insights    LiveProofLabInsight[]
+  replicates       LiveProofLabReplicateLog[]
+  spendDays        LiveProofLabSpendDay[]
+  templateUnlocks  LiveProofLabTemplateUnlock[]
+
+  @@index([status, publishedToClients, sortOrder])
+  @@map("live_proof_lab_cases")
+}
+
+/// Série diária de gasto real (Skin in the Game) — preenchida via webhook ou admin
+model LiveProofLabSpendDay {
+  id        String           @id @default(cuid())
+  caseId    String           @map("case_id")
+  case      LiveProofLabCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  day       DateTime         @map("day") @db.Date
+  amountBrl Decimal          @map("amount_brl") @db.Decimal(14, 2)
+
+  @@unique([caseId, day])
+  @@index([caseId])
+  @@map("live_proof_lab_spend_days")
+}
+
+/// Criativo desbloqueado no Creative Vault após “Copiar operação”
+model LiveProofLabTemplateUnlock {
+  id         String   @id @default(cuid())
+  clientId   String   @map("client_id")
+  client     ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  templateId String   @map("template_id")
+  template   CreativeVaultTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  caseId     String   @map("case_id")
+  case       LiveProofLabCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([clientId, templateId])
+  @@index([caseId])
+  @@map("live_proof_lab_template_unlocks")
+}
+
+model LiveProofLabScreenshot {
+  id          String           @id @default(cuid())
+  caseId      String           @map("case_id")
+  case        LiveProofLabCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  imageUrl    String           @map("image_url") @db.VarChar(2000)
+  caption     String?          @db.VarChar(300)
+  /// Momento do print (dashboard)
+  capturedAt  DateTime?        @map("captured_at")
+  sortOrder   Int              @default(0) @map("sort_order")
+
+  @@index([caseId, sortOrder])
+  @@map("live_proof_lab_screenshots")
+}
+
+model LiveProofLabInsight {
+  id        String                  @id @default(cuid())
+  caseId    String                  @map("case_id")
+  case      LiveProofLabCase        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  kind      LiveProofLabInsightKind
+  mediaUrl  String                  @map("media_url") @db.VarChar(2000)
+  title     String?                 @db.VarChar(200)
+  sortOrder Int                     @default(0) @map("sort_order")
+
+  @@index([caseId, sortOrder])
+  @@map("live_proof_lab_insights")
+}
+
+model LiveProofLabReplicateLog {
+  id        String            @id @default(cuid())
+  caseId    String            @map("case_id")
+  case      LiveProofLabCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  clientId  String            @map("client_id")
+  client    ClientProfile     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  jobId     String?           @map("job_id")
+  job       CreativeAgencyJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  @@index([clientId, createdAt])
+  @@index([caseId])
+  @@map("live_proof_lab_replicate_logs")
 }

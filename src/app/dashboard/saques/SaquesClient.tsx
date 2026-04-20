@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pendente',
   PROCESSING: 'Processando',
-  COMPLETED: 'Concluído',
+  COMPLETED: 'Pago',
   HELD: 'Retido',
-  FAILED: 'Falhou',
+  FAILED: 'Rejeitado',
 }
 
 type Withdrawal = {
@@ -21,9 +22,11 @@ type Withdrawal = {
   dueDate: string | null
   risk: string | null
   createdAt: string
+  user?: { id: string; name: string | null; email: string } | null
 }
 
 export function SaquesClient() {
+  const searchParams = useSearchParams()
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [alerts, setAlerts] = useState({ pending: 0, held: 0 })
   const [loading, setLoading] = useState(true)
@@ -40,6 +43,8 @@ export function SaquesClient() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [updating, setUpdating] = useState<string | null>(null)
+  const initFromUrlDone = useRef(false)
+  const [filterReady, setFilterReady] = useState(false)
 
   async function handleUpdateStatus(id: string, status: string) {
     setUpdating(id)
@@ -59,6 +64,14 @@ export function SaquesClient() {
   }
 
   useEffect(() => {
+    if (initFromUrlDone.current) return
+    initFromUrlDone.current = true
+    if (searchParams.get('pendentes') === '1') setFilterStatus('PENDING')
+    setFilterReady(true)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!filterReady) return
     setLoading(true)
     const params = filterStatus ? `?status=${filterStatus}` : ''
     fetch(`/api/saques${params}`)
@@ -68,7 +81,7 @@ export function SaquesClient() {
         setAlerts(data.alerts || { pending: 0, held: 0 })
       })
       .finally(() => setLoading(false))
-  }, [filterStatus])
+  }, [filterReady, filterStatus])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -243,9 +256,11 @@ export function SaquesClient() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-500 border-b">
+                  <th className="pb-2 pr-4">Solicitante</th>
                   <th className="pb-2 pr-4">Gateway</th>
-                  <th className="pb-2 pr-4">Conta</th>
+                  <th className="pb-2 pr-4">Chave PIX / Ref.</th>
                   <th className="pb-2 pr-4">Valor</th>
+                  <th className="pb-2 pr-4">Data solicitação</th>
                   <th className="pb-2 pr-4">Taxa</th>
                   <th className="pb-2 pr-4">Líquido</th>
                   <th className="pb-2 pr-4">Status</th>
@@ -257,9 +272,13 @@ export function SaquesClient() {
               <tbody>
                 {withdrawals.map((w) => (
                   <tr key={w.id} className="border-b border-gray-100 last:border-0">
+                    <td className="py-3 pr-4">
+                      {w.user ? w.user.name || w.user.email : '—'}
+                    </td>
                     <td className="py-3 pr-4">{w.gateway}</td>
-                    <td className="py-3 pr-4">{w.accountId || '—'}</td>
+                    <td className="py-3 pr-4 font-mono text-xs">{w.accountId || '—'}</td>
                     <td className="py-3 pr-4">R$ {Number(w.value).toLocaleString('pt-BR')}</td>
+                    <td className="py-3 pr-4">{new Date(w.createdAt).toLocaleString('pt-BR')}</td>
                     <td className="py-3 pr-4">{w.fee ? `R$ ${Number(w.fee).toLocaleString()}` : '—'}</td>
                     <td className="py-3 pr-4">R$ {Number(w.netValue).toLocaleString('pt-BR')}</td>
                     <td className="py-3 pr-4">

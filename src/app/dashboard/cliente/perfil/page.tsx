@@ -12,11 +12,23 @@ type Profile = {
   country: string | null
   notifyEmail?: boolean
   notifyWhatsapp?: boolean
+  gtmId?: string | null
+  widgetNiche?: string | null
 }
 
 export default function PerfilPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [form, setForm] = useState({ name: '', phone: '', whatsapp: '', country: '', photo: '', notifyEmail: true, notifyWhatsapp: true })
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    whatsapp: '',
+    country: '',
+    photo: '',
+    gtmId: '',
+    widgetNiche: '',
+    notifyEmail: true,
+    notifyWhatsapp: true,
+  })
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -27,16 +39,28 @@ export default function PerfilPage() {
     fetch('/api/cliente/perfil')
       .then((r) => r.json())
       .then((data) => {
+        if (!data || typeof data.email !== 'string') {
+          setProfile(null)
+          setMessage(data?.error || 'Não foi possível carregar o perfil.')
+          return
+        }
         setProfile(data)
+        setMessage('')
         setForm({
           name: data.name || '',
           phone: data.phone || '',
           whatsapp: data.whatsapp || '',
           country: data.country || '',
           photo: data.photo || '',
+          gtmId: data.gtmId || '',
+          widgetNiche: data.widgetNiche || '',
           notifyEmail: data.notifyEmail !== false,
           notifyWhatsapp: data.notifyWhatsapp !== false,
         })
+      })
+      .catch(() => {
+        setProfile(null)
+        setMessage('Erro ao carregar o perfil.')
       })
       .finally(() => setLoading(false))
   }, [])
@@ -86,6 +110,22 @@ export default function PerfilPage() {
   }
 
   if (loading) return <p className="text-gray-500 py-8">Carregando...</p>
+
+  if (!profile) {
+    return (
+      <div>
+        <div className="flex items-center gap-4 mb-6">
+          <Link href="/dashboard/cliente" className="text-gray-500 hover:text-gray-700">
+            ← Voltar
+          </Link>
+          <h1 className="heading-1">Editar Dados Pessoais</h1>
+        </div>
+        <div className="card max-w-xl">
+          <p className="text-red-600">{message || 'Perfil indisponível.'}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -153,6 +193,35 @@ export default function PerfilPage() {
               className="input-field"
               placeholder="Brasil"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Google Tag Manager (ID do container)</label>
+            <input
+              type="text"
+              value={form.gtmId}
+              onChange={(e) => setForm((f) => ({ ...f, gtmId: e.target.value }))}
+              className="input-field font-mono"
+              placeholder="GTM-XXXXXXX"
+              autoComplete="off"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Usado para atribuição e evento <code className="text-[10px]">whatsapp_click</code>. Deixe em branco para
+              usar apenas o GTM padrão do servidor (se configurado).
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Nicho (mensagem do widget WhatsApp)</label>
+            <input
+              type="text"
+              value={form.widgetNiche}
+              onChange={(e) => setForm((f) => ({ ...f, widgetNiche: e.target.value }))}
+              className="input-field"
+              placeholder="Ex.: marketing digital para clínicas"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Texto usado em: &quot;Olá! Gostaria de mais informações sobre [nicho].&quot; no botão flutuante e
+              rastreamento.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Foto / Avatar (URL)</label>

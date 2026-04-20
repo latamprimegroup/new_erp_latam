@@ -7,6 +7,8 @@ import { PushNotificationsSetup } from '@/components/PushNotificationsSetup'
 type Config = {
   joinchatId?: string
   whatsappNumber?: string
+  widgetNiche?: string
+  footerCustomScripts?: string
   metaProducaoMensal: number
   metaVendasMensal: number
   bonusNivel1: number
@@ -38,9 +40,12 @@ export default function AdminConfigPage() {
   const [config, setConfig] = useState<Config | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveOk, setSaveOk] = useState(false)
   const [form, setForm] = useState<Config>({
     joinchatId: '',
     whatsappNumber: '',
+    widgetNiche: '',
+    footerCustomScripts: '',
     metaProducaoMensal: 10000,
     metaVendasMensal: 10000,
     bonusNivel1: 200,
@@ -73,7 +78,13 @@ export default function AdminConfigPage() {
       fetch('/api/admin/config').then((r) => r.json()),
       fetch('/api/admin/config/widgets').then((r) => r.json()).catch(() => ({ joinchatId: '', whatsappNumber: '' })),
     ]).then(([configData, widgetsData]) => {
-      const merged = { ...configData, joinchatId: widgetsData.joinchatId ?? '', whatsappNumber: widgetsData.whatsappNumber ?? '' }
+      const merged = {
+        ...configData,
+        joinchatId: widgetsData.joinchatId ?? '',
+        whatsappNumber: widgetsData.whatsappNumber ?? '',
+        widgetNiche: widgetsData.widgetNiche ?? '',
+        footerCustomScripts: widgetsData.footerCustomScripts ?? '',
+      }
       setConfig(merged)
       setForm(merged)
     }).finally(() => setLoading(false))
@@ -82,6 +93,7 @@ export default function AdminConfigPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setSaveOk(false)
     try {
       const [configRes, widgetsRes] = await Promise.all([
         fetch('/api/admin/config', {
@@ -121,14 +133,31 @@ export default function AdminConfigPage() {
           body: JSON.stringify({
             joinchatId: form.joinchatId ?? '',
             whatsappNumber: form.whatsappNumber ?? '',
+            widgetNiche: form.widgetNiche ?? '',
+            footerCustomScripts: form.footerCustomScripts ?? '',
           }),
         }),
       ])
       const configData = await configRes.json()
       const widgetsData = await widgetsRes.json()
       if (configRes.ok) {
-        setConfig({ ...configData, joinchatId: widgetsData.joinchatId ?? '', whatsappNumber: widgetsData.whatsappNumber ?? '' })
-        setForm((f) => ({ ...f, ...configData, joinchatId: widgetsData.joinchatId ?? '', whatsappNumber: widgetsData.whatsappNumber ?? '' }))
+        setSaveOk(true)
+        setTimeout(() => setSaveOk(false), 5000)
+        setConfig({
+          ...configData,
+          joinchatId: widgetsData.joinchatId ?? '',
+          whatsappNumber: widgetsData.whatsappNumber ?? '',
+          widgetNiche: widgetsData.widgetNiche ?? '',
+          footerCustomScripts: widgetsData.footerCustomScripts ?? '',
+        })
+        setForm((f) => ({
+          ...f,
+          ...configData,
+          joinchatId: widgetsData.joinchatId ?? '',
+          whatsappNumber: widgetsData.whatsappNumber ?? '',
+          widgetNiche: widgetsData.widgetNiche ?? '',
+          footerCustomScripts: widgetsData.footerCustomScripts ?? '',
+        }))
       } else {
         alert(configData.error || 'Erro ao salvar')
       }
@@ -158,6 +187,11 @@ export default function AdminConfigPage() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">
+        {saveOk && (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
+            Configurações salvas com sucesso (incluindo widgets e scripts do rodapé).
+          </div>
+        )}
         <div className="card">
           <h2 className="font-semibold mb-4">Metas Mensais</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -315,10 +349,15 @@ export default function AdminConfigPage() {
 
         <div className="card">
           <h2 className="font-semibold mb-4">Widgets (GTM, Join.Chat)</h2>
-          <p className="text-sm text-gray-500 mb-4">GTM: configure <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_GTM_ID</code> no .env. Join.Chat: cole o ID do widget (ex: 5abc123) do painel join.chat.</p>
+          <p className="text-sm text-gray-500 mb-4">
+            GTM: fallback global <code className="bg-gray-100 px-1 rounded">NEXT_PUBLIC_GTM_ID</code> no .env (ERP).
+            Cada cliente pode cadastrar o próprio container em <strong>Meu Perfil</strong> — prioridade sobre o .env.
+            Evento <code className="text-xs">whatsapp_click</code> no dataLayer. Com WhatsApp preenchido, o ERP usa o
+            botão flutuante verde (sem duplicar com o bundle). Join.Chat ID só é carregado se não houver número válido.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Join.Chat ID</label>
+              <label className="block text-sm font-medium mb-1">Join.Chat ID (bundle legado)</label>
               <input
                 type="text"
                 placeholder="Ex: 5abc123"
@@ -337,12 +376,36 @@ export default function AdminConfigPage() {
                 className="input-field"
               />
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Nicho (texto da mensagem do widget)</label>
+              <input
+                type="text"
+                placeholder="Ex: serviços de estética em São Paulo"
+                value={form.widgetNiche ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, widgetNiche: e.target.value }))}
+                className="input-field"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Usado em: &quot;Olá! Gostaria de mais informações sobre [nicho].&quot; Clientes podem definir o próprio
+                nicho em Meu Perfil.
+              </p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Scripts personalizados (footer)</label>
+              <textarea
+                rows={5}
+                placeholder="HTML sanitizado (ex.: pixels, script src de CDN confiáveis). Scripts inline são removidos ao salvar."
+                value={form.footerCustomScripts ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, footerCustomScripts: e.target.value }))}
+                className="input-field font-mono text-xs"
+              />
+            </div>
           </div>
         </div>
 
         <div className="card">
           <h2 className="font-semibold mb-4">Plug & Play Black</h2>
-          <div>
+          <div className="mb-8">
             <label className="block text-sm font-medium mb-1">Pagamento por conta que durou +24h (R$)</label>
             <input
               type="number"
@@ -350,6 +413,93 @@ export default function AdminConfigPage() {
               onChange={(e) => setForm((f) => ({ ...f, blackPagamentoPorConta24h: parseInt(e.target.value, 10) || 0 }))}
               className="input-field w-32"
             />
+          </div>
+          <h3 className="text-sm font-semibold mb-1">Remuneração – colaboradores Plug &amp; Play</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Salário base, metas e bônus (bronze / prata / ouro / meta / elite) usados no fechamento e saldo P&amp;P.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Salário base P&amp;P (R$/mês)</label>
+              <input
+                type="number"
+                value={form.plugplaySalarioBase}
+                onChange={(e) => setForm((f) => ({ ...f, plugplaySalarioBase: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Meta diária P&amp;P</label>
+              <input
+                type="number"
+                value={form.plugplayMetaDiaria}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayMetaDiaria: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Meta mensal P&amp;P</label>
+              <input
+                type="number"
+                value={form.plugplayMetaMensal}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayMetaMensal: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Meta elite P&amp;P (contas)</label>
+              <input
+                type="number"
+                value={form.plugplayMetaElite}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayMetaElite: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Bônus bronze (R$)</label>
+              <input
+                type="number"
+                value={form.plugplayBonusBronze}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayBonusBronze: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Bônus prata (R$)</label>
+              <input
+                type="number"
+                value={form.plugplayBonusPrata}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayBonusPrata: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Bônus ouro (R$)</label>
+              <input
+                type="number"
+                value={form.plugplayBonusOuro}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayBonusOuro: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Bônus meta batida (R$)</label>
+              <input
+                type="number"
+                value={form.plugplayBonusMeta}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayBonusMeta: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Bônus elite (R$)</label>
+              <input
+                type="number"
+                value={form.plugplayBonusElite}
+                onChange={(e) => setForm((f) => ({ ...f, plugplayBonusElite: parseInt(e.target.value, 10) || 0 }))}
+                className="input-field"
+              />
+            </div>
           </div>
         </div>
 

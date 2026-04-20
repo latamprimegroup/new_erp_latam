@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { AccountPlatform, AccountStatus, type Prisma } from '@prisma/client'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
 import { decrypt } from '@/lib/encryption'
@@ -26,11 +27,28 @@ export async function GET(req: NextRequest) {
   const platform = searchParams.get('platform')
   const status = searchParams.get('status')
   const includeArchived = searchParams.get('includeArchived') === 'true'
+  const q = searchParams.get('q')?.trim() ?? ''
 
-  const where: Record<string, unknown> = { deletedAt: null }  // Soft delete: nunca exportar excluídas
-  if (platform) where.platform = platform
-  if (status) where.status = status
-  if (!includeArchived) where.archivedAt = null
+  const clauses: Prisma.StockAccountWhereInput[] = [{ deletedAt: null }]
+  if (platform && (Object.values(AccountPlatform) as string[]).includes(platform)) {
+    clauses.push({ platform: platform as AccountPlatform })
+  }
+  if (status && (Object.values(AccountStatus) as string[]).includes(status)) {
+    clauses.push({ status: status as AccountStatus })
+  }
+  if (!includeArchived) clauses.push({ archivedAt: null })
+  if (q.length > 0) {
+    clauses.push({
+      OR: [
+        { id: { startsWith: q } },
+        { niche: { contains: q } },
+        { description: { contains: q } },
+        { type: { contains: q } },
+      ],
+    })
+  }
+  const where: Prisma.StockAccountWhereInput =
+    clauses.length === 1 ? clauses[0]! : { AND: clauses }
 
   const accounts = await prisma.stockAccount.findMany({
     where,

@@ -1,0 +1,8 @@
+-- Campo pix_key em ProducerProfile (cadastro de PIX pelo produtor em Saldo e Saque).
+-- Preferível: `npx prisma db push` ou `prisma migrate dev` a partir do schema.prisma.
+--
+-- PostgreSQL (tabela com nome do model):
+-- ALTER TABLE "ProducerProfile" ADD COLUMN IF NOT EXISTS pix_key VARCHAR(120);
+--
+-- MySQL (sem IF NOT EXISTS em versões antigas — ignore erro se a coluna já existir):
+-- ALTER TABLE ProducerProfile ADD COLUMN pix_key VARCHAR(120) NULL;

@@ -1,121 +1,160 @@
 'use client'
 
 import { useState } from 'react'
+import { MessageSquare, Building2 } from 'lucide-react'
 
-type Category = 'SYSTEM' | 'COMPANY'
-
+/**
+ * Wireframe: dois acessos rápidos lado a lado — Sistema (ERP) e Empresa (anônimo opcional).
+ */
 export function ProductionFeedback() {
-  const [open, setOpen] = useState(false)
-  const [category, setCategory] = useState<Category>('SYSTEM')
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [sysTitle, setSysTitle] = useState('')
+  const [sysDesc, setSysDesc] = useState('')
+  const [coTitle, setCoTitle] = useState('')
+  const [coDesc, setCoDesc] = useState('')
   const [anonymous, setAnonymous] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(false)
+  const [submitting, setSubmitting] = useState<'SYSTEM' | 'COMPANY' | null>(null)
+  const [okSystem, setOkSystem] = useState(false)
+  const [okCompany, setOkCompany] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!title.trim() || !description.trim()) return
-    setSubmitting(true)
-    setSuccess(false)
+  async function send(category: 'SYSTEM' | 'COMPANY') {
+    const title = category === 'SYSTEM' ? sysTitle.trim() : coTitle.trim()
+    const description = category === 'SYSTEM' ? sysDesc.trim() : coDesc.trim()
+    if (!title || !description) return
+    setSubmitting(category)
+    if (category === 'SYSTEM') setOkSystem(false)
+    else setOkCompany(false)
     const res = await fetch('/api/suggestions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         category,
-        title: title.trim(),
-        description: description.trim(),
+        title,
+        description,
         anonymous: category === 'COMPANY' ? anonymous : undefined,
       }),
     })
     if (res.ok) {
-      setTitle('')
-      setDescription('')
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
+      if (category === 'SYSTEM') {
+        setSysTitle('')
+        setSysDesc('')
+        setOkSystem(true)
+        setTimeout(() => setOkSystem(false), 4000)
+      } else {
+        setCoTitle('')
+        setCoDesc('')
+        setAnonymous(false)
+        setOkCompany(true)
+        setTimeout(() => setOkCompany(false), 4000)
+      }
     } else {
       const err = await res.json()
       alert(err.error || 'Erro ao enviar')
     }
-    setSubmitting(false)
+    setSubmitting(null)
   }
 
   return (
-    <div className="production-form-area border-t border-gray-200 dark:border-white/10 pt-4 mt-6">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
-      >
-        <span>💡 Central de Feedback e Melhoria Contínua</span>
-        <span className="text-xs">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="mt-3 space-y-4">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setCategory('SYSTEM')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                category === 'SYSTEM'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-white/20'
-              }`}
-            >
-              Sugestões de Melhoria (Sistema)
-            </button>
-            <button
-              type="button"
-              onClick={() => setCategory('COMPANY')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                category === 'COMPANY'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-white/20'
-              }`}
-            >
-              Sugestões de Melhoria (Empresa)
-            </button>
+    <section
+      className="mt-8 pt-6 border-t border-gray-200 dark:border-slate-600/50"
+      aria-labelledby="producao-feedback-heading"
+    >
+      <h2 id="producao-feedback-heading" className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+        Central de Feedback e Melhoria Contínua
+      </h2>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 max-w-3xl">
+        Canal direto para o time de TI (sistema) e para direção/operação (empresa). A segunda opção pode ser anônima.
+      </p>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-600/60 bg-white dark:bg-slate-900/60 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3 text-primary-600 dark:text-primary-400">
+            <MessageSquare className="w-5 h-5 shrink-0" aria-hidden />
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">💡 Sugestão: Melhoria do Sistema</h3>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {category === 'SYSTEM'
-              ? 'Bugs, novas funções, melhorias no software. Destino: backlog da equipe de TI.'
-              : 'Processos, cultura, operação. Pode ser anônimo. Destino: direção/administração.'}
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Bugs, novas funções e melhorias no ERP. Destino: backlog de desenvolvimento.
           </p>
-          <form onSubmit={handleSubmit} className="space-y-2">
+          <div className="space-y-2">
             <input
               type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="input-field"
+              value={sysTitle}
+              onChange={(e) => setSysTitle(e.target.value)}
+              className="input-field text-sm"
               placeholder="Título"
-              required
+              aria-label="Título sugestão sistema"
             />
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="input-field min-h-[80px]"
+              value={sysDesc}
+              onChange={(e) => setSysDesc(e.target.value)}
+              className="input-field text-sm min-h-[88px]"
               placeholder="Descrição"
-              required
+              aria-label="Descrição sugestão sistema"
             />
-            {category === 'COMPANY' && (
-              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <input
-                  type="checkbox"
-                  checked={anonymous}
-                  onChange={(e) => setAnonymous(e.target.checked)}
-                />
-                Enviar de forma anônima
-              </label>
-            )}
-            <button type="submit" disabled={submitting} className="btn-secondary text-sm py-2 px-4">
-              {submitting ? 'Enviando...' : 'Enviar Sugestão'}
+            <button
+              type="button"
+              disabled={submitting === 'SYSTEM'}
+              onClick={() => void send('SYSTEM')}
+              className="btn-primary text-sm py-2 w-full sm:w-auto"
+            >
+              {submitting === 'SYSTEM' ? 'Enviando…' : 'Enviar sugestão'}
             </button>
-          </form>
-          {success && (
-            <p className="text-sm text-green-600 dark:text-green-400">✓ Sugestão enviada com sucesso!</p>
-          )}
+            {okSystem && (
+              <p className="text-sm text-emerald-600 dark:text-emerald-400" role="status">
+                Sugestão enviada. Obrigado.
+              </p>
+            )}
+          </div>
         </div>
-      )}
-    </div>
+
+        <div className="rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/40 dark:bg-amber-950/20 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3 text-amber-800 dark:text-amber-200">
+            <Building2 className="w-5 h-5 shrink-0" aria-hidden />
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">📢 Sugestão: Melhoria da Empresa</h3>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-amber-100/80 mb-3">
+            Processos, cultura e operação. Pode enviar sem identificação.
+          </p>
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={coTitle}
+              onChange={(e) => setCoTitle(e.target.value)}
+              className="input-field text-sm bg-white dark:bg-slate-950/80"
+              placeholder="Título"
+              aria-label="Título sugestão empresa"
+            />
+            <textarea
+              value={coDesc}
+              onChange={(e) => setCoDesc(e.target.value)}
+              className="input-field text-sm min-h-[88px] bg-white dark:bg-slate-950/80"
+              placeholder="Descrição"
+              aria-label="Descrição sugestão empresa"
+            />
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={anonymous}
+                onChange={(e) => setAnonymous(e.target.checked)}
+                className="rounded border-gray-400"
+              />
+              Enviar de forma anônima
+            </label>
+            <button
+              type="button"
+              disabled={submitting === 'COMPANY'}
+              onClick={() => void send('COMPANY')}
+              className="w-full sm:w-auto rounded-lg bg-amber-700 hover:bg-amber-600 dark:bg-amber-800 dark:hover:bg-amber-700 text-white text-sm font-medium py-2 px-4 disabled:opacity-50"
+            >
+              {submitting === 'COMPANY' ? 'Enviando…' : 'Enviar sugestão'}
+            </button>
+            {okCompany && (
+              <p className="text-sm text-emerald-700 dark:text-emerald-400" role="status">
+                Sugestão enviada. Obrigado.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }

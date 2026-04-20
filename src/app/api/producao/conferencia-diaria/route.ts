@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
+import { getProductionConfig } from '@/lib/production-payment'
 
 /**
  * GET - Lista contas aprovadas do dia que ainda não foram conferidas pelo gerente.
@@ -15,6 +16,54 @@ export async function GET(req: NextRequest) {
   const date = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
   const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0)
   const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59)
+  const dateStr = date.toISOString().slice(0, 10)
+
+  const payConfig = await getProductionConfig()
+
+  const [
+    approvedProdDay,
+    approvedG2Day,
+    validatedProdDay,
+    validatedG2Day,
+    historico,
+  ] = await Promise.all([
+    prisma.productionAccount.count({
+      where: {
+        status: 'APPROVED',
+        deletedAt: null,
+        updatedAt: { gte: startOfDay, lte: endOfDay },
+      },
+    }),
+    prisma.productionG2.count({
+      where: {
+        status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
+        archivedAt: null,
+        deletedAt: null,
+        approvedAt: { gte: startOfDay, lte: endOfDay },
+      },
+    }),
+    prisma.productionAccount.count({
+      where: {
+        status: 'APPROVED',
+        deletedAt: null,
+        validatedAt: { gte: startOfDay, lte: endOfDay },
+      },
+    }),
+    prisma.productionG2.count({
+      where: {
+        status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
+        archivedAt: null,
+        deletedAt: null,
+        validatedAt: { gte: startOfDay, lte: endOfDay },
+      },
+    }),
+    prisma.auditLog.findMany({
+      where: { action: 'production_validated_by_manager' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { user: { select: { id: true, name: true, email: true } } },
+    }),
+  ])
 
   const [accounts, g2Items] = await Promise.all([
     prisma.productionAccount.findMany({
@@ -65,14 +114,42 @@ export async function GET(req: NextRequest) {
     byProducer[key].g2Items.push(g)
   }
 
+  const approvedSameDay = approvedProdDay + approvedG2Day
+  const validatedSameDay = validatedProdDay + validatedG2Day
+  const pendingConference = accounts.length + g2Items.length
+  const lowEfficiencyValidation =
+    pendingConference >= 3 &&
+    approvedSameDay > 0 &&
+    pendingConference / approvedSameDay >= 0.35
+
   return NextResponse.json({
-    date: date.toISOString().slice(0, 10),
+    date: dateStr,
     pending: {
       accounts: accounts.length,
       g2Items: g2Items.length,
-      total: accounts.length + g2Items.length,
+      total: pendingConference,
     },
     items: { accounts, g2Items },
     byProducer: Object.values(byProducer).filter((p) => p.accounts.length > 0 || p.g2Items.length > 0),
+    pay: {
+      valorPorConta: payConfig.valorPorConta,
+      nota:
+        payConfig.valorPorConta > 0
+          ? 'Total estimado = contas selecionadas × valor por conta (bônus por faixa no fechamento mensal).'
+          : 'Configure produção_valor_por_conta para estimar valores; bônus continua por faixa no fechamento.',
+    },
+    efficiency: {
+      approvedSameDay,
+      validatedSameDay,
+      pendingConference,
+      lowEfficiencyValidation,
+    },
+    historicoConferencias: historico.map((h) => ({
+      id: h.id,
+      createdAt: h.createdAt.toISOString(),
+      userName: h.user?.name || h.user?.email || '—',
+      userId: h.userId,
+      details: h.details,
+    })),
   })
 }

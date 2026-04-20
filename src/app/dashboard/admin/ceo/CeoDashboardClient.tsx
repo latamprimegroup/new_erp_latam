@@ -62,6 +62,57 @@ const RISCO_COLOR: Record<string, string> = {
   CRITICO: 'text-red-600',
 }
 
+function KillSwitchTorreControle() {
+  const [active, setActive] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/kill-switch')
+      .then((r) => r.json())
+      .then((d) => setActive(!!d.active))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function toggle() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/kill-switch', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !active }),
+      })
+      if (res.ok) {
+        const d = await res.json()
+        setActive(!!d.active)
+      } else alert('Não foi possível alterar o kill switch')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <div className={`card mb-6 border-2 ${active ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}>
+      <h2 className="font-semibold text-slate-800 mb-2">Kill switch global (Torre de Controle)</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        Quando ativo, todas as APIs que usam <code className="text-xs bg-gray-100 px-1 rounded">requireAuth</code> retornam
+        503 para perfis que não são ADMIN. Webhooks PIX/afiliados continuam recebendo (não passam por requireAuth).
+      </p>
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        disabled={saving}
+        className={active ? 'btn-secondary' : 'px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 text-sm'}
+      >
+        {saving ? '…' : active ? 'Desativar pausa operacional' : 'Ativar pausa operacional'}
+      </button>
+    </div>
+  )
+}
+
 export function CeoDashboardClient() {
   const [data, setData] = useState<CeoData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -107,6 +158,8 @@ export function CeoDashboardClient() {
           {loading ? '...' : 'Calcular métricas'}
         </button>
       </div>
+
+      <KillSwitchTorreControle />
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
         <div className="card">

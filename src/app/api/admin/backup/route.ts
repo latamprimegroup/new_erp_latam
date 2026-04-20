@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
             passwordEncrypted: g.credentials.passwordEncrypted
               ? decrypt(g.credentials.passwordEncrypted)
               : null,
+            twoFaSecret: g.credentials.twoFaSecret ? decrypt(g.credentials.twoFaSecret) : null,
           }
         : null,
     }))
@@ -106,6 +107,7 @@ export async function GET(req: NextRequest) {
         productionAccounts: productionAccounts.length,
         emails: emails.length,
         cnpjs: cnpjs.length,
+        accountArchiveBatches: batches.length,
       },
       data: {
         stockAccounts,

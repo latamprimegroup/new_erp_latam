@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'COMMERCIAL']
+  const roles = ['ADMIN', 'COMMERCIAL', 'FINANCE']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
@@ -18,24 +18,36 @@ export async function GET(req: Request) {
   const start = new Date(parseInt(year), parseInt(month) - 1, 1)
   const end = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59)
 
+  const paidOrderStatuses = ['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED'] as const
+
   const [
     productionByMonth,
     stockByStatus,
     salesByClient,
     withdrawalsByGateway,
   ] = await Promise.all([
-    prisma.productionAccount.groupBy({
+    // Ativos que entraram no estoque no mês (fluxo legado + G2), alinhado ao relatório diário
+    prisma.stockAccount.groupBy({
       by: ['platform'],
-      where: { createdAt: { gte: start, lte: end } },
+      where: {
+        deletedAt: null,
+        source: { in: ['PRODUCTION', 'PRODUCTION_G2'] },
+        createdAt: { gte: start, lte: end },
+      },
       _count: { id: true },
     }),
+    // Snapshot do inventário ativo (fora de vault / não apagado)
     prisma.stockAccount.groupBy({
       by: ['status'],
+      where: { deletedAt: null, archivedAt: null },
       _count: { id: true },
     }),
     prisma.order.groupBy({
       by: ['clientId'],
-      where: { status: 'DELIVERED', createdAt: { gte: start, lte: end } },
+      where: {
+        status: { in: [...paidOrderStatuses] },
+        paidAt: { gte: start, lte: end },
+      },
       _sum: { value: true },
       _count: { id: true },
     }),

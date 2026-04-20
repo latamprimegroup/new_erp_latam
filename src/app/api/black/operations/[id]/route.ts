@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
+import { BlackTechnicalBanReason } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
 
 const updateSchema = z.object({
   domain: z.string().optional(),
+  platform: z.enum(['GOOGLE_ADS', 'FACEBOOK', 'META']).optional(),
   status: z.enum(['DRAFT', 'EM_AQUECIMENTO', 'EM_CONFIG', 'LIVE', 'SURVIVED_24H', 'BANNED']).optional(),
   wentLiveAt: z.string().datetime().optional().nullable(),
   bannedAt: z.string().datetime().optional().nullable(),
   notes: z.string().optional().nullable(),
+  technicalBanReason: z.nativeEnum(BlackTechnicalBanReason).optional().nullable(),
 })
 
 const stepSchema = z.object({
@@ -98,12 +101,27 @@ export async function PATCH(
     }
 
     const data = updateSchema.parse(body)
+
+    if (data.technicalBanReason !== undefined) {
+      const nextStatus = data.status ?? op.status
+      if (nextStatus !== 'BANNED') {
+        return NextResponse.json(
+          { error: 'Motivo técnico só se aplica a operações banidas.' },
+          { status: 400 }
+        )
+      }
+    }
+
     const updateData: Record<string, unknown> = {}
     if (data.domain !== undefined) updateData.domain = data.domain
+    if (data.platform !== undefined) {
+      updateData.platform = data.platform === 'META' ? 'FACEBOOK' : data.platform
+    }
     if (data.status !== undefined) updateData.status = data.status
     if (data.wentLiveAt !== undefined) updateData.wentLiveAt = data.wentLiveAt ? new Date(data.wentLiveAt) : null
     if (data.bannedAt !== undefined) updateData.bannedAt = data.bannedAt ? new Date(data.bannedAt) : null
     if (data.notes !== undefined) updateData.notes = data.notes
+    if (data.technicalBanReason !== undefined) updateData.technicalBanReason = data.technicalBanReason
 
     const updated = await prisma.blackOperation.update({
       where: { id },

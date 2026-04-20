@@ -10,7 +10,7 @@ type SupportTicket = {
   description: string
   category: string
   status: string
-  priority: string
+  priority?: string
   createdAt: string
   serviceOrder?: { orderNumber: string }
 }
@@ -40,6 +40,13 @@ const TIPOS_OS = [
   { value: 'SUPORTE', label: 'Suporte técnico' },
   { value: 'OUTRO', label: 'Outro' },
 ]
+
+const PRIORITY_LABELS: Record<string, string> = {
+  LOW: 'Baixa',
+  NORMAL: 'Normal',
+  HIGH: 'Alta',
+  URGENT: 'Urgente',
+}
 
 const STATUS_LABELS: Record<string, string> = {
   OPEN: 'Aberto',
@@ -228,6 +235,11 @@ export default function SuportePage() {
                       <span className="text-xs font-mono text-primary-600 bg-primary-500/10 px-2 py-0.5 rounded">
                         {t.ticketNumber}
                       </span>
+                      {t.priority && t.priority !== 'NORMAL' && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 ml-1">
+                          {PRIORITY_LABELS[t.priority] || t.priority}
+                        </span>
+                      )}
                       <h3 className="font-medium mt-1">{t.subject}</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">{t.description}</p>
                       {t.serviceOrder && (
@@ -363,6 +375,20 @@ export default function SuportePage() {
                   {CATEGORIAS.map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Prioridade</label>
+                <select
+                  value={form.priority}
+                  onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
+                  className="input-field"
+                >
+                  {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
                     </option>
                   ))}
                 </select>

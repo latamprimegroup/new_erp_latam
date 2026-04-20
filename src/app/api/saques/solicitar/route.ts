@@ -5,6 +5,10 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getProducerAvailableBalance } from '@/lib/production-payment'
 import { getPlugPlayAvailableBalance } from '@/lib/plugplay-payment'
+import {
+  PLUG_PLAY_MIN_WITHDRAWAL_BRL,
+  isPlugPlayWithdrawalPeriodOpen,
+} from '@/lib/plugplay-withdrawal-rules'
 
 const schema = z.object({
   value: z.number().positive(),
@@ -29,12 +33,41 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { value, gateway, accountId } = schema.parse(body)
+    let { value, gateway, accountId } = schema.parse(body)
+
+    if (session.user.role === 'PRODUCER' && gateway === 'PIX' && !accountId?.trim()) {
+      const prof = await prisma.producerProfile.findUnique({
+        where: { userId },
+        select: { pixKey: true },
+      })
+      const k = prof?.pixKey?.trim()
+      if (k) accountId = k
+    }
 
     const saldo =
       session.user.role === 'PLUG_PLAY'
         ? await getPlugPlayAvailableBalance(userId)
         : await getProducerAvailableBalance(userId)
+
+    if (session.user.role === 'PLUG_PLAY') {
+      if (value < PLUG_PLAY_MIN_WITHDRAWAL_BRL) {
+        return NextResponse.json(
+          { error: `Valor mínimo para saque Plug & Play: R$ ${PLUG_PLAY_MIN_WITHDRAWAL_BRL.toFixed(2).replace('.', ',')}` },
+          { status: 400 }
+        )
+      }
+      const periodo = await isPlugPlayWithdrawalPeriodOpen()
+      if (!periodo) {
+        return NextResponse.json(
+          {
+            error:
+              'Saque fora do período liberado. Entre em contato com o financeiro ou aguarde a janela mensal (configurável).',
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     if (value > saldo) {
       return NextResponse.json(
         { error: `Saldo insuficiente. Disponível: R$ ${saldo.toLocaleString('pt-BR')}` },
@@ -46,7 +79,7 @@ export async function POST(req: NextRequest) {
       data: {
         userId,
         gateway,
-        accountId: accountId || null,
+        accountId: accountId?.trim() || null,
         value,
         netValue: value,
         status: 'PENDING',

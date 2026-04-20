@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 
 const STATUS: Record<string, string> = {
@@ -21,21 +21,66 @@ type Order = {
   product: string
   accountType: string
   quantity: number
-  value: { toString: () => string }
+  value: unknown
   status: string
   createdAt: string
+}
+
+function orderValue(o: Order): number {
+  const v = o.value
+  if (typeof v === 'number') return v
+  if (typeof v === 'string') return Number(v)
+  if (v != null && typeof v === 'object' && 'toString' in v) return Number(String(v))
+  return 0
+}
+
+function downloadRecibo(o: Order) {
+  const lines = [
+    'ADS ATIVOS — Recibo resumido (informativo)',
+    `Pedido: ${o.id}`,
+    `Data: ${new Date(o.createdAt).toLocaleString('pt-BR')}`,
+    `Status: ${STATUS[o.status] || o.status}`,
+    `Produto: ${o.product}`,
+    `Tipo de conta: ${o.accountType}`,
+    `Quantidade: ${o.quantity}`,
+    `Valor: R$ ${orderValue(o).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    '',
+    'Este arquivo não substitui Nota Fiscal eletrônica (NF-e), quando aplicável.',
+  ]
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `recibo-${o.id.slice(0, 8)}.txt`
+  a.rel = 'noopener'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function MinhasComprasPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const q = new URLSearchParams()
+    if (dateFrom) q.set('from', dateFrom)
+    if (dateTo) q.set('to', dateTo)
+    const qs = q.toString()
+    const res = await fetch(qs ? `/api/cliente/compras?${qs}` : '/api/cliente/compras')
+    const data = await res.json()
+    if (res.ok && Array.isArray(data)) setOrders(data)
+    else setOrders([])
+    setLoading(false)
+  }, [dateFrom, dateTo])
 
   useEffect(() => {
-    fetch('/api/cliente/compras')
-      .then((r) => r.json())
-      .then(setOrders)
-      .finally(() => setLoading(false))
-  }, [])
+    load()
+  }, [load])
+
+  const hasDateFilter = Boolean(dateFrom || dateTo)
 
   return (
     <div>
@@ -49,10 +94,52 @@ export default function MinhasComprasPage() {
       </div>
 
       <div className="card">
+        {!loading && (
+          <div className="flex flex-wrap gap-3 items-end mb-4 pb-4 border-b border-gray-100">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">De</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Até</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="input-field"
+              />
+            </div>
+            {hasDateFilter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFrom('')
+                  setDateTo('')
+                }}
+                className="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Limpar período
+              </button>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <p className="text-gray-500 py-8">Carregando...</p>
-        ) : orders.length === 0 ? (
-          <p className="text-gray-400 py-8">Você ainda não realizou nenhuma compra.</p>
+        ) : orders.length === 0 && !hasDateFilter ? (
+          <div className="py-8 space-y-4">
+            <p className="text-gray-400">Você ainda não realizou nenhuma compra.</p>
+            <Link href="/dashboard/cliente/pesquisar" className="btn-primary inline-block text-center">
+              Fazer minha primeira compra agora
+            </Link>
+          </div>
+        ) : orders.length === 0 && hasDateFilter ? (
+          <p className="text-gray-400 py-8">Nenhuma compra neste período.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -64,6 +151,7 @@ export default function MinhasComprasPage() {
                   <th className="pb-2 pr-4">Qtd</th>
                   <th className="pb-2 pr-4">Valor</th>
                   <th className="pb-2 pr-4">Ação</th>
+                  <th className="pb-2 pr-4">Recibo</th>
                   <th className="pb-2">Status</th>
                 </tr>
               </thead>
@@ -74,13 +162,30 @@ export default function MinhasComprasPage() {
                     <td className="py-3 pr-4">{o.product}</td>
                     <td className="py-3 pr-4">{o.accountType}</td>
                     <td className="py-3 pr-4">{o.quantity}</td>
-                    <td className="py-3 pr-4">R$ {Number(o.value).toLocaleString('pt-BR')}</td>
-                    <td className="py-3 pr-4">
+                    <td className="py-3 pr-4">R$ {orderValue(o).toLocaleString('pt-BR')}</td>
+                    <td className="py-3 pr-4 space-y-1">
                       {(o.status === 'AWAITING_PAYMENT' || o.status === 'PENDING') && (
-                        <Link href={`/dashboard/cliente/pedido/${o.id}/pagamento`} className="link-primary text-xs">
+                        <Link href={`/dashboard/cliente/pedido/${o.id}/pagamento`} className="link-primary text-xs block">
                           Pagar PIX
                         </Link>
                       )}
+                      {o.status === 'DELIVERED' && (
+                        <Link
+                          href={`/dashboard/cliente/solicitar?reorder=${o.id}`}
+                          className="link-primary text-xs block"
+                        >
+                          Comprar novamente este lote
+                        </Link>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <button
+                        type="button"
+                        onClick={() => downloadRecibo(o)}
+                        className="link-primary text-xs"
+                      >
+                        Baixar .txt
+                      </button>
                     </td>
                     <td className="py-3">
                       <span

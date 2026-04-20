@@ -107,7 +107,9 @@ export function DeliveryDashboardClient() {
           <ul className="space-y-2 text-sm">
             {rankingPorPrioridade.slice(0, 8).map((r, i) => (
               <li key={i} className="flex justify-between">
-                <span>{r.groupNumber}</span>
+                <Link href={`/dashboard/entregas-grupos/${r.id}`} className="text-blue-600 hover:underline">
+                  {r.groupNumber}
+                </Link>
                 <span>
                   {r.clientName ?? '—'} · Score {r.priorityScore}
                 </span>

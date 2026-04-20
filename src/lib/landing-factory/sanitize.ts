@@ -26,6 +26,8 @@ const MAX_LENGTHS = {
   dor: 3000,
   solucao: 3000,
   ofertaUnica: 2000,
+  vturbEmbed: 50_000,
+  footerHtml: 20_000,
 } as const
 
 /** Remove tags HTML e caracteres perigosos */
@@ -56,6 +58,16 @@ export function sanitizeEmail(value: string): string {
   if (typeof value !== 'string') return ''
   const v = stripHtml(value).slice(0, 150)
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : ''
+}
+
+/** Fragmento HTML/embed (Vturb, scripts): remove handlers óbvios; não usar stripHtml completo. */
+export function sanitizeEmbedFragment(value: string, maxLen: number): string {
+  if (typeof value !== 'string') return ''
+  return value
+    .slice(0, maxLen)
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .trim()
 }
 
 /** Sanitiza CNPJ (apenas números) */
@@ -90,6 +102,9 @@ export interface SanitizedBriefing {
   dor: string | null
   solucao: string | null
   ofertaUnica: string | null
+  templateMode: 'WHITE' | 'BLACK'
+  vturbEmbed: string | null
+  footerHtml: string | null
 }
 
 export function sanitizeBriefing(input: Record<string, unknown>): SanitizedBriefing {
@@ -176,6 +191,18 @@ export function sanitizeBriefing(input: Record<string, unknown>): SanitizedBrief
     })(),
     ofertaUnica: (() => {
       const v = sanitizeText(String(input.ofertaUnica ?? ''), MAX_LENGTHS.ofertaUnica)
+      return v || null
+    })(),
+    templateMode: (() => {
+      const v = String(input.templateMode ?? 'WHITE').toUpperCase()
+      return v === 'BLACK' ? 'BLACK' : 'WHITE'
+    })(),
+    vturbEmbed: (() => {
+      const v = sanitizeEmbedFragment(String(input.vturbEmbed ?? ''), MAX_LENGTHS.vturbEmbed)
+      return v || null
+    })(),
+    footerHtml: (() => {
+      const v = sanitizeEmbedFragment(String(input.footerHtml ?? ''), MAX_LENGTHS.footerHtml)
       return v || null
     })(),
   }

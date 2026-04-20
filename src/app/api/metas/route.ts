@@ -10,6 +10,8 @@ const createGoalSchema = z.object({
   dailyTarget: z.number().int().positive(),
   monthlyTarget: z.number().int().positive(),
   bonus: z.number().optional(),
+  minApprovalRatePercent: z.number().int().min(0).max(100).optional().nullable(),
+  qualityBonus: z.number().min(0).optional().nullable(),
 })
 
 const releaseBonusSchema = z.object({
@@ -17,18 +19,81 @@ const releaseBonusSchema = z.object({
   value: z.number().positive(),
 })
 
+function rangeEndOfDay(d: Date): Date {
+  const x = new Date(d)
+  x.setHours(23, 59, 59, 999)
+  return x
+}
+
+async function volumeForUser(userId: string, start: Date, end: Date): Promise<number> {
+  const [prodCount, g2Count] = await Promise.all([
+    prisma.productionAccount.count({
+      where: {
+        producerId: userId,
+        status: 'APPROVED',
+        deletedAt: null,
+        validatedAt: { not: null, gte: start, lte: end },
+      },
+    }),
+    prisma.productionG2.count({
+      where: {
+        creatorId: userId,
+        status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
+        archivedAt: null,
+        validatedAt: { not: null, gte: start, lte: end },
+      },
+    }),
+  ])
+  return prodCount + g2Count
+}
+
+/** Taxa de aprovação (Produção clássica) no intervalo — base para meta de qualidade */
+async function approvalRateProduction(userId: string, start: Date, end: Date): Promise<number | null> {
+  const [a, r] = await Promise.all([
+    prisma.productionAccount.count({
+      where: {
+        producerId: userId,
+        status: 'APPROVED',
+        deletedAt: null,
+        createdAt: { gte: start, lte: end },
+      },
+    }),
+    prisma.productionAccount.count({
+      where: {
+        producerId: userId,
+        status: 'REJECTED',
+        deletedAt: null,
+        createdAt: { gte: start, lte: end },
+      },
+    }),
+  ])
+  const t = a + r
+  if (t === 0) return null
+  return Math.round((a / t) * 1000) / 10
+}
+
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
   const userId = searchParams.get('userId')
+  const historical = searchParams.get('historical') === '1'
 
-  const where: Record<string, unknown> = {
-    periodStart: { lte: new Date() },
-    periodEnd: { gte: new Date() },
-  }
+  const now = new Date()
+  const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  const where: Record<string, unknown> = historical
+    ? { periodEnd: { lt: startOfThisMonth } }
+    : {
+        periodStart: { lte: now },
+        periodEnd: { gte: now },
+      }
+
   if (userId) where.userId = userId
+  if (session.user.role === 'PRODUCER') {
+    where.userId = session.user.id
+  }
 
   const goals = await prisma.goal.findMany({
     where,
@@ -36,45 +101,61 @@ export async function GET(req: Request) {
       user: { select: { id: true, name: true, email: true } },
       bonusReleases: { orderBy: { createdAt: 'desc' }, take: 5 },
     },
-    orderBy: { user: { name: 'asc' } },
+    orderBy: historical ? [{ periodStart: 'desc' as const }, { user: { name: 'asc' } }] : { user: { name: 'asc' } },
+    take: historical ? 200 : undefined,
   })
 
-  const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
 
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
-  const goalsWithProduction = await Promise.all(
+  const goalsEnriched = await Promise.all(
     goals.map(async (g) => {
-      const [prodCount, g2Count] = await Promise.all([
-        prisma.productionAccount.count({
-          where: {
-            producerId: g.userId,
-            status: 'APPROVED',
-            validatedAt: { not: null, gte: startOfMonth, lte: endOfMonth },
-          },
-        }),
-        prisma.productionG2.count({
-          where: {
-            creatorId: g.userId,
-            status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
-            archivedAt: null,
-            validatedAt: { not: null, gte: startOfMonth, lte: endOfMonth },
-          },
-        }),
-      ])
-      return { ...g, productionCurrent: prodCount + g2Count }
+      const rangeStart = historical ? new Date(g.periodStart) : startOfMonth
+      const rangeEnd = historical ? rangeEndOfDay(new Date(g.periodEnd)) : endOfMonth
+      rangeStart.setHours(0, 0, 0, 0)
+
+      const productionCurrent = await volumeForUser(g.userId, rangeStart, rangeEnd)
+      const approvalRatePercent = await approvalRateProduction(g.userId, rangeStart, rangeEnd)
+
+      const minQ = g.minApprovalRatePercent
+      const qb = g.qualityBonus != null ? Number(g.qualityBonus) : null
+      const qualityEligible =
+        minQ != null && qb != null && approvalRatePercent != null ? approvalRatePercent >= minQ : null
+
+      return {
+        id: g.id,
+        userId: g.userId,
+        dailyTarget: g.dailyTarget,
+        monthlyTarget: g.monthlyTarget,
+        status: g.status,
+        periodStart: g.periodStart.toISOString(),
+        periodEnd: g.periodEnd.toISOString(),
+        bonus: g.bonus != null ? Number(g.bonus) : null,
+        minApprovalRatePercent: g.minApprovalRatePercent,
+        qualityBonus: qb,
+        productionCurrent,
+        approvalRatePercent,
+        qualityEligible,
+        user: g.user,
+        bonusReleases: g.bonusReleases.map((br) => ({
+          id: br.id,
+          value: Number(br.value),
+          status: br.status,
+          releasedAt: br.releasedAt?.toISOString() ?? null,
+          createdAt: br.createdAt.toISOString(),
+        })),
+      }
     })
   )
 
-  return NextResponse.json(goalsWithProduction)
+  return NextResponse.json(goalsEnriched)
 }
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'PRODUCER']
-  if (!session.user?.role || !roles.includes(session.user.role)) {
+  if (session.user.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
@@ -110,7 +191,7 @@ export async function POST(req: Request) {
     const data = createGoalSchema.parse(body)
     const now = new Date()
     const periodStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
 
     const existing = await prisma.goal.findFirst({
       where: {
@@ -127,6 +208,9 @@ export async function POST(req: Request) {
         dailyTarget: data.dailyTarget,
         monthlyTarget: data.monthlyTarget,
         bonus: data.bonus ?? null,
+        minApprovalRatePercent:
+          data.minApprovalRatePercent === undefined ? null : data.minApprovalRatePercent,
+        qualityBonus: data.qualityBonus === undefined || data.qualityBonus === null ? null : data.qualityBonus,
         periodStart,
         periodEnd,
       },

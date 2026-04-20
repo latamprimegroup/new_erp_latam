@@ -57,6 +57,18 @@ export async function GET(req: NextRequest) {
   const subiram = byStatus.LIVE + byStatus.SURVIVED_24H + byStatus.BANNED
   const taxaSucesso = subiram > 0 ? Math.round((byStatus.SURVIVED_24H / subiram) * 100) : 0
 
+  /** Banidas após subir no ar mas antes de completar 24h (falha rápida). */
+  const interrompidas = ops.filter((o) => {
+    if (o.status !== 'BANNED' || !o.wentLiveAt || !o.bannedAt) return false
+    const h = (new Date(o.bannedAt).getTime() - new Date(o.wentLiveAt).getTime()) / (1000 * 60 * 60)
+    return h < 24
+  }).length
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const quedasDia = ops.filter(
+    (o) => o.status === 'BANNED' && o.bannedAt && new Date(o.bannedAt) >= startOfToday,
+  ).length
+
   // Operações criadas nos últimos 7 dias
   const ultimos7Dias = ops.filter((o) => new Date(o.createdAt) >= sevenDaysAgo).length
 
@@ -159,6 +171,8 @@ export async function GET(req: NextRequest) {
       emPreparacao,
       noAr: byStatus.LIVE,
       sobreviveu24h: byStatus.SURVIVED_24H,
+      interrompidas,
+      quedasDia,
       survivedMes: survivedMonthCount,
       banidas: byStatus.BANNED,
       taxaSucesso,
@@ -166,7 +180,16 @@ export async function GET(req: NextRequest) {
       elegiveis24h,
       tempoMedioBanHoras,
       previsaoMes: previsao ? { ...previsao, percentMeta, percentElite } : null,
-      config: { salarioBase: config.salarioBase, metaMensal: config.metaMensal, metaElite: config.metaElite },
+      config: {
+        salarioBase: config.salarioBase,
+        metaMensal: config.metaMensal,
+        metaElite: config.metaElite,
+        bonusBronze: config.bonusBronze,
+        bonusPrata: config.bonusPrata,
+        bonusOuro: config.bonusOuro,
+        bonusMetaBatida: config.bonusMetaBatida,
+        bonusElite: config.bonusElite,
+      },
     },
     byStatus,
     porNicho: Object.entries(porNicho).map(([nicho, data]) => ({ nicho, ...data })),

@@ -42,7 +42,7 @@ export async function POST(
       data: {
         platform: 'GOOGLE_ADS',
         type: 'CONTA_VERIFICADA_ANUNCIANTE', // Google Verificação Anunciante (sem G2)
-        source: 'PRODUCTION_G2_RECLASSIFIED',
+        source: 'PRODUCTION_G2_RECLASSIFIED', // tag de origem: Reclassificação G2
         status: 'AVAILABLE',
         googleAdsCustomerId: g2.googleAdsCustomerId || undefined,
         niche: null,
@@ -82,7 +82,11 @@ export async function POST(
         productionG2Id: id,
         userId: session.user!.id,
         action: 'RECLASSIFY_TO_STOCK',
-        details: { stockAccountId: stock.id, type: 'CONTA_VERIFICADA_ANUNCIANTE' },
+        details: {
+          stockAccountId: stock.id,
+          type: 'CONTA_VERIFICADA_ANUNCIANTE',
+          originTag: 'Reclassificacao G2',
+        },
       },
     })
 

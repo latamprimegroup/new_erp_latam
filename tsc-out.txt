@@ -1,0 +1,82 @@
+﻿src/app/api/admin/ads-tracker/campaigns/route.ts(165,75): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'number | null | undefined'.
+  Type 'string' is not assignable to type 'number'.
+src/app/api/admin/ads-tracker/uni-options/route.ts(31,70): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'number | null | undefined'.
+  Type 'string' is not assignable to type 'number'.
+src/app/api/admin/gatekeeper/cnpjs/[id]/route.ts(48,19): error TS2345: Argument of type '"CNPJ_TAG"' is not assignable to parameter of type 'GatekeeperAuditStep'.
+src/app/api/admin/gatekeeper/ids/[inventoryId]/scrubbed-doc/route.ts(51,19): error TS2345: Argument of type '"ID_DOC_DOWNLOAD"' is not assignable to parameter of type 'GatekeeperAuditStep'.
+src/app/api/admin/gatekeeper/ids/[inventoryId]/scrubbed-doc/route.ts(56,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
+src/app/api/cliente/ads-war-room/route.ts(130,71): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'number | null | undefined'.
+  Type 'string' is not assignable to type 'number'.
+src/app/api/cliente/armory/overview/route.ts(136,60): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'number | null | undefined'.
+  Type 'string' is not assignable to type 'number'.
+src/app/api/cliente/war-room-os/overview/route.ts(57,12): error TS2551: Property 'liveProofTemplateUnlock' does not exist on type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>'. Did you mean 'liveProofLabTemplateUnlock'?
+src/app/api/cliente/war-room-os/overview/route.ts(72,51): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/app/api/cliente/war-room-os/overview/route.ts(74,49): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/app/api/estoque/archive/export/route.ts(33,34): error TS1361: 'AccountPlatform' cannot be used as a value because it was imported using 'import type'.
+src/app/api/estoque/archive/export/route.ts(36,32): error TS1361: 'AccountStatus' cannot be used as a value because it was imported using 'import type'.
+src/app/api/estoque/route.ts(40,30): error TS2322: Type 'string' is not assignable to type 'AccountStatus | EnumAccountStatusFilter<"StockAccount"> | undefined'.
+src/app/api/estoque/route.ts(41,32): error TS2322: Type 'string' is not assignable to type 'AccountPlatform | EnumAccountPlatformFilter<"StockAccount"> | undefined'.
+src/app/api/producao/route.ts(200,15): error TS2561: Object literal may only specify known properties, but 'paymentProfile' does not exist in type 'ProductionAccountWhereInput'. Did you mean to write 'paymentProfileId'?
+src/app/api/production-g2/dashboard/route.ts(83,7): error TS2322: Type '{ status: { in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }; validatedAt: { gte: Date; lte: Date; }; archivedAt: null; deletedAt: null; creatorId?: string; currency?: string; }' is not assignable to type 'ProductionG2WhereInput'.
+  Types of property 'status' are incompatible.
+    Type '{ in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }' is not assignable to type 'ProductionG2Status | EnumProductionG2StatusFilter<"ProductionG2"> | undefined'.
+      Type '{ in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }' is not assignable to type 'EnumProductionG2StatusFilter<"ProductionG2">'.
+        Types of property 'in' are incompatible.
+          The type 'readonly ["APROVADA", "ENVIADA_ESTOQUE"]' is 'readonly' and cannot be assigned to the mutable type 'ProductionG2Status[]'.
+src/app/api/production-g2/dashboard/route.ts(92,7): error TS2322: Type '{ status: { in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }; validatedAt: { gte: Date; lte: Date; }; archivedAt: null; deletedAt: null; creatorId?: string; currency?: string; }' is not assignable to type 'ProductionG2WhereInput'.
+  Types of property 'status' are incompatible.
+    Type '{ in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }' is not assignable to type 'ProductionG2Status | EnumProductionG2StatusFilter<"ProductionG2"> | undefined'.
+      Type '{ in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }' is not assignable to type 'EnumProductionG2StatusFilter<"ProductionG2">'.
+        Types of property 'in' are incompatible.
+          The type 'readonly ["APROVADA", "ENVIADA_ESTOQUE"]' is 'readonly' and cannot be assigned to the mutable type 'ProductionG2Status[]'.
+src/app/api/vendas/route.ts(100,19): error TS2322: Type '{} & { country: string | null; status: OrderStatus; id: string; createdAt: Date; updatedAt: Date; clientId: string; accountType: string; currency: string; product: string; ... 23 more ...; deliveredAssetIdsJson: JsonValue; }' is not assignable to type '{ client: { user: { name: string | null; email: string; }; } & { country: string | null; id: string; userId: string; whatsapp: string | null; lastPurchaseAt: Date | null; averageTicketBrl: Decimal | null; ... 42 more ...; riskBlockReason: string | null; }; _count: { ...; }; seller: { ...; } | null; items: { ...; }[]...'.
+  Type '{} & { country: string | null; status: OrderStatus; id: string; createdAt: Date; updatedAt: Date; clientId: string; accountType: string; currency: string; product: string; ... 23 more ...; deliveredAssetIdsJson: JsonValue; }' is missing the following properties from type '{ client: { user: { name: string | null; email: string; }; } & { country: string | null; id: string; userId: string; whatsapp: string | null; lastPurchaseAt: Date | null; averageTicketBrl: Decimal | null; ... 42 more ...; riskBlockReason: string | null; }; _count: { ...; }; seller: { ...; } | null; items: { ...; }[]...': client, _count, seller, items
+src/app/api/vendas/route.ts(244,9): error TS2322: Type 'string[] | null' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue | undefined'.
+  Type 'null' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue | undefined'.
+src/app/dashboard/admin/contas-ofertadas/ContasOfertadasClient.tsx(210,57): error TS2339: Property 'salePrice' does not exist on type 'never'.
+src/app/dashboard/ads-core/AdsCoreAssetEditorModal.tsx(205,97): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/app/dashboard/ads-core/AdsCoreDemandasClient.tsx(30,56): error TS2559: Type 'boolean' has no properties in common with type '{ assignedToProducer?: boolean | undefined; }'.
+src/app/dashboard/base/BaseClient.tsx(355,9): error TS1117: An object literal cannot have multiple properties with the same name.
+src/app/dashboard/cliente/ads-war-room/AdsWarRoomClient.tsx(10,25): error TS2345: Argument of type '() => Promise<typeof import("C:/Users/User/erp_latam-2/node_modules/react-joyride/dist/index")>' is not assignable to parameter of type 'DynamicOptions<{}> | Loader<{}>'.
+  Type '() => Promise<typeof import("C:/Users/User/erp_latam-2/node_modules/react-joyride/dist/index")>' is not assignable to type '() => LoaderComponent<{}>'.
+    Type 'Promise<typeof import("C:/Users/User/erp_latam-2/node_modules/react-joyride/dist/index")>' is not assignable to type 'LoaderComponent<{}>'.
+      Type 'typeof import("C:/Users/User/erp_latam-2/node_modules/react-joyride/dist/index")' is not assignable to type 'ComponentType<{}> | ComponentModule<{}>'.
+src/app/dashboard/cliente/ads-war-room/AdsWarRoomClient.tsx(56,5): error TS2353: Object literal may only specify known properties, and 'disableBeacon' does not exist in type '{ arrowComponent?: ElementType<ArrowRenderProps> | undefined; beaconComponent?: ElementType<BeaconRenderProps> | undefined; ... 46 more ...; title?: ReactNode; }'.
+src/app/dashboard/cliente/ads-war-room/AdsWarRoomClient.tsx(130,9): error TS2322: Type '{ steps: { arrowComponent?: ElementType<ArrowRenderProps> | undefined; beaconComponent?: ElementType<BeaconRenderProps> | undefined; ... 46 more ...; title?: ReactNode; }[]; ... 7 more ...; callback: (d: any) => void; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'steps' does not exist on type 'IntrinsicAttributes'.
+src/app/dashboard/cliente/ads-war-room/AdsWarRoomClient.tsx(156,20): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/app/dashboard/cliente/ads-war-room/AdsWarRoomClient.tsx(239,17): error TS2322: Type 'boolean | undefined' is not assignable to type 'boolean'.
+  Type 'undefined' is not assignable to type 'boolean'.
+src/app/dashboard/cliente/creative-vault/CreativeVaultClient.tsx(806,14): error TS2304: Cannot find name 'reqMsg'.
+src/app/dashboard/cliente/creative-vault/CreativeVaultClient.tsx(806,87): error TS2304: Cannot find name 'reqMsg'.
+src/app/dashboard/commercial/cliente-war-room/WarRoomClienteClient.tsx(195,31): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+src/app/dashboard/commercial/cliente-war-room/WarRoomClienteClient.tsx(196,15): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+src/app/dashboard/commercial/cliente-war-room/WarRoomClienteClient.tsx(199,36): error TS2322: Type '{}' is not assignable to type 'ReactNode'.
+src/lib/api-i18n.ts(16,26): error TS2731: Implicit conversion of a 'symbol' to a 'string' will fail at runtime. Consider wrapping this expression in 'String(...)'.
+src/lib/cliente/profit-board.ts(44,5): error TS2588: Cannot assign to 'toStr' because it is a constant.
+src/lib/g2-agent.ts(309,35): error TS2322: Type '{ creatorId?: string | undefined; status: { in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }; deletedAt: null; validatedAt: { gte: Date; lte: Date; }; }' is not assignable to type 'ProductionG2WhereInput'.
+  Types of property 'status' are incompatible.
+    Type '{ in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }' is not assignable to type 'ProductionG2Status | EnumProductionG2StatusFilter<"ProductionG2"> | undefined'.
+      Type '{ in: readonly ["APROVADA", "ENVIADA_ESTOQUE"]; }' is not assignable to type 'EnumProductionG2StatusFilter<"ProductionG2">'.
+        Types of property 'in' are incompatible.
+          The type 'readonly ["APROVADA", "ENVIADA_ESTOQUE"]' is 'readonly' and cannot be assigned to the mutable type 'ProductionG2Status[]'.
+src/lib/metas-globais.ts(97,7): error TS2322: Type '{ order: { status: { in: readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]; }; paidAt: { gte: Date; lte: Date; }; }; account?: { platform: $Enums.AccountPlatform; } | undefined; }' is not assignable to type 'OrderItemWhereInput'.
+  Types of property 'order' are incompatible.
+    Type '{ status: { in: readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]; }; paidAt: { gte: Date; lte: Date; }; }' is not assignable to type '(Without<OrderRelationFilter, OrderWhereInput> & OrderWhereInput) | (Without<OrderWhereInput, OrderRelationFilter> & OrderRelationFilter) | undefined'.
+      Type '{ status: { in: readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]; }; paidAt: { gte: Date; lte: Date; }; }' is not assignable to type 'Without<OrderRelationFilter, OrderWhereInput> & OrderWhereInput'.
+        Type '{ status: { in: readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]; }; paidAt: { gte: Date; lte: Date; }; }' is not assignable to type 'OrderWhereInput'.
+          Types of property 'status' are incompatible.
+            Type '{ in: readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]; }' is not assignable to type 'EnumOrderStatusFilter<"Order"> | OrderStatus | undefined'.
+              Type '{ in: readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]; }' is not assignable to type 'EnumOrderStatusFilter<"Order">'.
+                Types of property 'in' are incompatible.
+                  The type 'readonly ["PAID", "IN_SEPARATION", "IN_DELIVERY", "DELIVERED"]' is 'readonly' and cannot be assigned to the mutable type 'OrderStatus[]'.
+src/lib/metas-globais.ts(102,23): error TS18048: 'vendasResult._sum' is possibly 'undefined'.
+src/lib/receita-ws.ts(120,5): error TS2322: Type 'unknown' is not assignable to type 'string | null | undefined'.
+src/lib/receita-ws.ts(121,5): error TS2322: Type 'unknown' is not assignable to type 'string | null | undefined'.
+src/lib/receita-ws.ts(122,5): error TS2322: Type 'unknown' is not assignable to type 'string | null | undefined'.
+src/lib/receita-ws.ts(123,5): error TS2322: Type 'unknown' is not assignable to type 'string | null | undefined'.
+src/lib/receita-ws.ts(124,5): error TS2322: Type 'unknown' is not assignable to type 'string | null | undefined'.
+src/lib/receita-ws.ts(125,5): error TS2322: Type 'unknown' is not assignable to type 'string | null | undefined'.
+src/lib/rma.ts(3,14): error TS2739: Type '{ ERRO_CONFIGURACAO: string; FALHA_ATIVACAO: string; SUSPENSAO_IMEDIATA: string; LOGIN_INVALIDO: string; OUTRO: string; }' is missing the following properties from type 'Record<AccountRmaReason, string>': CHECKPOINT_BLOCK, BAN_IMMEDIATE, PROXY_ERROR

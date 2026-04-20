@@ -21,14 +21,15 @@ type Ticket = {
   needsReplacement: boolean
   commercialOpsRequested: boolean
   accountReturned: boolean | null
+  slaResponseAt: string | null
   createdAt: string
   account: Account
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  BAN_CONTESTATION: 'Conta banida – contestar',
-  REPLACEMENT_REQUEST: 'Solicitar reposição',
-  PAUSED_NEEDS_OPS: 'Conta pausada – operação comercial',
+  BAN_CONTESTATION: 'Contestação de banimento (garantia)',
+  REPLACEMENT_REQUEST: 'Problema de acesso / reposição',
+  PAUSED_NEEDS_OPS: 'Operação comercial (pagamentos, créditos, faturas)',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -70,8 +71,11 @@ function ClienteContestacoesContent() {
       fetch('/api/cliente/contestacoes').then((r) => r.json()),
       fetch('/api/cliente/contas').then((r) => r.json()),
     ]).then(([t, c]) => {
-      setTickets(t)
-      setAccounts((c as { accounts: Account[] }).accounts || [])
+      setTickets(Array.isArray(t) ? t : [])
+      const acc = c && typeof c === 'object' && 'accounts' in c && Array.isArray((c as { accounts: unknown }).accounts)
+        ? (c as { accounts: Account[] }).accounts
+        : []
+      setAccounts(acc)
       if (preselectedAccountId) setForm((f) => ({ ...f, accountId: preselectedAccountId }))
     }).finally(() => setLoading(false))
   }, [preselectedAccountId])
@@ -240,6 +244,11 @@ function ClienteContestacoesContent() {
                   </span>
                 </div>
                 <p className="text-sm text-gray-700 mt-2">{t.description}</p>
+                {t.slaResponseAt && (
+                  <p className="text-xs text-primary-600 mt-2">
+                    Prazo indicado para 1ª resposta: {new Date(t.slaResponseAt).toLocaleString('pt-BR')}
+                  </p>
+                )}
                 {(t.banReason || t.needsReplacement || t.commercialOpsRequested) && (
                   <div className="flex gap-4 mt-2 text-xs text-gray-500">
                     {t.banReason && <span>Ban: {t.banReason}</span>}

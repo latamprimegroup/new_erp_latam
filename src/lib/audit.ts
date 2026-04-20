@@ -2,9 +2,11 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from './prisma'
 
 export type AuditParams = {
+  /** Quem executou a ação (mapeia para `audit_logs.user_id`). */
   userId?: string
   action: string
   entity: string
+  /** Alvo lógico da ação (ex.: id do ativo) — coluna `entity_id` / target_id. */
   entityId?: string
   details?: Record<string, unknown>
   oldValue?: Record<string, unknown>

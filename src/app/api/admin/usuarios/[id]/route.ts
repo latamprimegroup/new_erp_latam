@@ -5,13 +5,26 @@ import { hash } from 'bcryptjs'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
+import { allocateNextClientCode } from '@/lib/client-id-sequencial'
 
 export const dynamic = 'force-dynamic'
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
-  role: z.enum(['ADMIN', 'PRODUCER', 'DELIVERER', 'FINANCE', 'COMMERCIAL', 'CLIENT', 'MANAGER', 'PLUG_PLAY']).optional(),
+  role: z
+    .enum([
+      'ADMIN',
+      'PRODUCER',
+      'DELIVERER',
+      'FINANCE',
+      'COMMERCIAL',
+      'CLIENT',
+      'MANAGER',
+      'PRODUCTION_MANAGER',
+      'PLUG_PLAY',
+    ])
+    .optional(),
   phone: z.string().optional().nullable(),
   password: z.string().min(8).optional(),
 })
@@ -36,7 +49,7 @@ export async function GET(
       phone: true,
       role: true,
       createdAt: true,
-      clientProfile: { select: { id: true } },
+      clientProfile: { select: { id: true, clientCode: true } },
       producerProfile: { select: { id: true } },
       delivererProfile: { select: { id: true } },
       managerProfile: { select: { id: true } },
@@ -47,6 +60,7 @@ export async function GET(
   return NextResponse.json({
     ...user,
     hasClientProfile: !!user.clientProfile,
+    clientCode: user.clientProfile?.clientCode ?? null,
     hasProducerProfile: !!user.producerProfile,
     hasDelivererProfile: !!user.delivererProfile,
     hasManagerProfile: !!user.managerProfile,
@@ -107,8 +121,12 @@ export async function PATCH(
           })
           const profile = (existing as Record<string, unknown>)?.[profileField]
           if (!profile) {
-            if (r === 'CLIENT') await prisma.clientProfile.create({ data: { userId: id } })
-            else if (r === 'PRODUCER') await prisma.producerProfile.create({ data: { userId: id } })
+            if (r === 'CLIENT') {
+              await prisma.$transaction(async (tx) => {
+                const code = await allocateNextClientCode(tx)
+                await tx.clientProfile.create({ data: { userId: id, clientCode: code } })
+              })
+            } else if (r === 'PRODUCER') await prisma.producerProfile.create({ data: { userId: id } })
             else if (r === 'DELIVERER') await prisma.delivererProfile.create({ data: { userId: id } })
             else if (r === 'MANAGER') await prisma.managerProfile.create({ data: { userId: id } })
           }

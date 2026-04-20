@@ -12,6 +12,7 @@ export async function GET() {
 
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
   const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
 
   const [
@@ -21,7 +22,8 @@ export async function GET() {
     riskRadar,
     valuation,
     customerMetrics,
-    productionMonth,
+    productionG2Month,
+    productionPaMonth,
     cohortMonthly,
     strategicAlerts,
   ] = await Promise.all([
@@ -74,6 +76,12 @@ export async function GET() {
         createdAt: { gte: startOfMonth },
       },
     }),
+    prisma.productionAccount.count({
+      where: {
+        status: 'APPROVED',
+        validatedAt: { not: null, gte: startOfMonth, lte: endOfMonth },
+      },
+    }),
     prisma.cohortMonthly.findMany({
       where: { referenceDate: { lte: now } },
       orderBy: { mesAquisicao: 'desc' },
@@ -85,6 +93,8 @@ export async function GET() {
       take: 10,
     }),
   ])
+
+  const productionMonth = productionG2Month + productionPaMonth
 
   const revenueTotal = ordersDelivered.reduce((s, o) => s + Number(o.value), 0)
   const revenueMonth = ordersMonth.reduce((s, o) => s + Number(o.value), 0)

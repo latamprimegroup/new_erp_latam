@@ -193,6 +193,13 @@ async function main() {
   })
   console.log('✓ Cliente 2:', client2User.email)
 
+  await prisma.clientCodeSequence.upsert({
+    where: { id: 1 },
+    create: { id: 1, lastNumber: 2 },
+    update: { lastNumber: 2 },
+  })
+  console.log('✓ Sequência client_code (próximo ID: C003)')
+
   // ============ 3. PAÍSES E NICHOS ============
   const br = await prisma.country.upsert({
     where: { code: 'BR' },
@@ -719,6 +726,88 @@ async function main() {
     },
   })
   console.log('✓ Sugestão')
+
+  const demoVideo =
+    'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+  const vaultSeeds = [
+    {
+      slug: 'seed-vault-saude-gancho-a',
+      niche: 'SAUDE' as const,
+      title: 'Gancho A — Dor + promessa (Saúde)',
+      roiLabel: 'ROI 118% — últimas 24h · operação Ads Ativos (demo seed)',
+      scriptCopy:
+        '[0–3s] Pare o scroll se você sente X todos os dias.\n[3–8s] Não é falta de disciplina — é Y.\n[8–15s] Te mostro o método em 60s no link abaixo.',
+    },
+    {
+      slug: 'seed-vault-financeiro-autoridade',
+      niche: 'FINANCEIRO' as const,
+      title: 'Autoridade + prova social (Financeiro)',
+      roiLabel: 'ROI 132% — janela 24h · cohort interno (demo)',
+      scriptCopy:
+        '[Hook] Resultado não é sorte — é sistema.\n[Meio] 3 erros que queimam escala.\n[CTA] Baixe o guia no checkout.',
+    },
+    {
+      slug: 'seed-vault-black-urgencia',
+      niche: 'BLACK' as const,
+      title: 'Urgência ética + escassez (Black)',
+      roiLabel: 'ROI 105% — 24h · vertical restrita (demo)',
+      scriptCopy:
+        '[Hook] O que ninguém te conta sobre Z.\n[Corpo] Por que a maioria perde aqui.\n[Fechamento] Só para quem está pronto para executar.',
+    },
+    {
+      slug: 'seed-vault-edu-lista',
+      niche: 'EDUCACAO' as const,
+      title: 'Lista numerada + curiosidade (Educação)',
+      roiLabel: 'ROI 96% — 24h · tráfego frio (demo)',
+      scriptCopy:
+        '[Hook] 5 sinais de que você está estudando errado.\n[Meio] O #3 dói mas muda o jogo.\n[CTA] Aula no link.',
+    },
+  ]
+  for (let i = 0; i < vaultSeeds.length; i++) {
+    const v = vaultSeeds[i]
+    await prisma.creativeVaultTemplate.upsert({
+      where: { slug: v.slug },
+      update: {
+        niche: v.niche,
+        title: v.title,
+        roiLabel: v.roiLabel,
+        scriptCopy: v.scriptCopy,
+        previewVideoUrl: demoVideo,
+        published: true,
+        sortOrder: i,
+      },
+      create: {
+        slug: v.slug,
+        niche: v.niche,
+        title: v.title,
+        roiLabel: v.roiLabel,
+        scriptCopy: v.scriptCopy,
+        previewVideoUrl: demoVideo,
+        published: true,
+        sortOrder: i,
+      },
+    })
+  }
+  console.log('✓ Creative Vault — templates seed')
+
+  const guardTerms = [
+    'cura',
+    'garantido',
+    'renda rápida',
+    '100% garantido',
+    'milagre',
+    'sem esforço',
+    'enriqueça rápido',
+    'lucro garantido',
+  ]
+  for (const term of guardTerms) {
+    await prisma.blacklistTerm.upsert({
+      where: { term },
+      update: { active: true, category: 'seed' },
+      create: { term, active: true, category: 'seed' },
+    })
+  }
+  console.log('✓ Blacklist Ads Ativos Guard')
 
   console.log('\n✅ Seed completo finalizado com sucesso!')
   console.log('\nLogins disponíveis (senha em cada):')

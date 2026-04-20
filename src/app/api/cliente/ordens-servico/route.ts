@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
+import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 
 const createSchema = z.object({
   type: z.string().min(1),
@@ -64,7 +65,20 @@ export async function POST(req: NextRequest) {
 
     const whatsappNumber = process.env.WHATSAPP_SUPORTE || process.env.WHATSAPP_COMERCIAL || '5511999999999'
     const user = client.user
-    const msgToSupport = `🆕 Nova ordem de serviço #${orderNumber}\nCliente: ${user?.name || user?.email || ''}\nTipo: ${data.type}\nTítulo: ${data.title}\n\n${data.description.slice(0, 200)}${data.description.length > 200 ? '...' : ''}`
+    const base = getPublicAppBaseUrl()
+    const adminLink = base ? `${base}/dashboard/admin/tickets?type=ordens` : ''
+    const msgToSupport = [
+      '🆕 NOVA ORDEM DE SERVIÇO',
+      `#${orderNumber}`,
+      `Cliente: ${user?.name || user?.email || '—'}`,
+      `Tipo: ${data.type}`,
+      `Título: ${data.title}`,
+      adminLink ? `ERP: ${adminLink}` : '',
+      '',
+      data.description.slice(0, 500) + (data.description.length > 500 ? '…' : ''),
+    ]
+      .filter(Boolean)
+      .join('\n')
 
     if (process.env.WHATSAPP_API_URL && whatsappNumber) {
       try {

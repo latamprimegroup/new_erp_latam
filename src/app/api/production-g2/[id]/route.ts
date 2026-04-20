@@ -58,6 +58,10 @@ export async function GET(
 
   if (!item) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
 
+  if (auth.session.user?.role === 'PRODUCER' && item.creatorId !== auth.session.user.id) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
   const masked = { ...item }
   if (masked.credentials) {
     masked.credentials = {
@@ -88,6 +92,10 @@ export async function PATCH(
   const { id } = await params
   const existing = await prisma.productionG2.findFirst({ where: { id, deletedAt: null } })
   if (!existing) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
+
+  if (session.user?.role === 'PRODUCER' && existing.creatorId !== session.user.id) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
 
   try {
     const body = await req.json()

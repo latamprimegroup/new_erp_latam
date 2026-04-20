@@ -1,0 +1,1 @@
+# DOCS OS 27/03/2026 — ver resposta do assistente (disco cheio impediu doc completo).

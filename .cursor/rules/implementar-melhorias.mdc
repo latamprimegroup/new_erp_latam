@@ -1,0 +1,13 @@
+---
+description: Priorizar implementação no código quando o utilizador pedir melhorias ou evoluções
+alwaysApply: true
+---
+
+# Melhorias e evoluções — executar no código
+
+Quando o utilizador (ou documentação funcional anexada) pedir **melhorias**, **sugestões de evolução**, **"o que poderia ser"** ou equivalente para o produto (UI, APIs, Prisma, fluxos):
+
+1. **Implementar** as alterações no repositório sempre que for viável — rotas, componentes, migrações necessárias, testes se já existirem no padrão do projeto.
+2. **Não ficar** apenas com descrição teórica, checklist futuro ou "pode fazer assim" sem código, salvo se o utilizador pedir **só análise/documentação** ou houver bloqueio explícito (ex.: falta de decisão de produto, credenciais externas, operação destrutiva que exija confirmação humana).
+3. Manter o **âmbito** do pedido: não expandir refactors não pedidos; alinhar com estilos e padrões já usados no projeto.
+4. Se parte do pedido depender de ambiente (deploy, variáveis), implementar o código e indicar **apenas** o que falta configurar fora do repo.

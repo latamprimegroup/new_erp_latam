@@ -1,3 +1,10 @@
+# Push em main:
+# 1) job verify — lint/typecheck/prisma (sem tocar no servidor)
+# 2) job deploy-hostinger — git pull + build + pm2 no VPS (Hostinger)
+#
+# Vercel: com o projeto ligado ao mesmo repositório, o deploy de produção
+# costuma ser automático em paralelo; variáveis ficam só no painel da Vercel.
+
 name: Deploy to Hostinger
 
 on:
@@ -5,18 +12,41 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npx prisma validate
+
+      - run: npx prisma generate
+
+  deploy-hostinger:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH || '/var/www/erp-ads-ativos' }}
-            git pull origin main
+            set -e
+            cd '${{ secrets.DEPLOY_PATH || '/var/www/erp-ads-ativos' }}'
+            git fetch origin main
+            git reset --hard origin/main
             npm ci
             npm run build
             pm2 restart erp-ads-ativos

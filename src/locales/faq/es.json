@@ -1,0 +1,17 @@
+[
+  {
+    "id": "warm-up",
+    "title": "¿Qué es el calentamiento (warm-up) de cuenta?",
+    "body": "Es el periodo en que la cuenta gana historial y confianza antes de escalar inversión en anuncios. Mantenga el gasto gradual y evite cambios bruscos de facturación o IP."
+  },
+  {
+    "id": "contingency",
+    "title": "¿Qué es el presupuesto de contingencia?",
+    "body": "Una reserva de presupuesto para absorber variaciones de subasta o pruebas A/B sin pausar campañas críticas."
+  },
+  {
+    "id": "lander",
+    "title": "Lander y página de destino",
+    "body": "La lander es donde aterriza el tráfico tras el clic. Debe alinearse con la política de la plataforma y el anuncio (mensaje coherente)."
+  }
+]

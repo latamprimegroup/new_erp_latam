@@ -133,11 +133,17 @@ export function SimuladoresClient() {
                 <span>R$ {result.margemProjetada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-gray-600">Custo de aquisição (CAC × clientes)</span>
+                <span className="font-medium">
+                  R$ {result.custoAquisicao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-gray-600">ROI</span>
                 <span className={result.roi >= 0 ? 'text-green-600' : 'text-red-600'}>{result.roi}%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Break-even (meses)</span>
+                <span className="text-gray-600">Pay-back / break-even (meses)</span>
                 <span>{result.breakEvenMeses}</span>
               </div>
               <div className="flex justify-between">

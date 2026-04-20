@@ -2,36 +2,64 @@
 
 import Script from 'next/script'
 import { useEffect, useState } from 'react'
+import { WhatsAppFloatingWidget } from '@/components/WhatsAppFloatingWidget'
+
+type JoinchatConfig = {
+  telephone: string
+  niche: string
+  legacyJoinchatId: string | null
+  mode: 'dynamic' | 'legacy' | 'off'
+}
 
 /**
- * Widget Join.Chat (melhoria 008)
- * Carrega via CDN quando joinchat_id está configurado em SystemSetting.
+ * Join.Chat / WhatsApp widget: prioriza telefone + nicho (cliente ou admin);
+ * bundle legado join.chat só se não houver widget dinâmico (evita ícones duplicados).
  */
 export function JoinChatWidget() {
-  const [joinchatId, setJoinchatId] = useState<string | null>(null)
+  const [cfg, setCfg] = useState<JoinchatConfig | null>(null)
 
   useEffect(() => {
     const ctrl = new AbortController()
-    const timeout = setTimeout(() => ctrl.abort(), 5000)
-    fetch('/api/config/public', { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d?.joinchatId) setJoinchatId(d.joinchatId)
-      })
-      .catch(() => {})
-      .finally(() => clearTimeout(timeout))
+
+    const load = () => {
+      fetch('/api/widget/joinchat-config', { signal: ctrl.signal })
+        .then((r) => r.json())
+        .then((d: JoinchatConfig) => setCfg(d))
+        .catch(() => setCfg(null))
+    }
+
+    if (typeof window === 'undefined') return
+
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }
+    if (typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(() => load(), { timeout: 4000 })
+      return () => {
+        ctrl.abort()
+        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(id)
+      }
+    }
+
+    const t = window.setTimeout(load, 1)
     return () => {
-      clearTimeout(timeout)
       ctrl.abort()
+      clearTimeout(t)
     }
   }, [])
 
-  if (!joinchatId) return null
+  if (!cfg || cfg.mode === 'off') return null
 
-  return (
-    <Script
-      src={`https://cdn.join.chat/bundle/${joinchatId}.js`}
-      strategy="lazyOnload"
-    />
-  )
+  if (cfg.mode === 'dynamic' && cfg.telephone) {
+    return <WhatsAppFloatingWidget telephone={cfg.telephone} niche={cfg.niche} />
+  }
+
+  if (cfg.mode === 'legacy' && cfg.legacyJoinchatId) {
+    return (
+      <Script
+        src={`https://cdn.join.chat/bundle/${cfg.legacyJoinchatId}.js`}
+        strategy="lazyOnload"
+      />
+    )
+  }
+
+  return null
 }

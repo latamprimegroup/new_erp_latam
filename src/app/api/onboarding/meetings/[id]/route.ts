@@ -96,7 +96,8 @@ export async function PATCH(
           id,
           meeting.client.user.name || 'Cliente',
           start,
-          (data.title as string) || meeting.title
+          (data.title as string) || meeting.title,
+          meeting.meetLink
         )
       }
     }
@@ -118,7 +119,10 @@ export async function PATCH(
         start,
         end,
       })
-      if (calEvent) updates.googleCalendarEventId = calEvent.id
+      if (calEvent) {
+        updates.googleCalendarEventId = calEvent.id
+        if (calEvent.hangoutLink) updates.meetLink = calEvent.hangoutLink
+      }
     }
 
     const updated = await prisma.onboardingMeeting.update({

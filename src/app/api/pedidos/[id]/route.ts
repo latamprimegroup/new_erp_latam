@@ -7,6 +7,8 @@ import { prisma } from '@/lib/prisma'
 import { syncClientLTV } from '@/lib/client-ltv'
 import { audit } from '@/lib/audit'
 import { notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
+import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
+import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 
 const updateSchema = z.object({
   status: z.enum(['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED', 'CANCELLED']).optional(),
@@ -39,9 +41,13 @@ export async function PATCH(
     })
     if (!order) return NextResponse.json({ error: 'Pedido não encontrado' }, { status: 404 })
 
-    const data: { status: OrderStatus; paidAt?: Date } = { status: status as OrderStatus }
+    const data: { status: OrderStatus; paidAt?: Date; warrantyEndsAt?: Date } = {
+      status: status as OrderStatus,
+    }
     if (status === 'PAID' && !order.paidAt) {
-      data.paidAt = new Date()
+      const paidAt = new Date()
+      data.paidAt = paidAt
+      data.warrantyEndsAt = computeWarrantyEndsAt(paidAt, order.warrantyHours ?? 48)
     }
 
     await prisma.$transaction(async (tx) => {
@@ -114,6 +120,8 @@ export async function PATCH(
       },
     })
 
+    const becomingPaid = status === 'PAID' && order.status !== 'PAID'
+
     if (status === 'PAID' && order.clientId) {
       syncClientLTV(order.clientId).catch(console.error)
     }
@@ -127,6 +135,10 @@ export async function PATCH(
         items.length,
         platforms
       ).catch(console.error)
+    }
+
+    if (becomingPaid) {
+      runCommercialOrderPaidBridge(id, 'pedidos_patch').catch((e) => console.error('commercial bridge', e))
     }
 
     return NextResponse.json(updated)

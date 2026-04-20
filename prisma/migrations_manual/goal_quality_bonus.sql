@@ -1,0 +1,10 @@
+-- Metas: bônus por qualidade (taxa de aprovação mínima).
+-- Preferível: `npx prisma db push` ou migrate a partir do schema.prisma.
+--
+-- PostgreSQL / onboarding_meetings naming: tabela "Goal" no Postgres costuma ser "Goal"
+-- ALTER TABLE "Goal" ADD COLUMN IF NOT EXISTS min_approval_rate_percent INTEGER;
+-- ALTER TABLE "Goal" ADD COLUMN IF NOT EXISTS quality_bonus DECIMAL(12,2);
+--
+-- MySQL (ajuste nome da tabela se for mapeado):
+-- ALTER TABLE Goal ADD COLUMN min_approval_rate_percent INT NULL;
+-- ALTER TABLE Goal ADD COLUMN quality_bonus DECIMAL(12,2) NULL;

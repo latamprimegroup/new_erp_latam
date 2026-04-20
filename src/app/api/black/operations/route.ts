@@ -14,6 +14,7 @@ const createSchema = z.object({
   niche: z.string().min(1),
   domain: z.string().optional(),
   stockAccountId: z.string().optional(),
+  platform: z.enum(['GOOGLE_ADS', 'FACEBOOK', 'META']).optional(),
 })
 
 export async function GET(req: NextRequest) {
@@ -60,12 +61,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = createSchema.parse(body)
 
+    const platform =
+      data.platform === 'META' || data.platform === 'FACEBOOK'
+        ? 'FACEBOOK'
+        : 'GOOGLE_ADS'
+
     const operation = await prisma.blackOperation.create({
       data: {
         collaboratorId: session.user!.id!,
         niche: data.niche,
         domain: data.domain || null,
         stockAccountId: data.stockAccountId || null,
+        platform,
       },
     })
 

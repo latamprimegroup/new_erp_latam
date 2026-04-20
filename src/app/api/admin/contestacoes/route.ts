@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
-import { ContestationStatus } from '@prisma/client'
+import { ContestationStatus, Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { recalculateCustomerScore } from '@/lib/reputation-engine'
 
 const VALID_STATUSES: ContestationStatus[] = Object.values(ContestationStatus)
+
+/** Filtros compostos para alinhar ao wireframe (dropdown). */
+const GROUP_FILTERS: Record<string, ContestationStatus[]> = {
+  PENDENTES: ['OPEN', 'IN_REVIEW'],
+  RESOLVIDOS: ['RESOLVED', 'REPLACEMENT_APPROVED'],
+}
 
 const updateSchema = z.object({
   id: z.string().min(1),
@@ -25,8 +32,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const statusParam = searchParams.get('status')
 
-  const where: { status?: ContestationStatus } = {}
-  if (statusParam && VALID_STATUSES.includes(statusParam as ContestationStatus)) {
+  const where: Prisma.ContestationTicketWhereInput = {}
+  if (statusParam && GROUP_FILTERS[statusParam]) {
+    where.status = { in: GROUP_FILTERS[statusParam] }
+  } else if (statusParam && VALID_STATUSES.includes(statusParam as ContestationStatus)) {
     where.status = statusParam as ContestationStatus
   }
 
@@ -41,6 +50,10 @@ export async function GET(req: NextRequest) {
           type: true,
           googleAdsCustomerId: true,
           status: true,
+          manager: {
+            include: { user: { select: { name: true, email: true } } },
+          },
+          supplier: { select: { id: true, name: true, contact: true } },
         },
       },
     },
@@ -79,6 +92,10 @@ export async function PATCH(req: NextRequest) {
         account: { select: { id: true, platform: true, type: true, status: true } },
       },
     })
+
+    if (ticket.clientId) {
+      void recalculateCustomerScore(ticket.clientId).catch(console.error)
+    }
 
     return NextResponse.json(ticket)
   } catch (err) {

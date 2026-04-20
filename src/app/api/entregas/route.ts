@@ -38,14 +38,34 @@ export async function GET(req: Request) {
     orderBy: { createdAt: 'desc' },
   })
 
-  const [pendingCount, deliveredCount] = await Promise.all([
+  const [pendingCount, deliveredCount, deliveredForSla] = await Promise.all([
     prisma.delivery.count({ where: { status: { in: ['PENDING', 'IN_PROGRESS', 'DELAYED'] } } }),
     prisma.delivery.count({ where: { status: 'DELIVERED' } }),
+    prisma.delivery.findMany({
+      where: { status: 'DELIVERED', deliveredAt: { not: null } },
+      select: {
+        deliveredAt: true,
+        createdAt: true,
+        order: { select: { paidAt: true } },
+      },
+    }),
   ])
+
+  const slaMinutes: number[] = []
+  for (const d of deliveredForSla) {
+    if (!d.deliveredAt) continue
+    const start = d.order.paidAt ?? d.createdAt
+    const mins = (d.deliveredAt.getTime() - start.getTime()) / 60_000
+    if (Number.isFinite(mins) && mins >= 0) slaMinutes.push(mins)
+  }
+  const avgDeliveryMinutes =
+    slaMinutes.length > 0
+      ? Math.round(slaMinutes.reduce((a, b) => a + b, 0) / slaMinutes.length)
+      : null
 
   return NextResponse.json({
     deliveries,
-    kpis: { pending: pendingCount, delivered: deliveredCount },
+    kpis: { pending: pendingCount, delivered: deliveredCount, avgDeliveryMinutes },
   })
 }
 

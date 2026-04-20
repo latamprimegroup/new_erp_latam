@@ -9,6 +9,8 @@ type Integracao = {
   descricao: string
   conectado: boolean
   envVars: string[]
+  /** Link interno opcional (ex.: módulo ligado à integração) */
+  dashboardHref?: string
 }
 
 export function IntegracoesClient() {
@@ -72,6 +74,14 @@ export function IntegracoesClient() {
               <p className="text-xs font-mono text-gray-600">
                 {i.envVars.join(', ')}
               </p>
+              {i.dashboardHref && (
+                <Link
+                  href={i.dashboardHref}
+                  className="inline-block mt-3 text-sm text-primary-600 hover:underline font-medium"
+                >
+                  → Abrir {i.dashboardHref === '/dashboard/roi-crm' ? 'Dashboard ROI & CRM' : 'módulo'}
+                </Link>
+              )}
             </div>
           </div>
         ))}

@@ -7,19 +7,31 @@ const PUBLIC_PATHS = ['/login', '/cadastro', '/recuperar-senha', '/redefinir-sen
 
 // Mapeamento: path pattern → roles permitidas
 const ROUTE_ROLES: Record<string, string[]> = {
-  '/dashboard/producao': ['ADMIN', 'PRODUCER'],
-  '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'FINANCE'],
-  '/dashboard/producao/metrics': ['ADMIN', 'PRODUCER'],
+  '/dashboard/ads-core': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/gestao-contas': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/bi': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/producao': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/producao/conferencia': ['ADMIN', 'FINANCE', 'PRODUCTION_MANAGER'],
+  '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'FINANCE', 'PRODUCTION_MANAGER'],
+  '/dashboard/producao/metrics': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  // Apenas quem tem saldo próprio (produtor) ou admin; alinhado a `producao/saldo/page.tsx`
   '/dashboard/producao/saldo': ['ADMIN', 'PRODUCER'],
+  '/dashboard/producao/vault-earnings': ['ADMIN', 'PRODUCER'],
   '/dashboard/estoque': ['ADMIN', 'FINANCE'],
   '/dashboard/base': ['ADMIN'],
-  '/dashboard/vendas': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/vendas': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
+  '/dashboard/commercial': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/roi-crm': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
   '/dashboard/entregas': ['ADMIN', 'DELIVERER'],
-  '/dashboard/entregas-grupos': ['ADMIN', 'DELIVERER', 'COMMERCIAL'],
+  '/dashboard/entregas-grupos': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/logistica': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/suporte': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/financeiro': ['ADMIN', 'FINANCE'],
   '/dashboard/saques': ['ADMIN', 'FINANCE'],
   '/dashboard/metas': ['ADMIN', 'PRODUCER'],
-  '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
+  // Mais permissivo que /dashboard/admin genérico: API e nav já incluem DELIVERER/COMMERCIAL
+  '/dashboard/admin/delivery-dashboard': ['ADMIN', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/admin': ['ADMIN'],
   '/dashboard/admin/config': ['ADMIN'],
   '/dashboard/admin/contas-ofertadas': ['ADMIN'],
@@ -35,6 +47,19 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/cliente': ['CLIENT'],
   '/dashboard/gestor': ['MANAGER'],
   '/dashboard/plugplay': ['PLUG_PLAY'],
+  '/dashboard/treinamento': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL', 'MANAGER'],
+  '/dashboard/area-cliente': ['CLIENT'],
+  '/dashboard/ecosystem': ['CLIENT'],
+  '/dashboard/gtm-conversao': [
+    'ADMIN',
+    'COMMERCIAL',
+    'FINANCE',
+    'DELIVERER',
+    'PRODUCER',
+    'PRODUCTION_MANAGER',
+    'MANAGER',
+    'PLUG_PLAY',
+  ],
 }
 
 function getRolesForPath(pathname: string): string[] | null {
@@ -84,7 +109,7 @@ export default function middleware(req: Request, event: NextFetchEvent) {
     return NextResponse.next()
   }
 
-  // 2. Rate limit no login (anti brute force) — 5 tentativas/minuto por IP
+  // 2. Rate limit no login (anti brute force) — por IP na rota de credenciais
   if (pathname === '/api/auth/callback/credentials' && req.method === 'POST') {
     const ip =
       req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -92,9 +117,20 @@ export default function middleware(req: Request, event: NextFetchEvent) {
       'unknown'
     const rl = checkLoginRateLimit(ip)
     if (!rl.success) {
+      const sec = rl.retryAfterSeconds ?? 60
       return new NextResponse(
-        JSON.stringify({ error: 'Muitas tentativas. Aguarde 1 minuto e tente novamente.' }),
-        { status: 429, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          error: `Muitas tentativas de login neste IP. Aguarde ${sec} segundos e tente novamente.`,
+          code: 'RATE_LIMIT',
+          retryAfterSeconds: sec,
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': String(sec),
+          },
+        }
       )
     }
   }

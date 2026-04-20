@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL']
+  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
   const periodStart = searchParams.get('periodStart')
   const periodEnd = searchParams.get('periodEnd')
   const orderBy = searchParams.get('orderBy') // 'createdAt' | 'priority'
+  const quickFilter = searchParams.get('quickFilter') // urgent | aguardando_cliente | em_producao
   const { page, limit, skip } = getPaginationParams(searchParams)
 
   const where: Record<string, unknown> = {}
@@ -46,6 +47,16 @@ export async function GET(req: NextRequest) {
   if (accountType) where.accountType = accountType
   if (paymentType) where.paymentType = paymentType
   if (currency) where.currency = currency
+  if (quickFilter === 'urgent') where.trackerUrgent = true
+  if (quickFilter === 'aguardando_cliente') {
+    where.operationalBottleneck = { in: ['AGUARDANDO_CLIENTE', 'AGUARDANDO_URL'] }
+  }
+  if (quickFilter === 'em_producao') {
+    where.OR = [
+      { operationalBottleneck: 'PRODUCAO_EM_ANDAMENTO' },
+      { status: 'EM_ANDAMENTO' },
+    ]
+  }
   if (periodStart || periodEnd) {
     where.createdAt = {}
     if (periodStart) (where.createdAt as Record<string, Date>).gte = new Date(periodStart)
@@ -86,9 +97,39 @@ export async function GET(req: NextRequest) {
     quantityPending: Math.max(0, d.quantityContracted - d.quantityDelivered),
     ...(priorityScores[i] !== undefined && { priorityScore: priorityScores[i] }),
   }))
+
+  const clientIds = [...new Set(enriched.map((d) => d.clientId))]
+  let rmaOpenByClient: Record<string, number> = {}
+  let rmaTotalByClient: Record<string, number> = {}
+  if (clientIds.length > 0) {
+    const [openRows, totalRows] = await Promise.all([
+      prisma.accountReplacementRequest.groupBy({
+        by: ['clientId'],
+        where: {
+          clientId: { in: clientIds },
+          status: { in: ['EM_ANALISE', 'EM_REPOSICAO'] },
+        },
+        _count: { _all: true },
+      }),
+      prisma.accountReplacementRequest.groupBy({
+        by: ['clientId'],
+        where: { clientId: { in: clientIds } },
+        _count: { _all: true },
+      }),
+    ])
+    rmaOpenByClient = Object.fromEntries(openRows.map((r) => [r.clientId, r._count._all]))
+    rmaTotalByClient = Object.fromEntries(totalRows.map((r) => [r.clientId, r._count._all]))
+  }
+
+  const withRma = enriched.map((d) => ({
+    ...d,
+    rmaOpenCount: rmaOpenByClient[d.clientId] ?? 0,
+    rmaHistoryCount: rmaTotalByClient[d.clientId] ?? 0,
+  }))
+
   return NextResponse.json({
     ...paginated,
-    items: enriched,
+    items: withRma,
     kpis,
   })
 }
@@ -103,6 +144,9 @@ async function getKpis(periodStart: string | null, periodEnd: string | null) {
 
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  // "Entregas do mês": com filtro de datas, conta o período selecionado; senão, mês calendário atual.
+  const totalInPeriodWhere =
+    periodStart || periodEnd ? periodWhere : { createdAt: { gte: startOfMonth } }
 
   const [
     totalMonth,
@@ -113,7 +157,7 @@ async function getKpis(periodStart: string | null, periodEnd: string | null) {
     allForCompletion,
   ] = await Promise.all([
     prisma.deliveryGroup.count({
-      where: { ...periodWhere, createdAt: { gte: startOfMonth } },
+      where: totalInPeriodWhere,
     }),
     prisma.deliveryGroup.aggregate({
       where: { ...periodWhere, status: 'FINALIZADA' },
@@ -152,7 +196,7 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL']
+  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { whatsappHref } from '@/lib/manager-offer'
+import { SUPPORT_WIKI_SNIPPETS } from '@/lib/support-quick-replies'
 
 type Ticket = {
   id: string
@@ -13,8 +15,18 @@ type Ticket = {
   commercialOpsRequested: boolean
   accountReturned: boolean | null
   createdAt: string
+  updatedAt: string
+  slaResponseAt: string | null
+  slaResolveAt: string | null
   client: { user: { name: string | null; email: string } }
-  account: { id: string; platform: string; type: string; status: string }
+  account: {
+    id: string
+    platform: string
+    type: string
+    status: string
+    manager: { user: { name: string | null; email: string } } | null
+    supplier: { id: string; name: string; contact: string | null } | null
+  }
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -29,6 +41,25 @@ const STATUS_LABELS: Record<string, string> = {
   REPLACEMENT_APPROVED: 'Reposição aprovada',
   RESOLVED: 'Resolvido',
   REJECTED: 'Rejeitado',
+}
+
+function formatWaitingLabel(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 0) return 'agora'
+  const m = Math.floor(ms / 60000)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h} h`
+  const d = Math.floor(h / 24)
+  return `${d} d`
+}
+
+async function copyWiki(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    alert('Não foi possível copiar')
+  }
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -92,13 +123,36 @@ export default function AdminContestacoesPage() {
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="input-field py-1.5 px-2 w-40 text-sm"
+            className="input-field py-1.5 px-2 w-52 text-sm"
           >
             <option value="">Todos</option>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
+            <option value="PENDENTES">Pendentes (aberto + análise)</option>
+            <option value="RESOLVIDOS">Resolvidos (+ reposição aprovada)</option>
+            <optgroup label="Por status">
+              {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </optgroup>
           </select>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          <span className="text-xs text-gray-500 self-center">Base rápida (copiar):</span>
+          {SUPPORT_WIKI_SNIPPETS.map((w) => (
+            <button
+              key={w.label}
+              type="button"
+              onClick={() => void copyWiki(w.text)}
+              className="btn-secondary text-xs py-1 px-2"
+            >
+              {w.label}
+            </button>
+          ))}
+          <Link href="/dashboard/financeiro" className="btn-secondary text-xs py-1 px-2 inline-flex items-center">
+            Financeiro (reembolso manual)
+          </Link>
         </div>
 
         {loading ? (
@@ -127,6 +181,42 @@ export default function AdminContestacoesPage() {
                     <p className="text-sm text-gray-500 mt-1">
                       {t.client.user.name || t.client.user.email} • {PLATFORM_LABELS[t.account.platform]} — {t.account.type}
                     </p>
+                    <p className="text-xs text-amber-800 dark:text-amber-200 mt-1 font-medium">
+                      SLA visual: aberto há {formatWaitingLabel(t.createdAt)}
+                      {t.slaResponseAt && (
+                        <span className="block text-gray-600 dark:text-gray-400 font-normal">
+                          Prazo 1ª resposta (meta): {new Date(t.slaResponseAt).toLocaleString('pt-BR')}
+                        </span>
+                      )}
+                      {t.status === 'OPEN' || t.status === 'IN_REVIEW'
+                        ? ' — meta operacional: responder o quanto antes'
+                        : ''}
+                    </p>
+                    {(t.account.manager || t.account.supplier) && (
+                      <div className="text-xs text-gray-600 dark:text-gray-300 mt-2 space-y-0.5 border-l-2 border-primary-500/40 pl-2">
+                        <p className="font-medium text-gray-700 dark:text-gray-200">Origem do ativo</p>
+                        {t.account.manager && (
+                          <p>
+                            Gestor: {t.account.manager.user.name || t.account.manager.user.email}
+                          </p>
+                        )}
+                        {t.account.supplier && (
+                          <p className="flex flex-wrap items-center gap-2">
+                            <span>Fornecedor: {t.account.supplier.name}</span>
+                            {whatsappHref(t.account.supplier.contact) && (
+                              <a
+                                href={whatsappHref(t.account.supplier.contact)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-green-600 hover:underline"
+                              >
+                                WhatsApp
+                              </a>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-sm text-gray-700 mt-2">{t.description}</p>
                     {(t.banReason || t.needsReplacement || t.commercialOpsRequested) && (
                       <div className="flex gap-4 mt-2 text-xs text-gray-500">
@@ -136,7 +226,10 @@ export default function AdminContestacoesPage() {
                       </div>
                     )}
                     <p className="text-xs text-gray-400 mt-2">
-                      {new Date(t.createdAt).toLocaleString('pt-BR')}
+                      Criado: {new Date(t.createdAt).toLocaleString('pt-BR')}
+                      {t.updatedAt !== t.createdAt && (
+                        <> · Atualizado: {new Date(t.updatedAt).toLocaleString('pt-BR')}</>
+                      )}
                     </p>
                   </div>
                   {t.status === 'OPEN' || t.status === 'IN_REVIEW' ? (

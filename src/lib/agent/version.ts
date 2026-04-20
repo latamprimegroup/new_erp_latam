@@ -23,6 +23,15 @@ export async function getCurrentVersion(): Promise<{
   }
 }
 
+/** Apenas versão da app (ex.: após migração), sem marcar produção ativa. */
+export async function setAppVersion(version: string): Promise<void> {
+  await prisma.systemSetting.upsert({
+    where: { key: VERSION_KEY },
+    create: { key: VERSION_KEY, value: version },
+    update: { value: version },
+  })
+}
+
 export async function setVersion(version: string, deployAt?: Date): Promise<void> {
   const now = deployAt || new Date()
   await prisma.$transaction([

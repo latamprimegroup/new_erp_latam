@@ -36,7 +36,11 @@ type Order = {
 export function EntregasClient() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [pendingOrders, setPendingOrders] = useState<Order[]>([])
-  const [kpis, setKpis] = useState({ pending: 0, delivered: 0 })
+  const [kpis, setKpis] = useState<{ pending: number; delivered: number; avgDeliveryMinutes?: number | null }>({
+    pending: 0,
+    delivered: 0,
+    avgDeliveryMinutes: null,
+  })
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
@@ -55,7 +59,9 @@ export function EntregasClient() {
     const ordData = await ordRes.json()
     if (delRes.ok) {
       setDeliveries(delData.deliveries || [])
-      setKpis(delData.kpis || { pending: 0, delivered: 0 })
+      setKpis(
+        delData.kpis || { pending: 0, delivered: 0, avgDeliveryMinutes: null }
+      )
     }
     if (ordRes.ok) setPendingOrders(ordData.orders || [])
     setLoading(false)
@@ -110,7 +116,18 @@ export function EntregasClient() {
         </div>
         <div className="card">
           <p className="text-sm text-gray-500">Tempo Médio</p>
-          <p className="text-2xl font-bold">—</p>
+          <p className="text-2xl font-bold">
+            {loading
+              ? '—'
+              : kpis.avgDeliveryMinutes != null && kpis.delivered > 0
+                ? kpis.avgDeliveryMinutes >= 60
+                  ? `${Math.floor(kpis.avgDeliveryMinutes / 60)}h ${kpis.avgDeliveryMinutes % 60}min`
+                  : `${kpis.avgDeliveryMinutes} min`
+                : '—'}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Média pagamento→entrega (pedidos entregues)
+          </p>
         </div>
       </div>
 

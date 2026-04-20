@@ -19,7 +19,6 @@ export function calcMeta100m(params: {
   receitaAtual12m: number
   margemMediaPct: number
   ticketMedio: number
-  churnAtual: number
   clientesAtivos: number
 }): Meta100mResult {
   const {
@@ -28,7 +27,6 @@ export function calcMeta100m(params: {
     receitaAtual12m,
     margemMediaPct,
     ticketMedio,
-    churnAtual,
     clientesAtivos,
   } = params
 
@@ -38,7 +36,8 @@ export function calcMeta100m(params: {
   const volumeNecessario = ticketMedio > 0 ? receitaNecessaria / ticketMedio : 0
   const crescimentoNecessario = receitaAtual12m > 0 ? (receitaNecessaria / receitaAtual12m - 1) * 100 / 12 : 0
   const ticketMedioIdeal = clientesAtivos > 0 ? receitaNecessaria / clientesAtivos : ticketMedio
-  const churnMaximoAceitavel = Math.min(100, churnAtual + 5)
+  /** Limite estrutural da meta 100M (wireframe / regra de negócio), não churn atual + buffer. */
+  const churnMaximoAceitavel = 5
 
   return {
     metaLucro: metaLucro12m,

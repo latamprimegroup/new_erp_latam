@@ -20,7 +20,10 @@ import {
   Gift,
   Truck,
   Activity,
+  Ban,
+  Clock,
 } from 'lucide-react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { SkeletonCard, SkeletonChart } from '@/components/ui/Skeleton'
 
@@ -36,6 +39,8 @@ const ICONS: Record<string, React.ElementType> = {
   productionDaily: Activity,
   productionMonthly: Package,
   stockCount: Warehouse,
+  productionRejectedMonth: Ban,
+  stockRunwayDays: Clock,
   ordersSold: TrendingUp,
   ordersDelivered: Truck,
   revenueMonth: DollarSign,
@@ -43,27 +48,55 @@ const ICONS: Record<string, React.ElementType> = {
   bonusAccumulated: Gift,
 }
 
-function formatVal(val: number, unit: string) {
+function formatVal(val: number, unit: string, key?: string) {
+  if (key === 'stockRunwayDays' && unit === '—') return '—'
   if (unit === 'R$') return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+  if (unit === 'dias') return `${val.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`
   return val.toLocaleString('pt-BR')
 }
 
-export function DashboardBento() {
+type ProducerInsights = {
+  previsaoTotalMes: number
+  metaPadraoContas: number
+  metaEliteContas: number
+  approvalRankWeek: number | null
+  nextTierHint: string | null
+  bonusHistory: { key: string; label: string; variablePay: number; totalPay: number }[]
+  daysUntilMonthEnd: number
+  closingHint: string | null
+}
+
+type DashboardBentoProps = {
+  platform: string
+  isAdmin?: boolean
+  userRole?: string
+}
+
+export function DashboardBento({ platform, isAdmin, userRole }: DashboardBentoProps) {
   const [kpis, setKpis] = useState<KpiItem[]>([])
+  const [pendingWithdrawals, setPendingWithdrawals] = useState(0)
+  const [producerInsights, setProducerInsights] = useState<ProducerInsights | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/dashboard/executivo')
+    setLoading(true)
+    const q = platform && platform !== 'ALL' ? `?platform=${encodeURIComponent(platform)}` : ''
+    fetch(`/api/dashboard/executivo${q}`)
       .then((r) => r.json())
-      .then((d) => setKpis(d.kpis || []))
+      .then((d) => {
+        setKpis(d.kpis || [])
+        setProducerInsights(d.producerInsights ?? null)
+        if (typeof d.pendingWithdrawals === 'number') setPendingWithdrawals(d.pendingWithdrawals)
+      })
       .catch(() => setKpis([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [platform])
 
+  const chartKeys = ['productionMonthly', 'ordersSold'] as const
   const chartData = kpis
-    .filter((k) => k.meta > 0 && ['productionMonthly', 'ordersSold'].includes(k.key))
+    .filter((k) => k.meta > 0 && chartKeys.includes(k.key as (typeof chartKeys)[number]))
     .map((k) => ({
-      name: k.label.replace(' (mês)', ''),
+      name: k.label.replace(' (mês)', '').replace(' (suas contas)', ''),
       value: k.value,
       meta: k.meta,
       pct: Math.min(100, Math.round((k.value / k.meta) * 100)),
@@ -87,6 +120,19 @@ export function DashboardBento() {
 
   return (
     <div className="space-y-4">
+      {isAdmin && pendingWithdrawals > 0 && (
+        <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 flex flex-wrap items-center justify-between gap-2">
+          <span>
+            <strong>{pendingWithdrawals}</strong> saque(s) pendente(s) ou retido(s) aguardando ação.
+          </span>
+          <Link
+            href="/dashboard/saques?pendentes=1"
+            className="font-medium text-primary-600 dark:text-primary-400 hover:underline shrink-0"
+          >
+            Abrir fila de saques
+          </Link>
+        </div>
+      )}
       {/* Bento Grid - KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {kpis.map((k, i) => {
@@ -111,7 +157,7 @@ export function DashboardBento() {
                 <Icon className="w-4 h-4 text-zinc-400 shrink-0" />
               </div>
               <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">
-                {formatVal(k.value, k.unit)}
+                {formatVal(k.value, k.unit, k.key)}
               </p>
               {hasMeta && (
                 <div className="mt-2">
@@ -151,7 +197,9 @@ export function DashboardBento() {
           className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-5"
         >
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-white mb-4">
-            Produção x Vendas (vs Meta)
+            {userRole === 'PRODUCER'
+              ? 'Produção x Suas vendas (vs metas)'
+              : 'Produção x Vendas (vs Meta)'}
           </h3>
           <div className="h-48">
             {chartData.length > 0 ? (
@@ -218,8 +266,55 @@ export function DashboardBento() {
               </div>
             )}
           </div>
+          {userRole === 'PRODUCER' && producerInsights && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-3">
+              Referência de bônus: meta padrão {producerInsights.metaPadraoContas} contas · elite{' '}
+              {producerInsights.metaEliteContas} contas (configuração de pagamento).
+            </p>
+          )}
         </motion.div>
       </div>
+
+      {userRole === 'PRODUCER' && producerInsights && (
+        <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card p-5 space-y-3 text-sm text-zinc-700 dark:text-zinc-300">
+          {producerInsights.approvalRankWeek === 1 && (
+            <p className="font-semibold text-primary-600 dark:text-primary-400">
+              Você é a #1 em taxa de aprovação (Produção clássica) nos últimos 7 dias.
+            </p>
+          )}
+          {producerInsights.approvalRankWeek != null && producerInsights.approvalRankWeek > 1 && (
+            <p className="text-zinc-600 dark:text-zinc-400">
+              Ranking aprovação (7d): #{producerInsights.approvalRankWeek} entre produtores com amostra mínima.
+            </p>
+          )}
+          {producerInsights.nextTierHint && <p>{producerInsights.nextTierHint}</p>}
+          {producerInsights.closingHint && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">{producerInsights.closingHint}</p>
+          )}
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Previsão total do mês (base + variável):{' '}
+            {producerInsights.previsaoTotalMes.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}
+          </p>
+          {producerInsights.bonusHistory.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                Variável (sem salário base) — últimos meses
+              </p>
+              <ul className="text-xs space-y-1">
+                {producerInsights.bonusHistory.map((h) => (
+                  <li key={h.key}>
+                    {h.label}:{' '}
+                    {h.variablePay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

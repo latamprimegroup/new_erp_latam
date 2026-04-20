@@ -19,7 +19,6 @@ export default function AdminBlackPage() {
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [approving, setApproving] = useState<string | null>(null)
-  const [valorConta, setValorConta] = useState(50)
 
   function load() {
     fetch('/api/black/payments')

@@ -28,6 +28,9 @@ export async function GET(req: Request) {
   const [withdrawals, pendingCount, heldCount] = await Promise.all([
     prisma.withdrawal.findMany({
       where,
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
       orderBy: { createdAt: 'desc' },
     }),
     prisma.withdrawal.count({ where: { status: 'PENDING' } }),

@@ -3,7 +3,8 @@
  */
 import { prisma } from '../prisma'
 
-const BASE_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+const BASE_URL =
+  process.env.NEXTAUTH_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || 'http://localhost:3000'
 
 export type DailyTasksData = {
   role: string
@@ -119,7 +120,7 @@ async function getDelivererTasks(userId: string, name: string): Promise<DailyTas
 async function getFinanceTasks(name: string): Promise<DailyTasksData> {
   const [withdrawals, pendingAccounts] = await Promise.all([
     prisma.withdrawal.count({ where: { status: 'PENDING' } }),
-    prisma.productionAccount.count({ where: { status: 'PENDING' } }),
+    prisma.productionAccount.count({ where: { status: { in: ['PENDING', 'UNDER_REVIEW'] } } }),
   ])
 
   const msg = [
@@ -226,7 +227,7 @@ async function getAdminTasks(name: string): Promise<DailyTasksData> {
     lateDeliveries,
     stockCritical,
   ] = await Promise.all([
-    prisma.productionAccount.count({ where: { status: 'PENDING' } }),
+    prisma.productionAccount.count({ where: { status: { in: ['PENDING', 'UNDER_REVIEW'] } } }),
     prisma.contestationTicket.count({ where: { status: { in: ['OPEN', 'IN_REVIEW'] } } }),
     prisma.withdrawal.count({ where: { status: 'PENDING' } }),
     prisma.deliveryGroup.count({ where: { status: 'ATRASADA' } }),

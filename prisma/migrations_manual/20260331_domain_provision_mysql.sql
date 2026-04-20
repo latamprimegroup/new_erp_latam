@@ -1,0 +1,3 @@
+-- Tabelas: domain_provision_batches, domain_provision_items (ver schema Prisma).
+-- Aplicar com: npx prisma migrate dev   ou   npx prisma db push
+-- Não duplicar DDL se já existir no histórico de migrations.

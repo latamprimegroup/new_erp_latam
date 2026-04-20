@@ -1,0 +1,10 @@
+// Modelo para mesclar em schema.prisma:
+
+model AdsCoreCnpjRegistry {
+  cnpj          String   @id @db.VarChar(14)
+  producerId    String?  @map("producer_id")
+  producerName  String?  @map("producer_name") @db.VarChar(200)
+  processedAt   DateTime @map("processed_at")
+
+  @@map("ads_core_cnpj_registry")
+}

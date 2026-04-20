@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Rocket, FileText, Copy, Eye, Loader2, ChevronRight, Building2, MapPin, Briefcase, Megaphone } from 'lucide-react'
+import { Plus, FileText, Copy, Eye, Loader2, ChevronRight, Building2, MapPin, Megaphone } from 'lucide-react'
 
 type Briefing = {
   id: string
@@ -65,7 +65,9 @@ export function LandingFactoryClient() {
   function load() {
     fetch('/api/cliente/landing-briefing')
       .then((r) => r.json())
-      .then((d) => setBriefings(d.briefings ?? []))
+      .then((d) => {
+        setBriefings(Array.isArray(d?.briefings) ? d.briefings : [])
+      })
       .catch(() => setBriefings([]))
       .finally(() => setLoading(false))
   }
@@ -503,7 +505,7 @@ export function LandingFactoryClient() {
           onClick={() => setStep('form')}
           className="btn-primary flex items-center gap-2"
         >
-          <Rocket className="w-4 h-4" />
+          <Plus className="w-4 h-4" />
           Novo Site
         </button>
       </div>

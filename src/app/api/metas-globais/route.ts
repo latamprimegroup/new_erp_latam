@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
+import { parseDashboardPlatformParam } from '@/lib/account-platform-query'
 import { calcularMetasMensais, setMetasGlobais, initMetasPadrao } from '@/lib/metas-globais'
 import { z } from 'zod'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   try {
     await initMetasPadrao()
-    const result = await calcularMetasMensais()
-    return NextResponse.json(result)
+    const platform = parseDashboardPlatformParam(req.nextUrl.searchParams.get('platform'))
+    const result = await calcularMetasMensais({ platform })
+    return NextResponse.json({
+      ...result,
+      platformFilter: platform ? String(platform) : 'ALL',
+    })
   } catch (e) {
     console.error('Erro ao buscar metas globais:', e)
     return NextResponse.json({ error: 'Erro ao buscar metas' }, { status: 500 })

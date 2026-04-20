@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 
 const PLATFORMS: Record<string, string> = {
   GOOGLE_ADS: 'Google Ads',
@@ -11,6 +12,9 @@ const PLATFORMS: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pendente',
+  APPROVED: 'Aprovado',
+  REJECTED: 'Rejeitado',
   AVAILABLE: 'Disponível',
   IN_USE: 'Em uso',
   CRITICAL: 'Crítico',
@@ -68,9 +72,18 @@ export function RelatoriosClient() {
 
   return (
     <div>
-      <h1 className="heading-1 mb-6">
-        Relatórios & KPIs
-      </h1>
+      <h1 className="heading-1 mb-4">Relatórios & KPIs</h1>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+        Para <strong className="font-medium text-gray-800 dark:text-gray-200">ROI real, LTV, CPA</strong> e CRM
+        integrado ao TinTim, use o{' '}
+        <Link
+          href="/dashboard/roi-crm"
+          className="text-primary-600 dark:text-primary-400 font-medium hover:underline"
+        >
+          Dashboard de ROI & CRM
+        </Link>
+        .
+      </p>
 
       <div className="card mb-6">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-4">

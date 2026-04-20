@@ -40,6 +40,9 @@ export async function GET() {
       status: true,
       servicos: true,
       createdAt: true,
+      templateMode: true,
+      vturbEmbed: true,
+      footerHtml: true,
       _count: { select: { pages: true } },
     },
   })
@@ -97,6 +100,9 @@ export async function POST(req: NextRequest) {
       dor: clean.dor,
       solucao: clean.solucao,
       ofertaUnica: clean.ofertaUnica,
+      templateMode: clean.templateMode,
+      vturbEmbed: clean.vturbEmbed,
+      footerHtml: clean.footerHtml,
       status: 'DRAFT',
     },
   })
