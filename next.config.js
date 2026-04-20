@@ -14,6 +14,7 @@ const nextConfig = {
       '@aws-sdk/client-s3',
       '@aws-sdk/s3-request-presigner',
       '@google-cloud/storage',
+      'playwright-core',
     ],
   },
   async headers() {
