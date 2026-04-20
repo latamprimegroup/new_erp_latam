@@ -5,20 +5,51 @@ import Link from 'next/link'
 
 type Account = {
   id: string
+  clientId: string | null
   platform: string
   type: string
   googleAdsCustomerId: string | null
   status: string
   deliveredAt: string | null
-  client: { user: { name: string | null; email: string } } | null
+  lastSpendSyncAt: string | null
+  spent: string | number | null
+  rmaHistoryCount?: number
+  client: { id: string; user: { name: string | null; email: string } } | null
+  manager: { user: { name: string | null; email: string } } | null
+  supplier: { name: string } | null
 }
 
-const PLATFORM_LABELS: Record<string, string> = {
-  GOOGLE_ADS: 'Google Ads',
-  META_ADS: 'Meta Ads',
-  KWAI_ADS: 'Kwai',
-  TIKTOK_ADS: 'TikTok',
-  OTHER: 'Outro',
+function googleAdsOverviewUrl(customerId: string | null): string | null {
+  if (!customerId) return null
+  const digits = customerId.replace(/\D/g, '')
+  if (digits.length !== 10) return null
+  return `https://ads.google.com/aw/overview?ocid=${digits}`
+}
+
+type SpendSyncDot = 'none' | 'waiting' | 'ok' | 'stale'
+
+function spendSyncDot(a: Account): SpendSyncDot {
+  if (!a.googleAdsCustomerId) return 'none'
+  if (!a.lastSpendSyncAt) return 'waiting'
+  const h = (Date.now() - new Date(a.lastSpendSyncAt).getTime()) / 3600000
+  if (h <= 72) return 'ok'
+  return 'stale'
+}
+
+const SYNC_DOT_META: Record<
+  SpendSyncDot,
+  { label: string; className: string }
+> = {
+  none: { label: 'Sem Customer ID para sync', className: 'bg-gray-300 dark:bg-gray-600' },
+  waiting: { label: 'Customer ID vinculado; aguardando primeira sincronização de gastos', className: 'bg-amber-400' },
+  ok: { label: 'Sincronização de gastos recente (últimas 72h)', className: 'bg-emerald-500' },
+  stale: { label: 'Sem sync recente — verificar token ou conta no Google Ads', className: 'bg-red-500' },
+}
+
+function formatBRL(value: string | number | null | undefined): string {
+  const n = value == null ? 0 : typeof value === 'string' ? Number(value) : value
+  if (Number.isNaN(n)) return '—'
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
 }
 
 export default function AdminContasEntreguesPage() {
@@ -28,12 +59,21 @@ export default function AdminContasEntreguesPage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [customerId, setCustomerId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [clientSpendGoogle, setClientSpendGoogle] = useState<Record<string, number>>({})
 
   function load() {
     const params = filter ? `?hasCustomerId=${filter}` : ''
     fetch(`/api/admin/contas-entregues${params}`)
       .then((r) => r.json())
-      .then(setAccounts)
+      .then((d: Account[] | { accounts?: Account[]; clientSpendGoogle?: Record<string, number> }) => {
+        if (Array.isArray(d)) {
+          setAccounts(d)
+          setClientSpendGoogle({})
+        } else {
+          setAccounts(d.accounts ?? [])
+          setClientSpendGoogle(d.clientSpendGoogle ?? {})
+        }
+      })
       .finally(() => setLoading(false))
   }
 
@@ -97,19 +137,62 @@ export default function AdminContasEntreguesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-500 border-b">
+                  <th className="pb-2 pr-2 w-10" title="Status da sincronização de gastos">
+                    Sync
+                  </th>
                   <th className="pb-2 pr-4">Conta</th>
                   <th className="pb-2 pr-4">Cliente</th>
+                  <th className="pb-2 pr-4">Gestor / Fornecedor</th>
+                  <th className="pb-2 pr-4">Gasto (últ. sync)</th>
                   <th className="pb-2 pr-4">Customer ID</th>
+                  <th className="pb-2 pr-4">Google Ads</th>
                   <th className="pb-2">Ação</th>
                 </tr>
               </thead>
               <tbody>
-                {accounts.map((a) => (
+                {accounts.map((a) => {
+                  const dot = spendSyncDot(a)
+                  const syncMeta = SYNC_DOT_META[dot]
+                  const adsUrl = googleAdsOverviewUrl(a.googleAdsCustomerId)
+                  const clientTotal =
+                    a.clientId != null ? clientSpendGoogle[a.clientId] : undefined
+                  return (
                   <tr key={a.id} className="border-b border-gray-100 last:border-0">
-                    <td className="py-3 pr-4">
-                      {PLATFORM_LABELS[a.platform]} — {a.type} ({a.id.slice(0, 8)})
+                    <td className="py-3 pr-2 align-middle">
+                      <span
+                        className={`inline-block w-2.5 h-2.5 rounded-full ${syncMeta.className}`}
+                        title={syncMeta.label}
+                        aria-label={syncMeta.label}
+                      />
                     </td>
-                    <td className="py-3 pr-4">{a.client?.user?.name || a.client?.user?.email || '—'}</td>
+                    <td className="py-3 pr-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>
+                          Google Ads — {a.type} ({a.id.slice(0, 8)})
+                        </span>
+                        {(a.rmaHistoryCount ?? 0) > 0 ? (
+                          <span
+                            className="rounded bg-amber-100 text-amber-900 text-[10px] px-1.5 py-0.5 font-medium"
+                            title="Histórico de solicitações de reposição (RMA) nesta conta"
+                          >
+                            RMA ×{a.rmaHistoryCount}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <div>{a.client?.user?.name || a.client?.user?.email || '—'}</div>
+                      {clientTotal != null && clientTotal > 0 && (
+                        <div className="text-xs text-gray-500 mt-0.5" title="Soma do gasto sincronizado (todas as contas Google Ads deste cliente na lista)">
+                          Total cliente: {formatBRL(clientTotal)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-600">
+                      <div>{a.manager?.user?.name || a.manager?.user?.email || '—'}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{a.supplier?.name || '—'}</div>
+                    </td>
+                    <td className="py-3 pr-4 tabular-nums">{formatBRL(a.spent)}</td>
                     <td className="py-3 pr-4">
                       {editing === a.id ? (
                         <input
@@ -123,6 +206,20 @@ export default function AdminContasEntreguesPage() {
                         <span className={a.googleAdsCustomerId ? 'text-green-600' : 'text-gray-400'}>
                           {a.googleAdsCustomerId || '—'}
                         </span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {adsUrl ? (
+                        <a
+                          href={adsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary-600 text-sm hover:underline"
+                        >
+                          Abrir
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
                       )}
                     </td>
                     <td className="py-3">
@@ -155,7 +252,8 @@ export default function AdminContasEntreguesPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

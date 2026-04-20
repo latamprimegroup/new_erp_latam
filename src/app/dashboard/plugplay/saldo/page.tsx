@@ -18,10 +18,12 @@ export default async function PlugPlaySaldoPage() {
         <Link href="/dashboard/plugplay" className="text-gray-500 hover:text-gray-700">
           ← Plug & Play
         </Link>
-        <h1 className="heading-1">Saldo e Saque</h1>
+        <h1 className="heading-1">Saldo e Saque — Operação Plug &amp; Play</h1>
       </div>
-      <p className="text-gray-600 text-sm mb-6">
-        Salário base R$ 2.500 + bônus por meta (200→R$ 1.000 até 600 Elite→R$ 10.000). Solicite saque após o fechamento mensal.
+      <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 max-w-3xl">
+        Comissão por setup concluído + bônus de retenção. O saldo sacável reflete fechamentos mensais; a comissão por
+        conta entra na prévia após a conta passar +24h no ar (hold de 24h — se banir antes, o valor não migra para
+        sucesso). Classifique quedas técnicas para contestação.
       </p>
       <PlugPlaySaldoClient />
     </div>

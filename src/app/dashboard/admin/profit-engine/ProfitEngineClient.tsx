@@ -197,7 +197,9 @@ export function ProfitEngineClient() {
             </div>
             <div className="card">
               <p className="text-sm text-gray-500">Volume necessário</p>
-              <p className="font-medium">{fmt(meta100m.volumeNecessario)}</p>
+              <p className="font-medium">
+                {meta100m.volumeNecessario.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              </p>
             </div>
             <div className="card">
               <p className="text-sm text-gray-500">Crescimento mensal necessário</p>

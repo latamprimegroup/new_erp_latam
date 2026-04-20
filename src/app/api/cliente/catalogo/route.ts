@@ -21,14 +21,15 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = {
     status: 'AVAILABLE',
+    clientId: null,
     deletedAt: null,
     archivedAt: null,
   }
   if (platform) where.platform = platform
-  if (type) where.type = { contains: type, mode: 'insensitive' }
+  if (type) where.type = { contains: type }
   if (yearMin) where.yearStarted = { gte: parseInt(yearMin, 10) }
-  if (consumoMin) where.minConsumed = { gte: parseFloat(consumoMin) }
-  if (niche) where.niche = { contains: niche, mode: 'insensitive' }
+  if (consumoMin && !plugPlayOnly) where.minConsumed = { gte: parseFloat(consumoMin) }
+  if (niche) where.niche = { contains: niche }
   if (plugPlayOnly) where.isPlugPlay = true
 
   const accounts = await prisma.stockAccount.findMany({
@@ -40,9 +41,18 @@ export async function GET(req: NextRequest) {
       yearStarted: true,
       niche: true,
       minConsumed: true,
+      spent: true,
       salePrice: true,
       description: true,
       isPlugPlay: true,
+      productionG2: {
+        select: {
+          status: true,
+          firstCampaignWhiteApproved: true,
+          approvedAt: true,
+          sentToStockAt: true,
+        },
+      },
     },
   })
 
@@ -55,17 +65,32 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json(
-    accounts.map((a) => ({
-      id: a.id,
-      platform: a.platform,
-      platformLabel: PLATFORM_LABELS[a.platform] || a.platform,
-      type: a.type,
-      yearStarted: a.yearStarted,
-      niche: a.niche,
-      minConsumed: a.minConsumed ? Number(a.minConsumed) : null,
-      salePrice: a.salePrice ? Number(a.salePrice) : null,
-      description: a.description,
-      isPlugPlay: a.isPlugPlay ?? false,
-    }))
+    accounts.map((a) => {
+      const minC = a.minConsumed != null ? Number(a.minConsumed) : 0
+      const sp = a.spent != null ? Number(a.spent) : 0
+      const isPremium = minC >= 10_000 || sp >= 10_000
+      return {
+        id: a.id,
+        platform: a.platform,
+        platformLabel: PLATFORM_LABELS[a.platform] || a.platform,
+        type: a.type,
+        yearStarted: a.yearStarted,
+        niche: a.niche,
+        minConsumed: a.minConsumed != null ? Number(a.minConsumed) : null,
+        spent: a.spent != null ? Number(a.spent) : null,
+        salePrice: a.salePrice ? Number(a.salePrice) : null,
+        description: a.description,
+        isPlugPlay: a.isPlugPlay ?? false,
+        g2Status:
+          a.productionG2?.status === 'APROVADA'
+            ? 'APPROVED'
+            : a.productionG2?.status === 'REPROVADA'
+              ? 'REJECTED'
+              : 'PENDING',
+        firstWhiteCampaign: a.productionG2?.firstCampaignWhiteApproved ?? false,
+        approvalDate: (a.productionG2?.approvedAt ?? a.productionG2?.sentToStockAt)?.toISOString() ?? null,
+        isPremium,
+      }
+    }),
   )
 }

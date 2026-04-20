@@ -1,14 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-
-const STEP_LABELS: Record<string, string> = {
-  EMAIL_OK: 'E-mail válido e configurado',
-  CNPJ_OK: 'CNPJ vinculado e ativo',
-  PAGAMENTO_OK: 'Perfil de pagamento configurado',
-  PLATAFORMA_CRIADA: 'Conta criada na plataforma',
-  DADOS_VERIFICADOS: 'Dados preenchidos corretamente',
-}
+import { PRODUCTION_CHECKLIST_LABELS } from '@/lib/production-checklist'
 
 type ChecklistItem = {
   id: string
@@ -32,9 +25,10 @@ export function ProductionChecklist({
 
   useEffect(() => {
     if (!accountId) return
+    setLoading(true)
     fetch(`/api/producao/checklist?accountId=${accountId}`)
       .then((r) => r.json())
-      .then((d) => setItems(d.checklist || []))
+      .then((d) => setItems(Array.isArray(d.checklist) ? d.checklist : []))
       .finally(() => setLoading(false))
   }, [accountId])
 
@@ -58,27 +52,58 @@ export function ProductionChecklist({
     }
   }
 
+  if (compact) {
+    if (loading) {
+      return <span className="text-xs text-gray-500 dark:text-gray-400">…</span>
+    }
+    if (items.length === 0) {
+      return <span className="text-xs text-gray-500 dark:text-gray-400">—</span>
+    }
+
+    const done = items.filter((i) => i.completed).length
+    const total = items.length
+    const pending = items.filter((i) => !i.completed)
+
+    return (
+      <div className="relative group inline-block max-w-[11rem]">
+        <span
+          className="cursor-help border-b border-dotted border-gray-500 dark:border-gray-400 text-xs text-gray-600 dark:text-gray-400"
+          tabIndex={0}
+        >
+          Checklist: {done}/{total}
+          {done === total && <span className="text-green-600 dark:text-green-400 font-medium ml-0.5">✓</span>}
+        </span>
+        <div
+          className="invisible group-hover:visible group-focus-within:visible opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity absolute z-50 left-0 bottom-full mb-1 w-max max-w-[min(100vw-2rem,18rem)] rounded-md bg-slate-900 dark:bg-slate-950 text-white text-xs p-2.5 shadow-xl border border-white/10 pointer-events-none"
+          role="tooltip"
+        >
+          {pending.length === 0 ? (
+            <span>Todos os itens do checklist foram concluídos.</span>
+          ) : (
+            <>
+              <p className="font-medium mb-1.5 text-white/90">Pendentes:</p>
+              <ul className="list-disc pl-4 space-y-1 text-white/85">
+                {pending.map((item) => (
+                  <li key={item.stepType}>
+                    {PRODUCTION_CHECKLIST_LABELS[item.stepType] || item.stepType}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (loading || items.length === 0) return null
 
   const done = items.filter((i) => i.completed).length
   const total = items.length
 
-  if (compact) {
-    return (
-      <div className="flex items-center gap-1 text-xs text-gray-600">
-        <span>
-          Checklist: {done}/{total}
-        </span>
-        {done === total && (
-          <span className="text-green-600 font-medium">✓</span>
-        )}
-      </div>
-    )
-  }
-
   return (
-    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-      <p className="text-xs font-medium text-gray-600 mb-2">
+    <div className="mt-3 p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
+      <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
         Checklist de qualidade ({done}/{total})
       </p>
       <div className="space-y-1.5">
@@ -86,8 +111,8 @@ export function ProductionChecklist({
           <label
             key={item.id}
             className={`flex items-center gap-2 text-sm cursor-pointer ${
-              isProducer ? 'hover:bg-gray-100 rounded px-1 -mx-1' : ''
-            } ${item.completed ? 'text-green-700' : 'text-gray-600'}`}
+              isProducer ? 'hover:bg-gray-100 dark:hover:bg-white/10 rounded px-1 -mx-1' : ''
+            } ${item.completed ? 'text-green-700 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}
           >
             <input
               type="checkbox"
@@ -96,7 +121,7 @@ export function ProductionChecklist({
               disabled={!isProducer || !!updating}
               className="rounded border-gray-300 text-green-600"
             />
-            <span>{STEP_LABELS[item.stepType] || item.stepType}</span>
+            <span>{PRODUCTION_CHECKLIST_LABELS[item.stepType] || item.stepType}</span>
             {updating === item.stepType && (
               <span className="text-xs text-gray-400">...</span>
             )}

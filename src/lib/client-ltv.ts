@@ -4,10 +4,12 @@
 
 import { prisma } from './prisma'
 import { Decimal } from '@prisma/client/runtime/library'
+import { recalculateCustomerScore } from './reputation-engine'
 
 export type ClientLTV = {
   client: {
     id: string
+    clientCode: string | null
     user: { name: string | null; email: string; phone: string | null }
     whatsapp: string | null
     country: string | null
@@ -72,6 +74,7 @@ export async function syncClientLTV(clientId: string): Promise<void> {
       totalAccountsBought,
     },
   })
+  await recalculateCustomerScore(clientId).catch(console.error)
 }
 
 /**
@@ -125,6 +128,7 @@ export async function getClientLTV(clientId: string): Promise<ClientLTV | null> 
   return {
     client: {
       id: client.id,
+      clientCode: client.clientCode,
       user: client.user,
       whatsapp: client.whatsapp,
       country: client.country,

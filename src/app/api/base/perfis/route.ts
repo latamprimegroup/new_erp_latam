@@ -31,7 +31,7 @@ export async function GET(req: Request) {
   const perfis = await prisma.paymentProfile.findMany({
     where,
     include: {
-      cnpj: { select: { cnpj: true, razaoSocial: true } },
+      cnpj: { select: { id: true, cnpj: true, razaoSocial: true } },
       account: { select: { id: true, platform: true } },
     },
     orderBy: { type: 'asc' },

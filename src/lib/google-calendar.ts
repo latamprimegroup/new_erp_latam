@@ -15,6 +15,8 @@ export type CreateEventParams = {
 export type CalendarEventResult = {
   id: string
   htmlLink?: string
+  /** Presente quando conferenceData (Google Meet) é criado com o evento */
+  hangoutLink?: string
 }
 
 function getCalendarClient() {
@@ -46,31 +48,57 @@ export async function createCalendarEvent(
 
   const calendarId = process.env.GOOGLE_CALENDAR_CALENDAR_ID || 'primary'
 
-  try {
-    const res = await calendar.events.insert({
-      calendarId,
-      requestBody: {
-        summary: params.title,
-        description: params.description,
-        start: {
-          dateTime: params.start.toISOString(),
-          timeZone: 'America/Sao_Paulo',
-        },
-        end: {
-          dateTime: params.end.toISOString(),
-          timeZone: 'America/Sao_Paulo',
-        },
-        attendees: params.attendees,
-      },
-      sendUpdates: 'all',
-    })
+  const requestBodyBase = {
+    summary: params.title,
+    description: params.description,
+    start: {
+      dateTime: params.start.toISOString(),
+      timeZone: 'America/Sao_Paulo',
+    },
+    end: {
+      dateTime: params.end.toISOString(),
+      timeZone: 'America/Sao_Paulo',
+    },
+    attendees: params.attendees,
+  }
 
-    const event = res.data
+  const mapInsertResult = (event: { id?: string | null; htmlLink?: string | null; hangoutLink?: string | null; conferenceData?: { entryPoints?: { entryPointType?: string | null; uri?: string | null }[] } | null }): CalendarEventResult | null => {
     if (!event.id) return null
-
+    const videoEntry = event.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video')
+    const hangoutLink = event.hangoutLink || videoEntry?.uri || undefined
     return {
       id: event.id,
       htmlLink: event.htmlLink || undefined,
+      hangoutLink,
+    }
+  }
+
+  try {
+    const requestId = `onb-${params.start.getTime()}-${Math.random().toString(36).slice(2, 10)}`
+    try {
+      const res = await calendar.events.insert({
+        calendarId,
+        conferenceDataVersion: 1,
+        requestBody: {
+          ...requestBodyBase,
+          conferenceData: {
+            createRequest: {
+              requestId,
+              conferenceSolutionKey: { type: 'hangoutsMeet' },
+            },
+          },
+        },
+        sendUpdates: 'all',
+      })
+      return mapInsertResult(res.data)
+    } catch (meetErr) {
+      console.warn('Google Calendar: Meet não criado, tentando evento simples:', meetErr)
+      const res = await calendar.events.insert({
+        calendarId,
+        requestBody: requestBodyBase,
+        sendUpdates: 'all',
+      })
+      return mapInsertResult(res.data)
     }
   } catch (e) {
     console.error('Google Calendar create event error:', e)

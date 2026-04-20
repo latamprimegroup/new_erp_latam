@@ -7,6 +7,10 @@ import { audit } from '@/lib/audit'
 import { notifyAdminsProductionAccountPending } from '@/lib/notifications/admin-events'
 import { consumeEmail, consumeCnpj, consumePaymentProfile } from '@/lib/stock-assignment'
 import { getAuthenticatedKey, withRateLimit } from '@/lib/rate-limit-api'
+import { hashProductionAccountPassword, toProductionAccountPublic } from '@/lib/production-account-public'
+import { normalizeDomain } from '@/lib/domain-normalize'
+import { getProductionConfig } from '@/lib/production-payment'
+import { productionAccountCreateSchema } from '@/lib/schemas/production-account-create'
 
 const createSchema = z.object({
   platform: z.enum(['GOOGLE_ADS', 'META_ADS', 'KWAI_ADS', 'TIKTOK_ADS', 'OTHER']),
@@ -34,51 +38,100 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { searchParams } = new URL(req.url)
-  const producerId = searchParams.get('producerId')
-  const status = searchParams.get('status')
+  const allowedRoles = ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER']
+  if (!session.user?.role || !allowedRoles.includes(session.user.role)) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
 
-  const where: Record<string, unknown> = { deletedAt: null }
-  if (producerId) where.producerId = producerId
+  const { searchParams } = new URL(req.url)
+  const producerIdParam = searchParams.get('producerId')
+  const status = searchParams.get('status')
+  const q = searchParams.get('q')?.trim() ?? ''
+
+  /** Produtor: isolamento total — só vê contas atribuídas a ele. Gerente/admin: visão global ou filtro. */
+  const scopedProducerId =
+    session.user.role === 'PRODUCER'
+      ? session.user.id
+      : producerIdParam && ['ADMIN', 'PRODUCTION_MANAGER'].includes(session.user.role)
+        ? producerIdParam
+        : undefined
+
+  let where: Record<string, unknown> = { deletedAt: null }
+  if (scopedProducerId) where.producerId = scopedProducerId
   if (status) where.status = status
+
+  if (q.length > 0) {
+    const term = q
+    const digits = term.replace(/\D/g, '')
+    const or: Record<string, unknown>[] = [
+      { accountCode: { contains: term } },
+      { email: { contains: term } },
+      { googleAdsCustomerId: { contains: term } },
+      { type: { contains: term } },
+    ]
+    if (digits.length >= 4) or.push({ cnpj: { contains: digits } })
+    if (term.length >= 7) or.push({ id: { startsWith: term } })
+    where = { AND: [where, { OR: or }] }
+  }
+
+  const scopeForPipeline: Record<string, unknown> = { deletedAt: null }
+  if (scopedProducerId) scopeForPipeline.producerId = scopedProducerId
 
   const startOfDay = new Date(new Date().setHours(0, 0, 0, 0))
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
 
-  const [accounts, dailyCount, monthlyCount, g2Daily, g2Monthly] = await Promise.all([
-    prisma.productionAccount.findMany({
-      where,
-      include: { producer: { select: { name: true, email: true } } },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.productionAccount.count({
-      where: { ...where, status: 'APPROVED', updatedAt: { gte: startOfDay } },
-    }),
-    prisma.productionAccount.count({
-      where: { ...where, status: 'APPROVED', updatedAt: { gte: startOfMonth } },
-    }),
-    prisma.productionG2.count({
-      where: {
-        archivedAt: null,
-        deletedAt: null,
-        status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
-        ...(producerId ? { creatorId: producerId } : {}),
-        approvedAt: { gte: startOfDay },
-      },
-    }),
-    prisma.productionG2.count({
-      where: {
-        archivedAt: null,
-        deletedAt: null,
-        status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
-        ...(producerId ? { creatorId: producerId } : {}),
-        approvedAt: { gte: startOfMonth },
-      },
-    }),
-  ])
+  const [accounts, dailyCount, monthlyCount, g2Daily, g2Monthly, pendingReviewCount, metaProducaoGlobal, paymentCfg] =
+    await Promise.all([
+      prisma.productionAccount.findMany({
+        where,
+        include: {
+          producer: { select: { name: true, email: true } },
+          cnpjConsumed: { select: { razaoSocial: true, nomeFantasia: true, cnpj: true } },
+          emailConsumed: { select: { email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.productionAccount.count({
+        where: { ...where, status: 'APPROVED', updatedAt: { gte: startOfDay } },
+      }),
+      prisma.productionAccount.count({
+        where: { ...where, status: 'APPROVED', updatedAt: { gte: startOfMonth } },
+      }),
+      prisma.productionG2.count({
+        where: {
+          archivedAt: null,
+          deletedAt: null,
+          status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
+          ...(scopedProducerId ? { creatorId: scopedProducerId } : {}),
+          approvedAt: { gte: startOfDay },
+        },
+      }),
+      prisma.productionG2.count({
+        where: {
+          archivedAt: null,
+          deletedAt: null,
+          status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
+          ...(scopedProducerId ? { creatorId: scopedProducerId } : {}),
+          approvedAt: { gte: startOfMonth },
+        },
+      }),
+      prisma.productionAccount.count({
+        where: { ...scopeForPipeline, status: 'UNDER_REVIEW' },
+      }),
+      prisma.systemSetting.findUnique({ where: { key: 'meta_producao_mensal' } }),
+      getProductionConfig(),
+    ])
+
+  const metaProducaoMensal =
+    session.user.role === 'PRODUCER'
+      ? paymentCfg.metaMensal
+      : metaProducaoGlobal
+        ? parseInt(metaProducaoGlobal.value, 10)
+        : 10000
 
   return NextResponse.json({
-    accounts,
+    accounts: accounts.map((a) => toProductionAccountPublic(a)),
+    metaProducaoMensal,
     kpis: {
       daily: dailyCount + g2Daily,
       monthly: monthlyCount + g2Monthly,
@@ -86,6 +139,7 @@ export async function GET(req: Request) {
       monthlyProd: monthlyCount,
       dailyG2: g2Daily,
       monthlyG2: g2Monthly,
+      pendingReview: pendingReviewCount,
     },
   })
 }
@@ -104,8 +158,71 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json()
-    const data = createSchema.parse(body)
+    const data = productionAccountCreateSchema.parse(body)
     const producerId = session.user.id
+    const accountCode = data.accountCode.trim()
+
+    const codeTaken = await prisma.productionAccount.findFirst({
+      where: { accountCode, deletedAt: null },
+    })
+    if (codeTaken) {
+      return NextResponse.json(
+        { error: 'Este identificador de conta já está em uso. Escolha outro.' },
+        { status: 400 }
+      )
+    }
+
+    const emailInput = data.email?.trim()
+    const hasManualEmail = !!emailInput && emailInput.length > 0
+    const a2fInput = data.a2fCode?.trim()
+
+    if (data.paymentProfileId) {
+      const linkedProfile = await prisma.productionAccount.findFirst({
+        where: { paymentProfileId: data.paymentProfileId, deletedAt: null },
+      })
+      if (linkedProfile) {
+        return NextResponse.json(
+          { error: 'Este perfil de pagamento já está vinculado a outra produção ativa.' },
+          { status: 400 }
+        )
+      }
+      const profile = await prisma.paymentProfile.findUnique({
+        where: { id: data.paymentProfileId },
+        select: { id: true, type: true, gateway: true, cnpjId: true },
+      })
+      if (profile?.cnpjId) {
+        const isContaSimples =
+          profile.type.toLowerCase().includes('conta simples') ||
+          profile.gateway.toLowerCase().includes('conta simples')
+        if (isContaSimples) {
+          const usageCount = await prisma.productionAccount.count({
+            where: {
+              deletedAt: null,
+              paymentProfileConsumed: { cnpjId: profile.cnpjId },
+            },
+          })
+          if (usageCount >= 5) {
+            return NextResponse.json(
+              { error: 'Cartão Conta Simples atingiu o limite de 5 usos. 6ª tentativa bloqueada.' },
+              { status: 400 }
+            )
+          }
+        }
+      }
+    }
+
+    const normDomain = normalizeDomain(data.primaryDomain)
+    if (normDomain) {
+      const domainTaken = await prisma.productionAccount.findFirst({
+        where: { primaryDomain: normDomain, deletedAt: null },
+      })
+      if (domainTaken) {
+        return NextResponse.json(
+          { error: 'Este domínio já está cadastrado em outra conta (footprint).' },
+          { status: 400 }
+        )
+      }
+    }
 
     // Modo estoque: usar itens reservados (emailId, cnpjId, paymentProfileId)
     const useStock = data.emailId || data.cnpjId || data.paymentProfileId
@@ -145,32 +262,9 @@ export async function POST(req: Request) {
         }
       }
     } else {
-      // Modo manual: validar duplicidade (mensagem com nome do produtor)
-      const formatProducerMsg = (name: string | null) =>
-        name ? `Esta conta já foi produzida por ${name}.` : 'Esta conta já foi produzida por outro colaborador.'
-
-      if (data.googleAdsCustomerId) {
-        const normalized = data.googleAdsCustomerId.replace(/\D/g, '')
-        if (normalized.length >= 10) {
-          const formatted = `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}-${normalized.slice(6, 10)}`
-          const prodWithId = await prisma.productionAccount.findFirst({
-            where: {
-              googleAdsCustomerId: formatted,
-              status: { in: ['PENDING', 'APPROVED'] },
-              deletedAt: null,
-            },
-            include: { producer: { select: { name: true } } },
-          })
-          if (prodWithId) {
-            return NextResponse.json(
-              { error: formatProducerMsg(prodWithId.producer?.name ?? null) },
-              { status: 400 }
-            )
-          }
-        }
-      }
-      if (data.email) {
-        const existingEmail = await prisma.email.findUnique({ where: { email: data.email } })
+      // Modo manual: duplicidade e-mail / CNPJ
+      if (hasManualEmail && emailInput) {
+        const existingEmail = await prisma.email.findUnique({ where: { email: emailInput } })
         if (existingEmail) {
           return NextResponse.json(
             { error: 'E-mail já cadastrado na base. Use outro e-mail ou reserve do estoque.' },
@@ -178,16 +272,18 @@ export async function POST(req: Request) {
           )
         }
         const prodWithEmail = await prisma.productionAccount.findFirst({
-          where: { email: data.email, status: { in: ['PENDING', 'APPROVED'] }, deletedAt: null },
+          where: { email: emailInput, status: { in: [...ACTIVE_PROD_STATUSES] }, deletedAt: null },
           include: { producer: { select: { name: true } } },
         })
         if (prodWithEmail) {
           return NextResponse.json(
-            { error: formatProducerMsg(prodWithEmail.producer?.name ?? null) },
+            {
+              error: `Esta conta já foi produzida por ${prodWithEmail.producer?.name?.trim() || 'outro colaborador'}.`,
+            },
             { status: 400 }
           )
         }
-        emailVal = data.email
+        emailVal = emailInput
       }
       if (data.cnpj) {
         const cleanCnpj = data.cnpj.replace(/\D/g, '')
@@ -201,16 +297,57 @@ export async function POST(req: Request) {
           )
         }
         const prodWithCnpj = await prisma.productionAccount.findFirst({
-          where: { cnpj: { contains: cleanCnpj }, status: { in: ['PENDING', 'APPROVED'] }, deletedAt: null },
+          where: { cnpj: { contains: cleanCnpj }, status: { in: [...ACTIVE_PROD_STATUSES] }, deletedAt: null },
           include: { producer: { select: { name: true } } },
         })
         if (prodWithCnpj) {
           return NextResponse.json(
-            { error: formatProducerMsg(prodWithCnpj.producer?.name ?? null) },
+            {
+              error: `Esta conta já foi produzida por ${prodWithCnpj.producer?.name?.trim() || 'outro colaborador'}.`,
+            },
             { status: 400 }
           )
         }
         cnpjVal = cleanCnpj
+      }
+    }
+
+    if (a2fInput) {
+      const duplicate2fa = await prisma.productionAccount.findFirst({
+        where: { a2fCode: a2fInput, status: { in: [...ACTIVE_PROD_STATUSES] }, deletedAt: null },
+        include: { producer: { select: { name: true } } },
+      })
+      if (duplicate2fa) {
+        return NextResponse.json(
+          {
+            error: `Esta conta já foi produzida por ${duplicate2fa.producer?.name?.trim() || 'outro colaborador'}.`,
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Google Customer ID: bloqueia duplicidade também no modo estoque
+    if (data.googleAdsCustomerId) {
+      const normalized = data.googleAdsCustomerId.replace(/\D/g, '')
+      if (normalized.length >= 10) {
+        const formatted = `${normalized.slice(0, 3)}-${normalized.slice(3, 6)}-${normalized.slice(6, 10)}`
+        const prodWithId = await findActiveProductionByGoogleCustomerId(formatted, normalized)
+        if (prodWithId) {
+          return NextResponse.json(
+            { error: duplicateGoogleAccountMsg(prodWithId.producer?.name ?? null) },
+            { status: 400 }
+          )
+        }
+      }
+      const stockDup = await prisma.stockAccount.findFirst({
+        where: { deletedAt: null, OR: [{ googleAdsCustomerId: normalized }, { googleAdsCustomerId: data.googleAdsCustomerId }] },
+      })
+      if (stockDup) {
+        return NextResponse.json(
+          { error: 'ID da conta Google Ads já existe no estoque/base. Bloqueado por footprint.' },
+          { status: 400 }
+        )
       }
     }
 
@@ -219,14 +356,21 @@ export async function POST(req: Request) {
       ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`
       : data.googleAdsCustomerId || null
 
+    let passwordHash: string | null = null
+    if (data.password?.trim()) {
+      passwordHash = await hashProductionAccountPassword(data.password.trim())
+    }
+
     const account = await prisma.productionAccount.create({
       data: {
+        accountCode,
         platform: data.platform as 'GOOGLE_ADS' | 'META_ADS' | 'KWAI_ADS' | 'TIKTOK_ADS' | 'OTHER',
         type: data.type,
         email: emailVal,
         cnpj: cnpjVal,
         countryId: data.countryId || null,
         producerId,
+        passwordHash,
         googleAdsCustomerId: googleAdsId || null,
         currency: data.currency || 'BRL',
         a2fCode: data.a2fCode || null,
@@ -264,7 +408,7 @@ export async function POST(req: Request) {
 
     notifyAdminsProductionAccountPending(account.platform, account.producer?.name ?? null).catch(console.error)
 
-    return NextResponse.json(account)
+    return NextResponse.json(toProductionAccountPublic(account))
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.errors[0].message }, { status: 400 })

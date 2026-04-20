@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { recalculateCustomerScore } from '@/lib/reputation-engine'
+import { audit } from '@/lib/audit'
 
 export async function GET(
   req: Request,
@@ -17,6 +19,7 @@ export async function GET(
   }
 
   const { id } = await params
+  await recalculateCustomerScore(id).catch(console.error)
   const client = await prisma.clientProfile.findUnique({
     where: { id },
     select: {
@@ -60,6 +63,16 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.message }, { status: 400 })
   }
 
+  const before = await prisma.clientProfile.findUnique({
+    where: { id },
+    select: {
+      reputationScore: true,
+      averageAccountLifetimeDays: true,
+      refundCount: true,
+      nicheTag: true,
+      plugPlayErrorCount: true,
+    },
+  })
   const client = await prisma.clientProfile.update({
     where: { id },
     data: {
@@ -76,6 +89,14 @@ export async function PATCH(
       nicheTag: true,
       plugPlayErrorCount: true,
     },
+  })
+
+  await audit({
+    userId: session.user.id,
+    action: 'customer_reputation_manual_update',
+    entity: 'ClientProfile',
+    entityId: id,
+    details: { before, after: client },
   })
 
   return NextResponse.json(client)

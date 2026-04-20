@@ -3,21 +3,29 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ChevronRight } from 'lucide-react'
-import { getModulesForRole } from '@/lib/nav-modules'
+import { getModulesForRole, type NavItem } from '@/lib/nav-modules'
 import { getNavIcon } from '@/lib/nav-icons'
+import { useOptionalDashboardI18n } from '@/contexts/DashboardI18nContext'
 
 type CommandPaletteProps = {
   userRole?: string
 }
 
+function moduleLabel(m: NavItem, t: (k: string) => string): string {
+  return m.labelKey ? t(m.labelKey) : m.label
+}
+
 export function CommandPalette({ userRole }: CommandPaletteProps) {
   const router = useRouter()
+  const i18n = useOptionalDashboardI18n()
+  const t = i18n?.t ?? ((k: string) => k)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
 
-  const modules = getModulesForRole(userRole).filter((m) =>
-    m.label.toLowerCase().includes(query.toLowerCase())
+  const allModules = getModulesForRole(userRole)
+  const modules = allModules.filter((m) =>
+    moduleLabel(m, t).toLowerCase().includes(query.toLowerCase())
   )
 
   const handleKeyDown = useCallback(
@@ -74,7 +82,7 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar módulos..."
+            placeholder={i18n ? t('shell.commandPalettePlaceholder') : 'Buscar módulos...'}
             className="flex-1 bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none text-base"
             autoFocus
           />
@@ -84,7 +92,9 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
         </div>
         <div className="max-h-[60vh] overflow-y-auto py-2">
           {modules.length === 0 ? (
-            <p className="px-4 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">Nenhum módulo encontrado</p>
+            <p className="px-4 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">
+              {i18n ? t('shell.commandPaletteEmpty') : 'Nenhum módulo encontrado'}
+            </p>
           ) : (
             modules.map((m, i) => (
               <button
@@ -105,7 +115,7 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
                   const Icon = getNavIcon(m.icon)
                   return <Icon className="w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500" />
                 })()}
-                <span className="flex-1 font-medium">{m.label}</span>
+                <span className="flex-1 font-medium">{moduleLabel(m, t)}</span>
                 <ChevronRight className="w-4 h-4 shrink-0 opacity-50" />
               </button>
             ))
@@ -113,10 +123,12 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
         </div>
         <div className="px-5 py-2 border-t border-gray-200 dark:border-white/10 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
           <span>
-            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-white/10 rounded">↑↓</kbd> navegar
+            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-white/10 rounded">↑↓</kbd>{' '}
+            {i18n ? t('shell.commandNavigate') : 'navegar'}
           </span>
           <span>
-            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-white/10 rounded">↵</kbd> abrir
+            <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-white/10 rounded">↵</kbd>{' '}
+            {i18n ? t('shell.commandOpen') : 'abrir'}
           </span>
         </div>
       </div>

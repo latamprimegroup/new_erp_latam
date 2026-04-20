@@ -4,6 +4,14 @@ import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
+import { getPublicAppBaseUrl } from '@/lib/public-app-url'
+
+const PRIORITY_PT: Record<string, string> = {
+  LOW: 'Baixa',
+  NORMAL: 'Normal',
+  HIGH: 'Alta',
+  URGENT: 'Urgente',
+}
 
 const createSchema = z.object({
   subject: z.string().min(1),
@@ -81,8 +89,22 @@ export async function POST(req: NextRequest) {
 
     const user = client.user
     const whatsappNumber = process.env.WHATSAPP_SUPORTE || process.env.WHATSAPP_COMERCIAL || '5511999999999'
-    const phone = client.whatsapp || user?.phone
-    const msgToSupport = `🆕 Novo ticket #${ticketNumber}\nCliente: ${user?.name || user?.email || ''}\nAssunto: ${data.subject}\n\n${data.description.slice(0, 200)}${data.description.length > 200 ? '...' : ''}`
+    const base = getPublicAppBaseUrl()
+    const adminLink = base ? `${base}/dashboard/admin/tickets` : ''
+    const pri = data.priority || 'NORMAL'
+    const priLabel = PRIORITY_PT[pri] || pri
+    const msgToSupport = [
+      '⚠️ NOVO TICKET ABERTO',
+      `#${ticketNumber}`,
+      `Cliente: ${user?.name || user?.email || '—'}`,
+      `Assunto: ${data.subject}`,
+      `Prioridade: ${priLabel}`,
+      adminLink ? `ERP: ${adminLink}` : '',
+      '',
+      data.description.slice(0, 500) + (data.description.length > 500 ? '…' : ''),
+    ]
+      .filter(Boolean)
+      .join('\n')
 
     if (process.env.WHATSAPP_API_URL && whatsappNumber) {
       try {

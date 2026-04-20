@@ -3,18 +3,13 @@ import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { PRODUCTION_CHECKLIST_STEPS } from '@/lib/production-checklist'
 
-const CHECKLIST_STEPS = [
-  'EMAIL_OK',
-  'CNPJ_OK',
-  'PAGAMENTO_OK',
-  'PLATAFORMA_CRIADA',
-  'DADOS_VERIFICADOS',
-] as const
+const CHECKLIST_STEPS = PRODUCTION_CHECKLIST_STEPS
 
 const toggleSchema = z.object({
   accountId: z.string().min(1),
-  stepType: z.enum(CHECKLIST_STEPS),
+  stepType: z.enum(CHECKLIST_STEPS as unknown as [string, ...string[]]),
   completed: z.boolean(),
 })
 
@@ -31,9 +26,14 @@ export async function GET(req: NextRequest) {
   })
   if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
 
+  const role = session.user?.role
   const isProducer = account.producerId === session.user?.id
-  const isAdmin = session.user?.role === 'ADMIN'
-  if (!isProducer && !isAdmin) {
+  const canViewChecklist =
+    role === 'ADMIN' ||
+    role === 'PRODUCTION_MANAGER' ||
+    role === 'FINANCE' ||
+    (role === 'PRODUCER' && isProducer)
+  if (!canViewChecklist) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
@@ -49,8 +49,9 @@ export async function GET(req: NextRequest) {
 
   const checklist = await prisma.productionChecklist.findMany({
     where: { accountId },
-    orderBy: { stepType: 'asc' },
   })
+  const rank = new Map(CHECKLIST_STEPS.map((s, i) => [s, i]))
+  checklist.sort((a, b) => (rank.get(a.stepType as (typeof CHECKLIST_STEPS)[number]) ?? 99) - (rank.get(b.stepType as (typeof CHECKLIST_STEPS)[number]) ?? 99))
 
   return NextResponse.json({ checklist })
 }
@@ -70,8 +71,8 @@ export async function PATCH(req: NextRequest) {
     if (account.producerId !== session.user?.id) {
       return NextResponse.json({ error: 'Só o produtor pode atualizar o checklist' }, { status: 403 })
     }
-    if (account.status !== 'PENDING') {
-      return NextResponse.json({ error: 'Checklist só pode ser editado para contas pendentes' }, { status: 400 })
+    if (!['PENDING', 'UNDER_REVIEW'].includes(account.status)) {
+      return NextResponse.json({ error: 'Checklist só pode ser editado para contas pendentes ou em análise' }, { status: 400 })
     }
 
     const item = await prisma.productionChecklist.upsert({

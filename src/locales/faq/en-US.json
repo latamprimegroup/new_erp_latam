@@ -1,0 +1,17 @@
+[
+  {
+    "id": "warm-up",
+    "title": "What is account warm-up?",
+    "body": "It is the period when the account builds history and trust before scaling ad spend. Keep spend gradual and avoid abrupt changes to billing or IP."
+  },
+  {
+    "id": "contingency",
+    "title": "What is a contingency budget?",
+    "body": "A budget reserve to absorb auction volatility or A/B tests without pausing critical campaigns."
+  },
+  {
+    "id": "lander",
+    "title": "Lander and landing page",
+    "body": "The lander is where traffic lands after the click. It must align with platform policy and the ad (consistent messaging)."
+  }
+]

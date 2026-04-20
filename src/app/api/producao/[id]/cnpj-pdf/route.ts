@@ -28,11 +28,18 @@ export async function POST(
   const { id } = await params
   const account = await prisma.productionAccount.findUnique({
     where: { id, deletedAt: null },
-    include: { producer: true },
+    select: {
+      id: true,
+      status: true,
+      producerId: true,
+      accountCode: true,
+      googleAdsCustomerId: true,
+      producer: true,
+    },
   })
   if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
-  if (account.status !== 'PENDING') {
-    return NextResponse.json({ error: 'Só é possível enviar PDF para contas pendentes' }, { status: 400 })
+  if (!['PENDING', 'UNDER_REVIEW'].includes(account.status)) {
+    return NextResponse.json({ error: 'Só é possível enviar PDF para contas pendentes ou em análise' }, { status: 400 })
   }
 
   const isProducer = account.producerId === session.user.id
@@ -58,9 +65,12 @@ export async function POST(
       return NextResponse.json({ error: 'Apenas arquivos PDF são permitidos' }, { status: 400 })
     }
 
-    const idDaConta = account.googleAdsCustomerId || id.slice(0, 8)
-    const safeId = idDaConta.replace(/[^a-zA-Z0-9-]/g, '_')
-    const filename = `cnpj_${safeId}.pdf`
+    const gDigits = account.googleAdsCustomerId?.replace(/\D/g, '') ?? ''
+    const idPart =
+      gDigits.length >= 10
+        ? gDigits
+        : (account.accountCode || id.slice(0, 8)).replace(/[^a-zA-Z0-9]/g, '_')
+    const filename = `cnpj_${idPart}.pdf`
 
     const dir = join(process.cwd(), 'uploads', 'producao', id)
     await mkdir(dir, { recursive: true })

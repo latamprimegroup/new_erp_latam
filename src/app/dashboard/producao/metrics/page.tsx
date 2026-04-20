@@ -8,9 +8,10 @@ export default async function ProducaoMetricsPage() {
   const session = await getServerSession(authOptions)
   if (!session) redirect('/login')
 
-  const isAdmin = session.user?.role === 'ADMIN'
+  const isOversight =
+    session.user?.role === 'ADMIN' || session.user?.role === 'PRODUCTION_MANAGER'
   const isProducer = session.user?.role === 'PRODUCER'
-  if (!isAdmin && !isProducer) redirect('/dashboard')
+  if (!isOversight && !isProducer) redirect('/dashboard')
 
   return (
     <div>
@@ -23,7 +24,7 @@ export default async function ProducaoMetricsPage() {
       <p className="text-gray-600 text-sm mb-6">
         Acompanhe contas aprovadas, reprovadas e motivos. Use para mitigar erros e analisar performance.
       </p>
-      <ProducaoMetricsClient isAdmin={isAdmin} />
+      <ProducaoMetricsClient isOversight={isOversight} />
     </div>
   )
 }

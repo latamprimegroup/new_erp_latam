@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
-import { notifyAdminsProductionAccountApproved } from '@/lib/notifications/admin-events'
+import { approveProductionAccount } from '@/lib/production-approve'
 
 const bodySchema = z.object({
   action: z.enum(['approve', 'reject', 'analyze']),
@@ -74,36 +74,19 @@ export async function PATCH(
       return NextResponse.json({ ok: true, status: 'REJECTED' })
     }
 
-    // approve: create StockAccount and link (transação para atomicidade)
-    const stock = await prisma.$transaction(async (tx) => {
-      const s = await tx.stockAccount.create({
-        data: {
-          platform: production.platform,
-          type: production.type,
-          source: 'PRODUCTION',
-          status: 'AVAILABLE',
-          purchasePrice: null,
-          salePrice: null,
-        },
-      })
-      await tx.productionAccount.update({
-        where: { id },
-        data: { status: 'APPROVED', stockAccountId: s.id },
-      })
-      return s
+    const approved = await approveProductionAccount(id, session.user.id)
+    if (!approved.ok) {
+      if (approved.code === 'NOT_FOUND') {
+        return NextResponse.json({ error: 'Produção não encontrada' }, { status: 404 })
+      }
+      return NextResponse.json({ error: 'Conta já foi aprovada ou rejeitada' }, { status: 400 })
+    }
+
+    return NextResponse.json({
+      ok: true,
+      status: 'APPROVED',
+      stockAccountId: approved.stockAccountId,
     })
-
-    await audit({
-      userId: session.user.id,
-      action: 'production_approved',
-      entity: 'ProductionAccount',
-      entityId: id,
-      details: { stockAccountId: stock.id },
-    })
-
-    notifyAdminsProductionAccountApproved(production.platform).catch(console.error)
-
-    return NextResponse.json({ ok: true, status: 'APPROVED', stockAccountId: stock.id })
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.errors[0].message }, { status: 400 })

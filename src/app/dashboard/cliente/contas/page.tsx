@@ -38,6 +38,80 @@ type Summary = {
   totalSpentOnAccounts: number
 }
 
+const EMPTY_SUMMARY: Summary = {
+  totalAccounts: 0,
+  approvedCount: 0,
+  approvalRate: 0,
+  totalSpend: 0,
+  monthSpend: 0,
+  totalSpentOnAccounts: 0,
+}
+
+function escapeCsvCell(v: string) {
+  if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`
+  return v
+}
+
+function downloadContasGastosCsv(accounts: Account[], summary: Summary) {
+  const lines: string[] = []
+  lines.push(
+    [
+      'Contas entregues',
+      'Taxa aproveitamento %',
+      'Aprovadas',
+      'Gasto mês R$',
+      'Gasto total API R$',
+      'Investimento contas R$',
+    ].join(','),
+  )
+  lines.push(
+    [
+      String(summary.totalAccounts),
+      summary.approvalRate.toFixed(2),
+      String(summary.approvedCount),
+      summary.monthSpend.toFixed(2),
+      summary.totalSpend.toFixed(2),
+      summary.totalSpentOnAccounts.toFixed(2),
+    ].join(','),
+  )
+  lines.push('')
+  lines.push(
+    [
+      'account_id',
+      'plataforma',
+      'tipo',
+      'status',
+      'customer_id',
+      'valor_pago',
+      'gasto_historico_logs',
+      'entregue_em',
+    ].join(','),
+  )
+  for (const a of accounts) {
+    const hist = a.spendLogs.reduce((s, l) => s + l.cost, 0)
+    lines.push(
+      [
+        escapeCsvCell(a.id),
+        escapeCsvCell(a.platform),
+        escapeCsvCell(a.type),
+        escapeCsvCell(a.status),
+        escapeCsvCell(a.googleAdsCustomerId || ''),
+        a.salePrice != null ? String(a.salePrice) : '',
+        hist.toFixed(2),
+        escapeCsvCell(a.deliveredAt ? new Date(a.deliveredAt).toISOString() : ''),
+      ].join(','),
+    )
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const el = document.createElement('a')
+  el.href = url
+  el.download = `contas-gastos-${new Date().toISOString().slice(0, 10)}.csv`
+  el.rel = 'noopener'
+  el.click()
+  URL.revokeObjectURL(url)
+}
+
 const STATUS_LABELS: Record<string, string> = {
   DELIVERED: 'Entregue',
   IN_USE: 'Em uso',
@@ -64,7 +138,14 @@ export default function ClienteContasPage() {
   useEffect(() => {
     fetch('/api/cliente/contas')
       .then((r) => r.json())
-      .then(setData)
+      .then((d) => {
+        if (d && Array.isArray(d.accounts) && d.summary && typeof d.summary === 'object') {
+          setData(d as { accounts: Account[]; summary: Summary })
+        } else {
+          setData({ accounts: [], summary: { ...EMPTY_SUMMARY } })
+        }
+      })
+      .catch(() => setData({ accounts: [], summary: { ...EMPTY_SUMMARY } }))
       .finally(() => setLoading(false))
   }, [])
 
@@ -77,7 +158,9 @@ export default function ClienteContasPage() {
       if (res.ok) {
         const r = await fetch('/api/cliente/contas')
         const d = await r.json()
-        setData(d)
+        if (d && Array.isArray(d.accounts) && d.summary && typeof d.summary === 'object') {
+          setData(d as { accounts: Account[]; summary: Summary })
+        }
       } else {
         const err = await res.json()
         alert(err.error || 'Erro ao sincronizar')
@@ -131,9 +214,10 @@ export default function ClienteContasPage() {
   }
 
   const { accounts, summary } = data
-  const roi = summary.totalSpentOnAccounts > 0
-    ? ((summary.totalSpend / summary.totalSpentOnAccounts) * 100).toFixed(1)
-    : '—'
+  const roiDisplay =
+    summary.totalSpentOnAccounts > 0
+      ? `${((summary.totalSpend / summary.totalSpentOnAccounts) * 100).toFixed(1)}%`
+      : '--%'
 
   return (
     <div>
@@ -172,12 +256,23 @@ export default function ClienteContasPage() {
         </div>
         <div className="card">
           <p className="text-sm text-gray-500">ROI (gasto/investimento)</p>
-          <p className="text-2xl font-bold text-primary-600">{roi}%</p>
+          <p className="text-2xl font-bold text-primary-600">{roiDisplay}</p>
         </div>
       </div>
 
       <div className="card">
-        <h2 className="font-semibold mb-4">Contas e gastos por período</h2>
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+          <h2 className="font-semibold">Contas e gastos por período</h2>
+          {accounts.length > 0 && (
+            <button
+              type="button"
+              onClick={() => downloadContasGastosCsv(accounts, summary)}
+              className="btn-secondary text-sm py-1.5 px-3"
+            >
+              Exportar CSV
+            </button>
+          )}
+        </div>
         {accounts.length === 0 ? (
           <p className="text-gray-500 py-8">Nenhuma conta entregue ainda.</p>
         ) : (

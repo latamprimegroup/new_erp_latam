@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { generateNextClientId } from '@/lib/client-id-sequencial'
+import { peekNextClientId } from '@/lib/client-id-sequencial'
 
 /**
- * GET - Retorna o próximo clientCode sugerido (C289, C290...)
+ * GET - Retorna o próximo clientCode sugerido (C289, C290...) sem consumir a sequência.
  */
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -14,7 +14,7 @@ export async function GET() {
   }
 
   try {
-    const nextId = await generateNextClientId()
+    const nextId = await peekNextClientId()
     return NextResponse.json({ nextClientId: nextId })
   } catch (err) {
     console.error(err)

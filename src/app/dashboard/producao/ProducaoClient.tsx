@@ -1,11 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
+import { Eye, EyeOff, Copy, Check, Search, Pencil, Trash2, Send, FileText } from 'lucide-react'
 import { SkeletonCards, SkeletonTable } from '@/components/Skeleton'
 import { ProductionChecklist } from '@/components/producao/ProductionChecklist'
 import { ProductionFeedback } from '@/components/producao/ProductionFeedback'
+import { NotificationsBell } from '@/components/NotificationsBell'
+import { productionAccountCreateSchema } from '@/lib/schemas/production-account-create'
+import { GLOBAL_CURRENCY_OPTIONS } from '@/lib/global-currencies'
+
+const ROLE_BADGE: Record<string, string> = {
+  ADMIN: 'Admin',
+  PRODUCER: 'Produção',
+  PRODUCTION_MANAGER: 'Gerente produção',
+  FINANCE: 'Financeiro',
+  DELIVERER: 'Entregas',
+  COMMERCIAL: 'Vendas',
+}
 
 const PLATFORMS = [
   { value: 'GOOGLE_ADS', label: 'Google Ads' },
@@ -29,17 +42,18 @@ function getTypeColor(type: string): string {
   return found?.color ?? '#6b7280'
 }
 
-const CURRENCIES = [
-  { value: 'BRL', label: 'BRL (Real)' },
-  { value: 'USD', label: 'USD (Dólar)' },
-  { value: 'EUR', label: 'EUR (Euro)' },
-  { value: 'GBP', label: 'GBP (Libra)' },
-  { value: 'ARS', label: 'ARS (Peso Argentino)' },
-  { value: 'CLP', label: 'CLP (Peso Chileno)' },
-  { value: 'MXN', label: 'MXN (Peso Mexicano)' },
-  { value: 'COP', label: 'COP (Peso Colombiano)' },
-  { value: 'PEN', label: 'PEN (Sol)' },
-]
+const PRODUCTION_NICHES = [
+  { value: 'NUTRA', label: 'Nutra' },
+  { value: 'IGAMING', label: 'iGaming' },
+  { value: 'LOCAL', label: 'Local' },
+  { value: 'ECOM', label: 'E-commerce' },
+  { value: 'OTHER', label: 'Outro' },
+] as const
+
+const VERIFICATION_GOALS = [
+  { value: 'G2_AND_ADVERTISER', label: 'G2 + Anunciante' },
+  { value: 'ADVERTISER_AND_COMMERCIAL_OPS', label: 'Anunciante + Operações Comerciais' },
+] as const
 
 function formatAccountId(v: string): string {
   const d = v.replace(/\D/g, '')
@@ -70,6 +84,7 @@ function statusClass(status: string) {
 
 type Account = {
   id: string
+  accountCode: string | null
   platform: string
   type: string
   email: string | null
@@ -87,6 +102,108 @@ type Account = {
   producerId: string
   producer: { name: string | null }
   createdAt: string
+  googleAdsCustomerId: string | null
+  currency: string | null
+  a2fCode: string | null
+  g2ApprovalCode: string | null
+  siteUrl: string | null
+  cnpjBizLink: string | null
+  hasPassword: boolean
+  productionNiche?: string
+  verificationGoal?: string | null
+  primaryDomain?: string | null
+  proxyNote?: string | null
+  proxyConfigured?: boolean
+  cnpjPdfUrl?: string | null
+}
+
+/** Identificador que o utilizador opera: código manual; senão ID Google Ads; nunca o cuid interno. */
+function displayAccountId(a: Account): string {
+  const code = a.accountCode?.trim()
+  if (code) return code
+  const g = a.googleAdsCustomerId?.trim()
+  if (g) return g
+  return '—'
+}
+
+/** Texto auxiliar sob o identificador (ex.: Google quando o código manual é o principal). */
+function accountIdSubtitle(a: Account): string | null {
+  const code = a.accountCode?.trim()
+  const g = a.googleAdsCustomerId?.trim()
+  if (code && g) return `Google Ads: ${g}`
+  if (!code && !g) return 'Defina o identificador manual em Editar (não exibimos o ID automático do sistema).'
+  return null
+}
+
+/** Valor a copiar: código manual, ou Google, ou ID interno só como último recurso. */
+function copyableAccountId(a: Account): string {
+  const code = a.accountCode?.trim()
+  if (code) return code
+  const g = a.googleAdsCustomerId?.trim()
+  if (g) return g
+  return a.id
+}
+
+function nicheLabel(v: string | undefined) {
+  const f = PRODUCTION_NICHES.find((n) => n.value === v)
+  return f?.label ?? v ?? '—'
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Pendente'
+    case 'UNDER_REVIEW':
+      return 'Em análise (verificação)'
+    case 'APPROVED':
+      return 'Aprovada (verificada)'
+    case 'REJECTED':
+      return 'Rejeitada'
+    default:
+      return status
+  }
+}
+
+/** Alerta visual quando pendente ou em análise há mais de 24 h (SLA da fila). */
+function slaPendingBadge(createdAt: string, status: string) {
+  if (status !== 'PENDING' && status !== 'UNDER_REVIEW') return null
+  const hours = (Date.now() - new Date(createdAt).getTime()) / 3_600_000
+  if (hours < 24) return null
+  const hRounded = Math.round(hours)
+  const days = Math.floor(hours / 24)
+  return (
+    <span
+      className="inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-600/30 dark:border-amber-500/40"
+      title={`Na fila há ${hRounded} h (acima do SLA de 24 h)`}
+    >
+      SLA +24h{days >= 1 ? ` · ${days}d` : ` · ${hRounded}h`}
+    </span>
+  )
+}
+
+/** Dias corridos desde o registro (referência de fila / aquecimento). */
+function daysSinceRegistration(createdAt: string) {
+  const start = new Date(createdAt).setHours(0, 0, 0, 0)
+  const today = new Date().setHours(0, 0, 0, 0)
+  return Math.max(0, Math.round((today - start) / 86_400_000))
+}
+
+/** Sinais rápidos de credenciais (complementa o checklist de processo). */
+function CredentialHints({ a }: { a: Account }) {
+  const has2fa = !!(a.a2fCode && String(a.a2fCode).trim())
+  return (
+    <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 max-w-[11rem]">
+      <span title={a.hasPassword ? 'Senha registrada no sistema' : 'Senha ainda não cadastrada'}>
+        {a.hasPassword ? '✓ Senha' : '○ Senha'}
+      </span>
+      <span title={has2fa ? '2FA / chave informada' : '2FA não informado'}>
+        {has2fa ? '✓ 2FA' : '○ 2FA'}
+      </span>
+      <span title={a.proxyConfigured ? 'Proxy/perfil (sessão) sinalizado' : 'Proxy/perfil não sinalizado'}>
+        {a.proxyConfigured ? '✓ Sessão' : '○ Sessão'}
+      </span>
+    </div>
+  )
 }
 
 type StockItem = {
@@ -177,18 +294,93 @@ export function ProducaoClient() {
   const [perfisReservados, setPerfisReservados] = useState<StockItem[]>([])
   const [loadingStock, setLoadingStock] = useState(false)
   const [reservingId, setReservingId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkApproving, setBulkApproving] = useState(false)
 
-  async function load() {
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput.trim()), 400)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [filterStatus, searchQuery, managerProducerFilter])
+
+  useEffect(() => {
+    if (session?.user?.role === 'ADMIN' || session?.user?.role === 'PRODUCTION_MANAGER') {
+      fetch('/api/admin/producers')
+        .then((r) => r.json())
+        .then((d) => {
+          if (Array.isArray(d.users)) setProducers(d.users)
+        })
+        .catch(() => {})
+    }
+  }, [session?.user?.role])
+
+  const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams()
-    if (filterStatus) params.set('status', filterStatus)
-    const res = await fetch(`/api/producao?${params}`)
-    const data = await res.json()
-    if (res.ok) {
-      setAccounts(data.accounts)
-      setKpis(data.kpis)
+    setLoadError(null)
+    try {
+      const params = new URLSearchParams()
+      if (filterStatus) params.set('status', filterStatus)
+      if (searchQuery) params.set('q', searchQuery)
+      if (
+        (session?.user?.role === 'ADMIN' || session?.user?.role === 'PRODUCTION_MANAGER') &&
+        managerProducerFilter
+      ) {
+        params.set('producerId', managerProducerFilter)
+      }
+      const res = await fetch(`/api/producao?${params}`)
+      const data = await res.json()
+      if (res.ok) {
+        setAccounts(data.accounts)
+        const k = data.kpis || {}
+        setKpis({
+          daily: k.daily ?? 0,
+          monthly: k.monthly ?? 0,
+          dailyProd: k.dailyProd ?? 0,
+          monthlyProd: k.monthlyProd ?? 0,
+          dailyG2: k.dailyG2 ?? 0,
+          monthlyG2: k.monthlyG2 ?? 0,
+          pendingReview: k.pendingReview ?? 0,
+        })
+        if (typeof data.metaProducaoMensal === 'number' && !Number.isNaN(data.metaProducaoMensal)) {
+          setMetaMensal(data.metaProducaoMensal)
+        }
+      } else {
+        setLoadError(typeof data.error === 'string' ? data.error : 'Erro ao carregar a lista.')
+      }
+    } catch {
+      setLoadError('Falha de rede ao carregar a lista.')
     }
     setLoading(false)
+  }, [filterStatus, searchQuery, managerProducerFilter, session?.user?.role])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = window.setTimeout(() => setToast(null), 5200)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  useEffect(() => {
+    const tick = () => setNowTick(new Date())
+    tick()
+    const id = window.setInterval(tick, 10_000)
+    return () => clearInterval(id)
+  }, [])
+
+  async function copyIdentifier(label: string, rowId: string) {
+    try {
+      await navigator.clipboard.writeText(label)
+      setCopiedRowId(rowId)
+      window.setTimeout(() => setCopiedRowId(null), 2000)
+    } catch {
+      alert('Não foi possível copiar. Selecione o texto manualmente.')
+    }
   }
 
   async function loadStock() {
@@ -252,23 +444,54 @@ export function ProducaoClient() {
     const res = await fetch('/api/producao', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(validated.data),
     })
-    const data = res.ok ? await res.json() : null
-    if (res.ok) {
-      if (cnpjPdfFile && data?.id) {
+    const data = res.ok ? ((await res.json()) as Account) : null
+    if (res.ok && data) {
+      let pdfMessage: string | null = null
+      if (cnpjPdfFile && data.id) {
         const fd = new FormData()
         fd.append('file', cnpjPdfFile)
-        await fetch(`/api/producao/${data.id}/cnpj-pdf`, { method: 'POST', body: fd })
+        const pdfRes = await fetch(`/api/producao/${data.id}/cnpj-pdf`, { method: 'POST', body: fd })
+        const pdfJson = await pdfRes.json().catch(() => ({}))
+        if (pdfRes.ok) {
+          pdfMessage =
+            typeof pdfJson.filename === 'string'
+              ? `Cartão CNPJ salvo como ${pdfJson.filename}.`
+              : 'Cartão CNPJ (PDF) enviado e renomeado no storage.'
+          if (typeof pdfJson.filename === 'string') {
+            setPdfRenameBanner(`Arquivo renomeado para ${pdfJson.filename} e guardado no servidor.`)
+          }
+        } else {
+          setToast({
+            kind: 'error',
+            message: typeof pdfJson.error === 'string' ? pdfJson.error : 'Falha no upload do PDF.',
+          })
+        }
         setCnpjPdfFile(null)
       }
       setForm(EMPTY_FORM)
       setShowForm(false)
-      load()
+      await load()
       if (mode === 'estoque') loadStock()
+      const created: Account = {
+        ...data,
+        producer: data.producer ?? { name: session?.user?.name ?? null },
+      }
+      handleEdit(created)
+      setToast({
+        kind: 'success',
+        message:
+          (pdfMessage ? `Produção registrada. ${pdfMessage} ` : 'Produção registrada com sucesso. ') +
+          'Painel de edição aberto na linha — confira ou ajuste dados e aba Senha.',
+      })
     } else {
-      const err = await res.json()
-      alert(err.error || 'Erro ao registrar')
+      const err = await res.json().catch(() => ({}))
+      const msg = typeof err.error === 'string' ? err.error : 'Erro ao registrar'
+      if (/produzida|já está em uso|duplic|footprint|domínio já/i.test(msg)) {
+        setDuplicateBanner(msg)
+      }
+      setToast({ kind: 'error', message: msg })
     }
     setSubmitting(false)
   }
@@ -279,8 +502,68 @@ export function ProducaoClient() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'approve' }),
     })
-    if (res.ok) load()
-    else { const e = await res.json(); alert(e.error || 'Erro') }
+    if (res.ok) {
+      setSelectedIds((prev) => {
+        const n = new Set(prev)
+        n.delete(id)
+        return n
+      })
+      load()
+    } else { const e = await res.json(); alert(e.error || 'Erro') }
+  }
+
+  const approvableRows = accounts.filter(
+    (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
+  )
+  const approvableIdList = approvableRows.map((a) => a.id)
+  const allApprovableSelected =
+    approvableIdList.length > 0 && approvableIdList.every((id) => selectedIds.has(id))
+
+  function toggleRowSelected(id: string) {
+    setSelectedIds((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
+
+  function toggleSelectAllApprovable() {
+    if (allApprovableSelected) setSelectedIds(new Set())
+    else setSelectedIds(new Set(approvableIdList))
+  }
+
+  async function handleBulkApprove() {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    if (
+      !confirm(
+        `Aprovar ${ids.length} conta(s) selecionada(s)? Cada uma gerará um item no estoque disponível.`
+      )
+    )
+      return
+    setBulkApproving(true)
+    try {
+      const res = await fetch('/api/producao/aprovar-lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        if (data.failedCount > 0) {
+          alert(
+            `Aprovadas: ${data.approved}. Com falha: ${data.failedCount} (verifique o status na lista).`
+          )
+        }
+        setSelectedIds(new Set())
+        load()
+      } else {
+        alert(typeof data.error === 'string' ? data.error : 'Erro ao aprovar em lote')
+      }
+    } finally {
+      setBulkApproving(false)
+    }
   }
 
   async function handleMarkAnalysis(id: string) {
@@ -308,7 +591,12 @@ export function ProducaoClient() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Excluir esta conta da produção? Esta ação não pode ser desfeita.')) return
+    if (
+      !confirm(
+        'Excluir este registo de produção? O item deixa de aparecer na lista (exclusão lógica). Esta ação não pode ser desfeita pelo painel.'
+      )
+    )
+      return
     const res = await fetch(`/api/producao/${id}`, { method: 'DELETE' })
     if (res.ok) load()
     else { const e = await res.json(); alert(e.error || 'Erro ao excluir') }
@@ -412,6 +700,13 @@ export function ProducaoClient() {
               <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div className="h-full bg-accent-500 rounded-full transition-all duration-500" style={{ width: `${percentMeta}%` }} />
               </div>
+              <p className="text-xs text-slate-500 mt-1.5">
+                {session?.user?.role === 'PRODUCER' ? (
+                  <>Meta individual: {metaMensal.toLocaleString('pt-BR')} contas/mês.</>
+                ) : (
+                  <>Meta global: {metaMensal.toLocaleString('pt-BR')} contas/mês.</>
+                )}
+              </p>
             </div>
           </>
         )}
@@ -420,8 +715,8 @@ export function ProducaoClient() {
       {/* Main card */}
       <div className="card">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-          <h2 className="font-semibold">Tabela de Produção</h2>
-          <div className="flex gap-2 items-center">
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Listagem de contas</h2>
+          <div className="flex flex-wrap gap-2 items-center justify-end flex-1 min-w-[min(100%,280px)]">
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -736,9 +1031,16 @@ export function ProducaoClient() {
                   <th className="pb-2 pr-4">ID Conta</th>
                   <th className="pb-2 pr-4">Plataforma</th>
                   <th className="pb-2 pr-4">Tipo</th>
+                  <th className="pb-2 pr-4">Nicho</th>
                   <th className="pb-2 pr-4">Status</th>
                   <th className="pb-2 pr-4">Produtor</th>
-                  <th className="pb-2 pr-4">Checklist</th>
+                  <th className="pb-2 pr-4">Checklist / credenciais</th>
+                  <th
+                    className="pb-2 pr-4"
+                    title="Dias corridos desde o registro (fila ou aquecimento, conforme o status)"
+                  >
+                    Dias
+                  </th>
                   <th className="pb-2 pr-4">Data</th>
                   <th className="pb-2">Ações</th>
                 </tr>
@@ -774,9 +1076,18 @@ export function ProducaoClient() {
                           isProducer={isProducer && a.producerId === session?.user?.id}
                           compact
                         />
-                      )}
+                        <CredentialHints a={a} />
+                      </div>
                     </td>
-                    <td className="py-3 pr-4 text-gray-500">{new Date(a.createdAt).toLocaleDateString('pt-BR')}</td>
+                    <td className="py-3 pr-4 text-gray-500 tabular-nums">
+                      {daysSinceRegistration(a.createdAt)}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-500">
+                      <div className="flex flex-col gap-1">
+                        <span>{new Date(a.createdAt).toLocaleDateString('pt-BR')}</span>
+                        {slaPendingBadge(a.createdAt, a.status)}
+                      </div>
+                    </td>
                     <td className="py-3">
                       <div className="flex flex-wrap gap-x-2 gap-y-1 items-center">
                         {/* Ver detalhes */}
@@ -847,6 +1158,499 @@ export function ProducaoClient() {
                       </div>
                     </td>
                   </tr>
+                  {editingId === a.id && (
+                    <tr className="bg-gray-50 dark:bg-ads-dark-card/50 border-b border-gray-200 dark:border-white/10 ring-2 ring-inset ring-primary-500/20">
+                      <td colSpan={canApprove ? 11 : 10} className="py-4 px-2">
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                          {editKind === 'approved-review'
+                            ? 'Conta aprovada — conferir dados, senha e URLs'
+                            : 'Editar conta'}{' '}
+                          <span className="font-mono">{displayAccountId(a)}</span>
+                        </p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 font-mono break-all">
+                          Referência interna (suporte): {a.id}
+                        </p>
+
+                        {editKind === 'approved-review' && (
+                          <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-white/10 pb-2 mb-3">
+                            <button
+                              type="button"
+                              onClick={() => setEditTab('dados')}
+                              className={`px-3 py-1.5 rounded text-xs font-medium ${
+                                editTab === 'dados'
+                                  ? 'bg-primary-500 text-white'
+                                  : 'bg-gray-200 dark:bg-white/10'
+                              }`}
+                            >
+                              Conferir dados
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditTab('senha')}
+                              className={`px-3 py-1.5 rounded text-xs font-medium ${
+                                editTab === 'senha'
+                                  ? 'bg-primary-500 text-white'
+                                  : 'bg-gray-200 dark:bg-white/10'
+                              }`}
+                            >
+                              Senha
+                              {a.hasPassword && (
+                                <span className="ml-1 text-[10px] opacity-80">(definida)</span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditTab('urls')}
+                              className={`px-3 py-1.5 rounded text-xs font-medium ${
+                                editTab === 'urls'
+                                  ? 'bg-primary-500 text-white'
+                                  : 'bg-gray-200 dark:bg-white/10'
+                              }`}
+                            >
+                              URLs / domínio
+                            </button>
+                          </div>
+                        )}
+
+                        {editKind === 'approved-review' && editTab === 'dados' && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm max-w-3xl rounded-lg border border-gray-200 dark:border-white/10 p-3 bg-white/50 dark:bg-black/20">
+                            <p className="sm:col-span-2 text-xs text-gray-500 mb-1">
+                              Leitura apenas — os dados registados na produção permanecem visíveis após aprovação.
+                            </p>
+                            <div>
+                              <span className="text-xs text-gray-500">Identificador manual</span>
+                              <p className="font-mono font-medium">{a.accountCode?.trim() || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">ID Google Ads</span>
+                              <p className="font-mono">{a.googleAdsCustomerId?.trim() || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Plataforma</span>
+                              <p>{PLATFORMS.find((p) => p.value === a.platform)?.label || a.platform}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Tipo</span>
+                              <p>{a.type}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">E-mail</span>
+                              <p className="break-all">{a.email || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">CNPJ</span>
+                              <p className="font-mono">{a.cnpj || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Moeda</span>
+                              <p>{a.currency || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500">Nicho / meta</span>
+                              <p>
+                                {nicheLabel(a.productionNiche)} ·{' '}
+                                {VERIFICATION_GOALS.find((g) => g.value === a.verificationGoal)?.label ||
+                                  a.verificationGoal ||
+                                  '—'}
+                              </p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">2FA (A2F)</span>
+                              <p className="font-mono text-xs break-all whitespace-pre-wrap">
+                                {a.a2fCode?.trim() || '—'}
+                              </p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Código G2</span>
+                              <p className="font-mono">{a.g2ApprovalCode || '—'}</p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Site</span>
+                              <p className="break-all">{a.siteUrl || '—'}</p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Domínio principal</span>
+                              <p>{a.primaryDomain || '—'}</p>
+                            </div>
+                            <div className="sm:col-span-2 flex gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(null)
+                                  setEditKind('full')
+                                  setEditTab('dados')
+                                }}
+                                className="btn-secondary text-sm"
+                              >
+                                Fechar painel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {editKind === 'approved-review' && editTab === 'urls' && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm max-w-2xl">
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Site (URL)</label>
+                              <input
+                                value={editForm.siteUrl}
+                                onChange={(e) => setEditForm((f) => ({ ...f, siteUrl: e.target.value }))}
+                                className="input-field"
+                                placeholder="https://..."
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Link CNPJ BIZ</label>
+                              <input
+                                value={editForm.cnpjBizLink}
+                                onChange={(e) => setEditForm((f) => ({ ...f, cnpjBizLink: e.target.value }))}
+                                className="input-field"
+                                placeholder="https://..."
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Domínio principal</label>
+                              <input
+                                value={editForm.primaryDomain}
+                                onChange={(e) => setEditForm((f) => ({ ...f, primaryDomain: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Nota de proxy</label>
+                              <input
+                                value={editForm.proxyNote}
+                                onChange={(e) => setEditForm((f) => ({ ...f, proxyNote: e.target.value }))}
+                                className="input-field"
+                              />
+                              <label className="inline-flex items-center gap-2 mt-2 text-xs cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editForm.proxyConfigured}
+                                  onChange={(e) =>
+                                    setEditForm((f) => ({ ...f, proxyConfigured: e.target.checked }))
+                                  }
+                                />
+                                Proxy configurado
+                              </label>
+                            </div>
+                            <div className="md:col-span-2 flex gap-2 pt-2">
+                              <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm">
+                                Salvar URLs / domínio
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(null)
+                                  setEditKind('full')
+                                  setEditTab('dados')
+                                }}
+                                className="btn-secondary text-sm"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {editKind === 'approved-review' && editTab === 'senha' && (
+                          <div className="max-w-md space-y-3">
+                            <p className="text-xs text-gray-500">
+                              A senha não pode ser exibida (armazenada com hash). Defina uma nova para substituir a
+                              anterior.
+                            </p>
+                            <div className="flex gap-2">
+                              <input
+                                type={editPasswordVisible ? 'text' : 'password'}
+                                value={editForm.password}
+                                onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
+                                className="input-field flex-1"
+                                placeholder="Nova senha (mín. 4 caracteres)"
+                                autoComplete="new-password"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setEditPasswordVisible((v) => !v)}
+                                className="btn-secondary px-3"
+                                aria-label={editPasswordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+                              >
+                                {editPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm">
+                                Atualizar senha
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(null)
+                                  setEditKind('full')
+                                  setEditTab('dados')
+                                }}
+                                className="btn-secondary text-sm"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {editKind === 'full' && (
+                        <>
+                        <div className="flex gap-2 border-b border-gray-200 dark:border-white/10 pb-2 mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setEditTab('dados')}
+                            className={`px-3 py-1.5 rounded text-xs font-medium ${
+                              editTab === 'dados'
+                                ? 'bg-primary-500 text-white'
+                                : 'bg-gray-200 dark:bg-white/10'
+                            }`}
+                          >
+                            Dados da conta
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditTab('senha')}
+                            className={`px-3 py-1.5 rounded text-xs font-medium ${
+                              editTab === 'senha'
+                                ? 'bg-primary-500 text-white'
+                                : 'bg-gray-200 dark:bg-white/10'
+                            }`}
+                          >
+                            Senha
+                            {a.hasPassword && (
+                              <span className="ml-1 text-[10px] opacity-80">(definida)</span>
+                            )}
+                          </button>
+                        </div>
+                        {editTab === 'senha' ? (
+                          <div className="max-w-md space-y-2">
+                            <p className="text-xs text-gray-500">
+                              Digite uma nova senha para substituir a anterior. O armazenamento é em hash (bcrypt).
+                            </p>
+                            <div className="flex gap-2">
+                              <input
+                                type={editPasswordVisible ? 'text' : 'password'}
+                                value={editForm.password}
+                                onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
+                                className="input-field flex-1"
+                                placeholder={a.hasPassword ? 'Nova senha (opcional)' : 'Senha da conta'}
+                                autoComplete="new-password"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setEditPasswordVisible((v) => !v)}
+                                className="btn-secondary px-3"
+                                aria-label={editPasswordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+                              >
+                                {editPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Identificador *</label>
+                              <input
+                                value={editForm.accountCode}
+                                onChange={(e) => setEditForm((f) => ({ ...f, accountCode: e.target.value }))}
+                                className="input-field font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Plataforma</label>
+                              <select
+                                value={editForm.platform}
+                                onChange={(e) => setEditForm((f) => ({ ...f, platform: e.target.value }))}
+                                className="input-field"
+                              >
+                                {PLATFORMS.map((p) => (
+                                  <option key={p.value} value={p.value}>{p.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Tipo</label>
+                              <select
+                                value={editForm.type}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    type: e.target.value,
+                                    typeCustom: e.target.value === '__OUTRO__' ? f.typeCustom : '',
+                                  }))
+                                }
+                                className="input-field"
+                              >
+                                {ACCOUNT_TYPES.map((t) => (
+                                  <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                              </select>
+                              {editForm.type === '__OUTRO__' && (
+                                <input
+                                  type="text"
+                                  value={editForm.typeCustom}
+                                  onChange={(e) => setEditForm((f) => ({ ...f, typeCustom: e.target.value }))}
+                                  className="input-field mt-2"
+                                  placeholder="Tipo customizado"
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">ID Google Ads (opcional)</label>
+                              <input
+                                value={editForm.googleAdsCustomerId}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    googleAdsCustomerId: formatAccountId(e.target.value),
+                                  }))
+                                }
+                                className="input-field font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Tipo de moeda (ISO)</label>
+                              <select
+                                value={
+                                  GLOBAL_CURRENCY_OPTIONS.some((o) => o.code === editForm.currency)
+                                    ? editForm.currency
+                                    : 'BRL'
+                                }
+                                onChange={(e) => setEditForm((f) => ({ ...f, currency: e.target.value }))}
+                                className="input-field"
+                              >
+                                {GLOBAL_CURRENCY_OPTIONS.map((o) => (
+                                  <option key={o.code} value={o.code}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Código A2F</label>
+                              <input
+                                value={editForm.a2fCode}
+                                onChange={(e) => setEditForm((f) => ({ ...f, a2fCode: e.target.value }))}
+                                className="input-field font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Código G2</label>
+                              <input
+                                value={editForm.g2ApprovalCode}
+                                onChange={(e) => setEditForm((f) => ({ ...f, g2ApprovalCode: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Site (URL)</label>
+                              <input
+                                value={editForm.siteUrl}
+                                onChange={(e) => setEditForm((f) => ({ ...f, siteUrl: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Link CNPJ BIZ</label>
+                              <input
+                                value={editForm.cnpjBizLink}
+                                onChange={(e) => setEditForm((f) => ({ ...f, cnpjBizLink: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">E-mail</label>
+                              <input
+                                type="email"
+                                value={editForm.email}
+                                onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">CNPJ</label>
+                              <input
+                                value={editForm.cnpj}
+                                onChange={(e) => setEditForm((f) => ({ ...f, cnpj: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Nicho</label>
+                              <select
+                                value={editForm.productionNiche}
+                                onChange={(e) => setEditForm((f) => ({ ...f, productionNiche: e.target.value }))}
+                                className="input-field"
+                              >
+                                {PRODUCTION_NICHES.map((n) => (
+                                  <option key={n.value} value={n.value}>{n.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Meta de verificação</label>
+                              <select
+                                value={editForm.verificationGoal}
+                                onChange={(e) => setEditForm((f) => ({ ...f, verificationGoal: e.target.value }))}
+                                className="input-field"
+                              >
+                                {VERIFICATION_GOALS.map((g) => (
+                                  <option key={g.value} value={g.value}>{g.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Domínio principal</label>
+                              <input
+                                value={editForm.primaryDomain}
+                                onChange={(e) => setEditForm((f) => ({ ...f, primaryDomain: e.target.value }))}
+                                className="input-field"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Nota de proxy</label>
+                              <input
+                                value={editForm.proxyNote}
+                                onChange={(e) => setEditForm((f) => ({ ...f, proxyNote: e.target.value }))}
+                                className="input-field"
+                              />
+                              <label className="inline-flex items-center gap-2 mt-2 text-xs cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={editForm.proxyConfigured}
+                                  onChange={(e) =>
+                                    setEditForm((f) => ({ ...f, proxyConfigured: e.target.checked }))
+                                  }
+                                />
+                                Proxy configurado
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex gap-2 mt-4">
+                          <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm py-1.5">
+                            Salvar alterações
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null)
+                              setEditKind('full')
+                            }}
+                            className="btn-secondary text-sm py-1.5"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        </>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

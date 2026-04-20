@@ -94,7 +94,7 @@ export async function getPlugPlayAvailableBalance(collaboratorId: string): Promi
   const totalCredited = closed.reduce((s, st) => s + Number(st.totalAmount), 0)
 
   const withdrawals = await prisma.withdrawal.findMany({
-    where: { userId: collaboratorId, status: { in: ['PENDING', 'PROCESSING', 'COMPLETED'] } },
+    where: { userId: collaboratorId, status: { in: ['PENDING', 'PROCESSING', 'COMPLETED', 'HELD'] } },
   })
   const totalWithdrawn = withdrawals.reduce((s, w) => s + Number(w.netValue), 0)
 

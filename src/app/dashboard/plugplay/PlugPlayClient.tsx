@@ -42,7 +42,7 @@ export function PlugPlayClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const [payments, setPayments] = useState<{ payments: unknown[]; summary: { totalPending: number; totalPaid: number } } | null>(null)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ niche: '', domain: '' })
+  const [form, setForm] = useState({ niche: '', domain: '', platform: 'GOOGLE_ADS' as 'GOOGLE_ADS' | 'FACEBOOK' })
   const [submitting, setSubmitting] = useState(false)
   const [selectedOp, setSelectedOp] = useState<Operation | null>(null)
   const [updatingStep, setUpdatingStep] = useState<string | null>(null)
@@ -66,10 +66,14 @@ export function PlugPlayClient({ isAdmin = false }: { isAdmin?: boolean }) {
       const res = await fetch('/api/black/operations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche: form.niche, domain: form.domain || undefined }),
+        body: JSON.stringify({
+          niche: form.niche,
+          domain: form.domain || undefined,
+          platform: form.platform,
+        }),
       })
       if (res.ok) {
-        setForm({ niche: '', domain: '' })
+        setForm({ niche: '', domain: '', platform: 'GOOGLE_ADS' })
         setShowForm(false)
         load()
       } else {
@@ -147,6 +151,19 @@ export function PlugPlayClient({ isAdmin = false }: { isAdmin?: boolean }) {
                   className="input-field"
                   placeholder="dominio.com"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Plataforma</label>
+                <select
+                  value={form.platform}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, platform: e.target.value as 'GOOGLE_ADS' | 'FACEBOOK' }))
+                  }
+                  className="input-field"
+                >
+                  <option value="GOOGLE_ADS">Google Ads</option>
+                  <option value="FACEBOOK">Facebook</option>
+                </select>
               </div>
             </div>
             <button type="submit" disabled={submitting} className="btn-primary">Criar</button>

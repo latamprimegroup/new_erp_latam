@@ -16,9 +16,16 @@ type MetasResult = {
   noRitmoVendas: boolean
   alertaProducao: boolean
   alertaVendas: boolean
+  platformFilter?: string
 }
 
-export function MetasMensaisCard({ isAdmin = false }: { isAdmin?: boolean }) {
+export function MetasMensaisCard({
+  isAdmin = false,
+  platform = 'ALL',
+}: {
+  isAdmin?: boolean
+  platform?: string
+}) {
   const [data, setData] = useState<MetasResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [editMode, setEditMode] = useState(false)
@@ -39,7 +46,7 @@ export function MetasMensaisCard({ isAdmin = false }: { isAdmin?: boolean }) {
       })
       .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [])
+  }, [platform])
 
   const handleSave = async () => {
     setSaving(true)
@@ -50,7 +57,13 @@ export function MetasMensaisCard({ isAdmin = false }: { isAdmin?: boolean }) {
         body: JSON.stringify({ metaProducao, metaVendas }),
       })
       const d = await res.json()
-      if (res.ok) setData(d)
+      if (res.ok) {
+        const q = platform && platform !== 'ALL' ? `?platform=${encodeURIComponent(platform)}` : ''
+        const r2 = await fetch(`/api/metas-globais${q}`)
+        const fresh = await r2.json()
+        if (r2.ok) setData(fresh)
+        else setData(d)
+      }
       setEditMode(false)
     } finally {
       setSaving(false)
@@ -76,8 +89,17 @@ export function MetasMensaisCard({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-[#1F2937]">Meta mensal: 10k produção e 10k vendas</h2>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="font-semibold text-[#1F2937] dark:text-zinc-100">
+            Meta mensal: produção e vendas
+          </h2>
+          {platform !== 'ALL' && (
+            <p className="text-xs text-primary-600 dark:text-primary-400 mt-0.5">
+              Progresso filtrado pela plataforma selecionada (metas numéricas continuam globais).
+            </p>
+          )}
+        </div>
         {isAdmin && (
           editMode ? (
             <div className="flex gap-2">

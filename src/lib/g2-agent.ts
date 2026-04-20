@@ -1,7 +1,9 @@
 /**
  * Agente G2 — validações, aprovação, meta
  */
+import type { ProductionG2Status } from '@prisma/client'
 import { prisma } from './prisma'
+import { calculateBonus, calculateMonthlyAmount, getProductionConfig } from './production-payment'
 import { isAssetConsumed, hashAsset, registerAssetConsumed, type UniqueAssetType } from './unique-asset'
 
 export const REQUIRED_DOC_TYPES = ['RG_FRENTE', 'RG_VERSO', 'CARTAO_CNPJ'] as const
@@ -114,6 +116,12 @@ export async function getMetaEngine(producerId?: string): Promise<{
   projecao: number
   metaEmRisco: boolean
   percentual: number
+  /** Bônus variável conforme faixas de produção (produção-payment). */
+  bonusAtual: number
+  /** Estimativa se o ritmo atual se mantiver até o fim do mês (projeção arredondada). */
+  bonusProjetado: number
+  /** Previsão de ganhos totais no mês (salário + por conta + bônus) se atingir exatamente a meta máxima — só com filtro de produtor. */
+  previsaoTotalSeBaterMeta: number
 }> {
   const config = await prisma.systemSetting.findMany({
     where: { key: { in: ['producao_meta_mensal', 'producao_meta_elite'] } },
@@ -158,6 +166,12 @@ export async function getMetaEngine(producerId?: string): Promise<{
   const metaEmRisco = projecao < metaMaxima * 0.9
   const percentual = metaMaxima > 0 ? Math.round((producaoAtual / metaMaxima) * 100) : 0
 
+  const payConfig = await getProductionConfig()
+  /** Bônus é por colaborador — só calcula quando o motor está filtrado a um produtor. */
+  const bonusAtual = producerId ? calculateBonus(producaoAtual, payConfig) : 0
+  const bonusProjetado = producerId ? calculateBonus(Math.max(0, Math.floor(projecao)), payConfig) : 0
+  const previsaoTotalSeBaterMeta = producerId ? calculateMonthlyAmount(metaMaxima, payConfig).total : 0
+
   return {
     metaMaxima,
     producaoAtual,
@@ -167,18 +181,23 @@ export async function getMetaEngine(producerId?: string): Promise<{
     projecao: Math.round(projecao),
     metaEmRisco,
     percentual,
+    bonusAtual,
+    bonusProjetado,
+    previsaoTotalSeBaterMeta,
   }
 }
 
-/** Ranking de produtores por produção validada no mês */
+export type G2RankingBadge = 'PODIO_OURO' | 'PODIO_PRATA' | 'PODIO_BRONZE' | 'ZERO_REPROVACOES'
+
+/** Ranking de produtores por produção validada no mês + selos de gamificação */
 export async function getProducerRanking(): Promise<
-  { producerId: string; name: string | null; count: number; rank: number }[]
+  { producerId: string; name: string | null; count: number; rank: number; badges: G2RankingBadge[] }[]
 > {
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
 
-  const [prodGroup, g2Group] = await Promise.all([
+  const [prodGroup, g2Group, rejProd, rejG2] = await Promise.all([
     prisma.productionAccount.groupBy({
       by: ['producerId'],
       where: {
@@ -197,6 +216,24 @@ export async function getProducerRanking(): Promise<
       },
       _count: { id: true },
     }),
+    prisma.productionAccount.groupBy({
+      by: ['producerId'],
+      where: {
+        status: 'REJECTED',
+        deletedAt: null,
+        updatedAt: { gte: startOfMonth, lte: endOfMonth },
+      },
+      _count: { id: true },
+    }),
+    prisma.productionG2.groupBy({
+      by: ['creatorId'],
+      where: {
+        status: 'REPROVADA',
+        deletedAt: null,
+        updatedAt: { gte: startOfMonth, lte: endOfMonth },
+      },
+      _count: { id: true },
+    }),
   ])
 
   const map = new Map<string, number>()
@@ -205,6 +242,14 @@ export async function getProducerRanking(): Promise<
   }
   for (const g of g2Group) {
     map.set(g.creatorId, (map.get(g.creatorId) ?? 0) + g._count.id)
+  }
+
+  const rejMap = new Map<string, number>()
+  for (const p of rejProd) {
+    rejMap.set(p.producerId, (rejMap.get(p.producerId) ?? 0) + p._count.id)
+  }
+  for (const g of rejG2) {
+    rejMap.set(g.creatorId, (rejMap.get(g.creatorId) ?? 0) + g._count.id)
   }
 
   const userIds = Array.from(map.keys())
@@ -218,5 +263,72 @@ export async function getProducerRanking(): Promise<
     .map(([id, count]) => ({ producerId: id, name: userMap[id] ?? null, count }))
     .sort((a, b) => b.count - a.count)
 
-  return sorted.map((r, i) => ({ ...r, rank: i + 1 }))
+  return sorted.map((r, i) => {
+    const rank = i + 1
+    const badges: G2RankingBadge[] = []
+    if (r.count > 0) {
+      if (rank === 1) badges.push('PODIO_OURO')
+      else if (rank === 2) badges.push('PODIO_PRATA')
+      else if (rank === 3) badges.push('PODIO_BRONZE')
+      if ((rejMap.get(r.producerId) ?? 0) === 0) badges.push('ZERO_REPROVACOES')
+    }
+    return { ...r, rank, badges }
+  })
+}
+
+/** Série diária de contas validadas (produção + G2) para tendência de ritmo. */
+export async function getG2PaceTrend(producerId?: string): Promise<{
+  series: { date: string; label: string; count: number }[]
+  avgLast7: number
+  avgPrev7: number
+  trendPercent: number | null
+}> {
+  const now = new Date()
+  const days = 14
+  const series: { date: string; label: string; count: number }[] = []
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+
+    const whereProd = {
+      status: 'APPROVED' as const,
+      deletedAt: null as null,
+      validatedAt: { gte: start, lte: end },
+      ...(producerId ? { producerId } : {}),
+    }
+    const whereG2 = {
+      status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] as ProductionG2Status[] },
+      deletedAt: null as null,
+      validatedAt: { gte: start, lte: end },
+      ...(producerId ? { creatorId: producerId } : {}),
+    }
+
+    const [c1, c2] = await Promise.all([
+      prisma.productionAccount.count({ where: whereProd }),
+      prisma.productionG2.count({ where: whereG2 }),
+    ])
+
+    series.push({
+      date: start.toISOString().slice(0, 10),
+      label: start.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric' }),
+      count: c1 + c2,
+    })
+  }
+
+  const last7 = series.slice(-7).reduce((s, x) => s + x.count, 0)
+  const prev7 = series.slice(0, 7).reduce((s, x) => s + x.count, 0)
+  const avgLast7 = last7 / 7
+  const avgPrev7 = prev7 / 7
+  let trendPercent: number | null = null
+  if (avgPrev7 > 0) trendPercent = Math.round(((avgLast7 - avgPrev7) / avgPrev7) * 100)
+  else if (avgLast7 > 0) trendPercent = 100
+
+  return {
+    series,
+    avgLast7: Math.round(avgLast7 * 10) / 10,
+    avgPrev7: Math.round(avgPrev7 * 10) / 10,
+    trendPercent,
+  }
 }

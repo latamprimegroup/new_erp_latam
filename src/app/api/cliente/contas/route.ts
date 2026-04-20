@@ -43,14 +43,21 @@ export async function GET(req: NextRequest) {
   const monthSpend = await prisma.accountSpendLog.aggregate({
     where: {
       account: { clientId: client.id },
-      periodStart: { gte: startOfMonth },
-      periodEnd: { lte: endOfMonth },
+      periodStart: { lte: endOfMonth },
+      periodEnd: { gte: startOfMonth },
     },
     _sum: { costMicros: true },
   })
 
   const totalCostMicros = totalSpend._sum.costMicros ?? BigInt(0)
   const monthCostMicros = monthSpend._sum.costMicros ?? BigInt(0)
+
+  const sumSalePrice = accounts.reduce(
+    (s, a) => s + (a.salePrice != null ? Number(a.salePrice) : 0),
+    0,
+  )
+  const profileSpent = client.totalSpent != null ? Number(client.totalSpent) : 0
+  const totalSpentOnAccounts = sumSalePrice > 0 ? sumSalePrice : profileSpent
 
   return NextResponse.json({
     accounts: accounts.map((a) => ({
@@ -79,7 +86,7 @@ export async function GET(req: NextRequest) {
       approvalRate,
       totalSpend: Number(totalCostMicros) / 1_000_000,
       monthSpend: Number(monthCostMicros) / 1_000_000,
-      totalSpentOnAccounts: Number(client.totalSpent ?? 0),
+      totalSpentOnAccounts,
     },
   })
 }

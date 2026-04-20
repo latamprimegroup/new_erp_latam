@@ -52,7 +52,9 @@ export async function getGroupMetrics(deliveryGroupId: string) {
   const diasAberto = Math.floor(
     (Date.now() - (d.groupCreatedAt?.getTime() ?? d.createdAt.getTime())) / (24 * 60 * 60 * 1000)
   )
-  const isAtrasado = d.expectedCompletionAt ? d.expectedCompletionAt < new Date() : false
+  const isAtrasado =
+    d.status === 'ATRASADA' ||
+    (d.expectedCompletionAt ? d.expectedCompletionAt < new Date() : false)
   const churnRisk = d.client?.metrics?.churnProbability ? Number(d.client.metrics.churnProbability) : 0
   const isVip = d.client?.metrics?.segmento === 'VIP'
 

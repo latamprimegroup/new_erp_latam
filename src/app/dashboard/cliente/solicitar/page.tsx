@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 type LastPurchase = {
   id: string
@@ -29,11 +30,13 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelada',
 }
 
-export default function SolicitarContasPage() {
+function SolicitarContasContent() {
+  const searchParams = useSearchParams()
   const [lastPurchase, setLastPurchase] = useState<LastPurchase | null>(null)
   const [solicitations, setSolicitations] = useState<Solicitation[]>([])
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<'ultima' | 'quantidade'>('ultima')
+  const [reorderSourceOrderId, setReorderSourceOrderId] = useState<string | null>(null)
   const [form, setForm] = useState({
     quantity: 1,
     product: '',
@@ -48,23 +51,52 @@ export default function SolicitarContasPage() {
     Promise.all([
       fetch('/api/cliente/ultima-compra').then((r) => r.json()),
       fetch('/api/cliente/solicitacao').then((r) => r.json()),
-    ]).then(([ultima, sols]) => {
-      setLastPurchase(ultima.lastPurchase)
-      setSolicitations(sols)
-      if (ultima.lastPurchase) {
-        setForm((f) => ({
-          ...f,
-          quantity: ultima.lastPurchase.quantity,
-          product: ultima.lastPurchase.product,
-          accountType: ultima.lastPurchase.accountType,
-          country: ultima.lastPurchase.country || '',
-        }))
-      }
-    }).finally(() => setLoading(false))
-  }, [])
+    ])
+      .then(async ([ultima, sols]) => {
+        setLastPurchase(ultima.lastPurchase)
+        setSolicitations(Array.isArray(sols) ? sols : [])
+
+        const reorderId = searchParams.get('reorder')
+        if (reorderId) {
+          const r = await fetch(`/api/cliente/compras/${reorderId}`)
+          const data = await r.json()
+          if (r.ok && data?.id) {
+            setReorderSourceOrderId(data.id)
+            setMode('quantidade')
+            setForm((f) => ({
+              ...f,
+              quantity: data.quantity,
+              product: data.product,
+              accountType: data.accountType,
+              country: data.country || '',
+              notes: `Recompra do pedido (${String(data.id).slice(0, 8)}…)`,
+            }))
+            return
+          }
+        }
+
+        if (ultima.lastPurchase) {
+          setMode('ultima')
+          setForm((f) => ({
+            ...f,
+            quantity: ultima.lastPurchase.quantity,
+            product: ultima.lastPurchase.product,
+            accountType: ultima.lastPurchase.accountType,
+            country: ultima.lastPurchase.country || '',
+          }))
+        } else {
+          setMode('quantidade')
+        }
+      })
+      .finally(() => setLoading(false))
+  }, [searchParams])
 
   async function handleSubmit(e: React.FormEvent, referenceOrderId?: string) {
     e.preventDefault()
+    if (mode === 'ultima' && !lastPurchase) {
+      alert('Você ainda não possui compras anteriores. Use "Quantidade desejada".')
+      return
+    }
     setSubmitting(true)
     setWhatsappUrl(null)
     try {
@@ -84,7 +116,11 @@ export default function SolicitarContasPage() {
       if (res.ok) {
         setSolicitations((prev) => [data.solicitation, ...prev])
         setWhatsappUrl(data.whatsappUrl)
+        setReorderSourceOrderId(null)
         setForm((f) => ({ ...f, notes: '' }))
+        if (typeof data.whatsappUrl === 'string' && data.whatsappUrl.length > 0) {
+          window.open(data.whatsappUrl, '_blank', 'noopener,noreferrer')
+        }
       } else {
         alert(data.error || 'Erro ao solicitar')
       }
@@ -147,7 +183,16 @@ export default function SolicitarContasPage() {
             <p className="text-amber-600 text-sm mb-4">Você ainda não possui compras anteriores. Use "Quantidade desejada".</p>
           )}
 
-          <form onSubmit={(e) => handleSubmit(e, mode === 'ultima' && lastPurchase ? lastPurchase.id : undefined)} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              const refId =
+                mode === 'ultima' && lastPurchase
+                  ? lastPurchase.id
+                  : reorderSourceOrderId || undefined
+              handleSubmit(e, refId)
+            }}
+            className="space-y-4"
+          >
             <div>
               <label className="block text-sm font-medium mb-1">Quantidade *</label>
               <input
@@ -250,5 +295,22 @@ export default function SolicitarContasPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SolicitarContasPage() {
+  return (
+    <Suspense
+      fallback={
+        <div>
+          <Link href="/dashboard/cliente" className="text-gray-500 hover:text-gray-700 mb-4 inline-block">
+            ← Voltar
+          </Link>
+          <p className="text-gray-500">Carregando...</p>
+        </div>
+      }
+    >
+      <SolicitarContasContent />
+    </Suspense>
   )
 }

@@ -20,12 +20,12 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response
   try {
     const data = schema.parse(await req.json())
-    const orders = await prisma.order.findMany({
+    const ticketAgg = await prisma.order.aggregate({
       where: { status: 'DELIVERED', paidAt: { not: null } },
-      select: { value: true },
+      _avg: { value: true },
     })
-    const ticketMedio = orders.length > 0
-      ? orders.reduce((s, o) => s + Number(o.value), 0) / orders.length : 2000
+    const ticketMedio =
+      ticketAgg._avg.value != null ? Number(ticketAgg._avg.value) : 2000
     const receitaMediaMensal = ticketMedio * 0.3
     const retencaoMensal = (100 - data.churn) / 100
     let receitaAcum12m = 0

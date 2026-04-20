@@ -93,6 +93,7 @@ export default function ReputacaoPage() {
               <th className="pb-2 pr-4">Cliente</th>
               <th className="pb-2 pr-4">Score</th>
               <th className="pb-2 pr-4">Badge</th>
+              <th className="pb-2 pr-4">Saúde</th>
               <th className="pb-2 pr-4">Reembolsos</th>
               <th className="pb-2 pr-4">Nicho</th>
               <th className="pb-2">Ação</th>
@@ -125,6 +126,24 @@ export default function ReputacaoPage() {
                         {BADGE_LABELS[badge]}
                       </span>
                     )}
+                  </td>
+                  <td className="py-3 pr-4 min-w-[220px]">
+                    <div className="h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${
+                          (c.reputationScore ?? 50) >= 80
+                            ? 'bg-emerald-500'
+                            : (c.reputationScore ?? 50) >= 50
+                              ? 'bg-amber-500'
+                              : 'bg-red-500'
+                        }`}
+                        style={{ width: `${Math.max(0, Math.min(100, c.reputationScore ?? 50))}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      LTV ativo: {c.averageAccountLifetimeDays != null ? `${c.averageAccountLifetimeDays}d` : '—'} ·
+                      Erros seguidos P&amp;P: {c.plugPlayErrorCount}
+                    </p>
                   </td>
                   <td className="py-3 pr-4">
                     {isEditing ? (

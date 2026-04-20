@@ -10,9 +10,13 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(req.url)
-  const producerId = searchParams.get('producerId')
+  let producerId = searchParams.get('producerId')
   const type = searchParams.get('type')
   const resolved = searchParams.get('resolved')
+
+  if (auth.session.user?.role === 'PRODUCER') {
+    producerId = auth.session.user.id
+  }
 
   const where: Record<string, unknown> = {}
   if (producerId) where.producerId = producerId

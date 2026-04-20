@@ -5,7 +5,7 @@
 import { execSync } from 'child_process'
 import { prisma } from '../prisma'
 import { checkEnvironment, checkDatabase, getSimpleMessage } from './diagnostics'
-import { setVersion, getCurrentVersion } from './version'
+import { setAppVersion, setVersion, getCurrentVersion } from './version'
 
 export type DeployStep =
   | 'ENV_CHECK'
@@ -103,7 +103,7 @@ export async function runInitialCheck(): Promise<DeployStatus> {
     step: 'DB_MIGRATE',
     ok: tablesExist,
     message: tablesExist ? 'Banco estruturado' : 'Banco vazio — precisa rodar migração',
-    userMessage: tablesExist ? '✔ Banco de dados pronto' : '⏳ Banco precisa ser criado',
+    userMessage: tablesExist ? '✔ Banco de dados pronto' : '⚠ Banco precisa ser criado',
     details: { tablesExist },
   })
 
@@ -155,7 +155,7 @@ export async function runDbMigration(): Promise<DeployStepResult> {
       stdio: 'pipe',
       encoding: 'utf-8',
     })
-    await setVersion('0.1.0', new Date())
+    await setAppVersion('0.1.0')
     return {
       step: 'DB_MIGRATE',
       ok: true,

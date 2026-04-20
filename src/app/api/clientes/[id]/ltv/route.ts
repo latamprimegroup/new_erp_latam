@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { getClientLTV } from '@/lib/client-ltv'
 import { prisma } from '@/lib/prisma'
+import { recalculateCustomerScore } from '@/lib/reputation-engine'
 
 export async function GET(
   _req: Request,
@@ -18,6 +19,8 @@ export async function GET(
 
   const { id } = await params
   if (!id) return NextResponse.json({ error: 'ID do cliente obrigatório' }, { status: 400 })
+
+  await recalculateCustomerScore(id).catch(console.error)
 
   const [ltv, metrics, profile] = await Promise.all([
     getClientLTV(id),

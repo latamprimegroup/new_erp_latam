@@ -3,6 +3,7 @@
  * Funções para cálculo de ritmo necessário e progresso
  */
 
+import type { AccountPlatform, OrderStatus } from '@prisma/client'
 import { prisma } from './prisma'
 
 const DEFAULT_META_PRODUCAO = 10_000
@@ -59,10 +60,15 @@ export async function setMetasGlobais(metaProducao: number, metaVendas: number) 
   ])
 }
 
+export type CalcularMetasOpts = {
+  /** Filtra produção (APPROVED) e vendas (itens) por plataforma da conta em estoque */
+  platform?: AccountPlatform | null
+}
+
 /**
  * Calcula progresso, ritmo necessário e alertas
  */
-export async function calcularMetasMensais(): Promise<MetasGlobaisResult> {
+export async function calcularMetasMensais(opts?: CalcularMetasOpts): Promise<MetasGlobaisResult> {
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
@@ -70,23 +76,30 @@ export async function calcularMetasMensais(): Promise<MetasGlobaisResult> {
   const diaAtual = now.getDate()
   const diasRestantes = Math.max(0, diasNoMes - diaAtual) + (now.getHours() < 23 ? 0.5 : 0)
 
+  const pf = opts?.platform ?? null
+  const prodWhere = {
+    createdAt: { gte: startOfMonth, lte: endOfMonth },
+    status: 'APPROVED' as const,
+    ...(pf ? { platform: pf } : {}),
+  }
+  const vendasItemWhere = {
+    ...(pf ? { account: { platform: pf } } : {}),
+    order: {
+      status: { in: ['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED'] as OrderStatus[] },
+      paidAt: { gte: startOfMonth, lte: endOfMonth },
+    },
+  }
+
   const [{ metaProducao, metaVendas }, producaoAtual, vendasResult] = await Promise.all([
     getMetasGlobais(),
-    prisma.productionAccount.count({
-      where: { createdAt: { gte: startOfMonth, lte: endOfMonth } },
-    }),
+    prisma.productionAccount.count({ where: prodWhere }),
     prisma.orderItem.aggregate({
-      where: {
-        order: {
-          status: { in: ['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED'] },
-          paidAt: { gte: startOfMonth, lte: endOfMonth },
-        },
-      },
+      where: vendasItemWhere,
       _sum: { quantity: true },
     }),
   ])
 
-  const vendasAtual = vendasResult._sum.quantity ?? 0
+  const vendasAtual = vendasResult._sum?.quantity ?? 0
   const percentualProducao = metaProducao > 0 ? (producaoAtual / metaProducao) * 100 : 0
   const percentualVendas = metaVendas > 0 ? (vendasAtual / metaVendas) * 100 : 0
 

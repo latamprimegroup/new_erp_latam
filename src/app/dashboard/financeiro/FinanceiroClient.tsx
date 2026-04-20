@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { VaultIntelligenceTab } from './VaultIntelligenceTab'
+import { FinanceiroPayoutTab } from './FinanceiroPayoutTab'
+import { FinanceiroContasFiscalTab } from './FinanceiroContasFiscalTab'
 
 type Entry = {
   id: string
@@ -12,6 +15,7 @@ type Entry = {
   netProfit: { toString: () => string } | null
   description: string | null
   reconciled?: boolean
+  orderId?: string | null
 }
 
 type DreData = {
@@ -29,12 +33,18 @@ type ProjecaoData = {
   projection: { month: string; balance: number; income: number; expense: number }[]
 }
 
-type Tab = 'lancamentos' | 'dre' | 'conciliacao' | 'projecao'
+type Tab = 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao'
 
 export function FinanceiroClient() {
   const [tab, setTab] = useState<Tab>('lancamentos')
   const [entries, setEntries] = useState<Entry[]>([])
-  const [flow, setFlow] = useState({ income: 0, expense: 0, balance: 0, reconciledCount: 0 })
+  const [flow, setFlow] = useState({
+    income: 0,
+    expense: 0,
+    balance: 0,
+    reconciledCount: 0,
+    entryCount: 0,
+  })
   const [dre, setDre] = useState<DreData | null>(null)
   const [projecao, setProjecao] = useState<ProjecaoData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -51,6 +61,25 @@ export function FinanceiroClient() {
     description: '',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [gatewayConc, setGatewayConc] = useState<{
+    summary: {
+      ordersPaidInPeriod: number
+      ordersWithIncomeEntry: number
+      ordersWithoutIncomeEntry: number
+      ordersWithAlignedAmount: number
+    }
+    rows: {
+      orderId: string
+      paidAt: string | null
+      orderValue: number
+      gatewayHint: string
+      incomeEntryCount: number
+      matchedAmount: boolean
+      incomeReconciledAll: boolean
+      entries: { id: string; value: number; reconciled: boolean }[]
+    }[]
+  } | null>(null)
+  const [loadingGateway, setLoadingGateway] = useState(false)
 
   function loadEntries() {
     setLoading(true)
@@ -58,7 +87,15 @@ export function FinanceiroClient() {
       .then((r) => r.json())
       .then((data) => {
         setEntries(data.entries || [])
-        setFlow(data.flow || { income: 0, expense: 0, balance: 0, reconciledCount: 0 })
+        setFlow(
+          data.flow || {
+            income: 0,
+            expense: 0,
+            balance: 0,
+            reconciledCount: 0,
+            entryCount: 0,
+          }
+        )
       })
       .finally(() => setLoading(false))
   }
@@ -86,6 +123,25 @@ export function FinanceiroClient() {
         .finally(() => setLoadingProjecao(false))
     }
   }, [tab])
+
+  useEffect(() => {
+    if (tab !== 'conciliacao') return
+    setLoadingGateway(true)
+    fetch(`/api/financeiro/conciliacao-gateway?month=${month}&year=${year}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.error) setGatewayConc({ summary: d.summary, rows: d.rows })
+        else setGatewayConc(null)
+      })
+      .catch(() => setGatewayConc(null))
+      .finally(() => setLoadingGateway(false))
+  }, [tab, month, year])
+
+  function presetCustoFixo(category: string) {
+    setForm((f) => ({ ...f, type: 'EXPENSE', category }))
+    setTab('lancamentos')
+    setShowForm(true)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -124,35 +180,71 @@ export function FinanceiroClient() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'lancamentos', label: 'Lançamentos' },
     { id: 'dre', label: 'DRE' },
+    { id: 'vault', label: 'Vault Intelligence' },
+    { id: 'folha', label: 'Folha / Payout' },
     { id: 'conciliacao', label: 'Conciliação' },
+    { id: 'contas_fiscal', label: 'Contas & Fiscal' },
     { id: 'projecao', label: 'Fluxo Projetado' },
   ]
 
   return (
     <div>
-      <h1 className="heading-1 mb-6">Financeiro</h1>
+      <h1 className="heading-1 mb-2">Financeiro</h1>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        Guardião do fluxo de caixa: da receita bruta ao lucro líquido, folha de produção e obrigações.
+      </p>
+
+      <div className="flex flex-wrap gap-2 items-center mb-4">
+        <span className="text-sm text-gray-500">Período:</span>
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="input-field py-1.5 px-2 w-24 text-sm"
+        >
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+            <option key={m} value={m}>
+              {String(m).padStart(2, '0')}
+            </option>
+          ))}
+        </select>
+        <select
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+          className="input-field py-1.5 px-2 w-28 text-sm"
+        >
+          {[2024, 2025, 2026, 2027].map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="card mb-6">
-        <h2 className="font-semibold mb-4">Fluxo de Caixa</h2>
+        <h2 className="font-semibold mb-1">Fluxo de caixa consolidado</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Receitas e despesas registradas no período {String(month).padStart(2, '0')}/{year} (lançamentos manuais e
+          rotinas que gravam no razão interno).
+        </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <p className="text-sm text-gray-500">Entradas</p>
+            <p className="text-sm text-gray-500">Entradas (receitas)</p>
             <p className="text-xl font-bold text-green-600">R$ {flow.income.toLocaleString('pt-BR')}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Saídas</p>
+            <p className="text-sm text-gray-500">Saídas (custos/despesas)</p>
             <p className="text-xl font-bold text-red-600">R$ {flow.expense.toLocaleString('pt-BR')}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Saldo</p>
+            <p className="text-sm text-gray-500">Saldo líquido</p>
             <p className={`text-xl font-bold ${flow.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               R$ {flow.balance.toLocaleString('pt-BR')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Conciliados</p>
+            <p className="text-sm text-gray-500">Lançamentos conciliados</p>
             <p className="text-xl font-bold text-blue-600">
-              {flow.reconciledCount} / {entries.length}
+              {flow.reconciledCount} / {flow.entryCount}
             </p>
           </div>
         </div>
@@ -178,29 +270,9 @@ export function FinanceiroClient() {
         <div className="card">
           <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
             <h2 className="font-semibold">Lançamentos</h2>
-            <div className="flex gap-2 items-center">
-              <select
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className="input-field py-1.5 px-2 w-24 text-sm"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
-                  <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-                ))}
-              </select>
-              <select
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                className="input-field py-1.5 px-2 w-24 text-sm"
-              >
-                {[2024, 2025, 2026, 2027].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <button onClick={() => setShowForm(!showForm)} className="btn-primary">
-                {showForm ? 'Cancelar' : 'Registrar Entrada/Saída'}
-              </button>
-            </div>
+            <button onClick={() => setShowForm(!showForm)} className="btn-primary">
+              {showForm ? 'Cancelar' : 'Registrar Entrada/Saída'}
+            </button>
           </div>
 
           {showForm && (
@@ -309,26 +381,6 @@ export function FinanceiroClient() {
 
       {tab === 'dre' && (
         <div className="card">
-          <div className="flex gap-2 items-center mb-4">
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="input-field py-1.5 px-2 w-24"
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
-                <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-              ))}
-            </select>
-            <select
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              className="input-field py-1.5 px-2 w-24"
-            >
-              {[2024, 2025, 2026, 2027].map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
           {loadingDre ? (
             <p className="text-gray-500 py-4">Carregando DRE...</p>
           ) : dre ? (
@@ -389,73 +441,127 @@ export function FinanceiroClient() {
       )}
 
       {tab === 'conciliacao' && (
-        <div className="card">
-          <h2 className="font-semibold mb-4">Conciliação Bancária</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Marque os lançamentos que já foram conferidos com o extrato bancário.
-          </p>
-          <div className="flex gap-2 items-center mb-4">
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="input-field py-1.5 px-2 w-24"
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
-                <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-              ))}
-            </select>
-            <select
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              className="input-field py-1.5 px-2 w-24"
-            >
-              {[2024, 2025, 2026, 2027].map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+        <div className="space-y-6">
+          <div className="card overflow-x-auto">
+            <h2 className="font-semibold mb-2">Gateways vs pedidos aprovados</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Pedidos marcados como pagos no período (PIX Inter, Asaas, etc.) confrontados com lançamentos de{' '}
+              <strong>receita</strong> vinculados ao <code className="text-xs">orderId</code> no razão interno. Quando o
+              webhook só atualiza o pedido, registre a entrada manualmente ou automatize o lançamento na próxima
+              evolução.
+            </p>
+            {loadingGateway ? (
+              <p className="text-gray-500 py-4">Carregando conciliação de pedidos...</p>
+            ) : gatewayConc ? (
+              <>
+                <div className="flex flex-wrap gap-3 text-sm mb-4">
+                  <span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-800">
+                    Pagos no mês: {gatewayConc.summary.ordersPaidInPeriod}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/40">
+                    Sem lançamento de receita: {gatewayConc.summary.ordersWithoutIncomeEntry}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30">
+                    Valor alinhado ao pedido: {gatewayConc.summary.ordersWithAlignedAmount}
+                  </span>
+                </div>
+                <table className="w-full text-sm min-w-[800px]">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b">
+                      <th className="pb-2 pr-2">Pedido</th>
+                      <th className="pb-2 pr-2">Pago em</th>
+                      <th className="pb-2 pr-2">Valor</th>
+                      <th className="pb-2 pr-2">Gateway</th>
+                      <th className="pb-2 pr-2">Receitas vinc.</th>
+                      <th className="pb-2 pr-2">Valor OK</th>
+                      <th className="pb-2">Conciliado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gatewayConc.rows.map((r) => (
+                      <tr
+                        key={r.orderId}
+                        className={`border-b border-gray-100 ${
+                          r.incomeEntryCount === 0 ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''
+                        }`}
+                      >
+                        <td className="py-2 pr-2 font-mono text-xs">{r.orderId.slice(-12)}</td>
+                        <td className="py-2 pr-2 text-xs whitespace-nowrap">
+                          {r.paidAt ? new Date(r.paidAt).toLocaleString('pt-BR') : '—'}
+                        </td>
+                        <td className="py-2 pr-2">R$ {r.orderValue.toLocaleString('pt-BR')}</td>
+                        <td className="py-2 pr-2 text-xs">{r.gatewayHint}</td>
+                        <td className="py-2 pr-2">{r.incomeEntryCount}</td>
+                        <td className="py-2 pr-2">{r.matchedAmount ? 'Sim' : 'Não'}</td>
+                        <td className="py-2 pr-2">{r.incomeReconciledAll ? 'Sim' : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <p className="text-gray-500">Sem dados.</p>
+            )}
           </div>
-          {loading ? (
-            <p className="text-gray-500 py-4">Carregando...</p>
-          ) : entries.length === 0 ? (
-            <p className="text-gray-400 py-4">Nenhum lançamento neste período.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 border-b">
-                  <th className="pb-2 pr-4">Conciliado</th>
-                  <th className="pb-2 pr-4">Tipo</th>
-                  <th className="pb-2 pr-4">Categoria</th>
-                  <th className="pb-2 pr-4">Valor</th>
-                  <th className="pb-2 pr-4">Data</th>
-                  <th className="pb-2">Descrição</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((e) => (
-                  <tr key={e.id} className="border-b border-gray-100 last:border-0">
-                    <td className="py-3 pr-4">
-                      <input
-                        type="checkbox"
-                        checked={!!e.reconciled}
-                        onChange={() => toggleReconciled(e.id, !e.reconciled)}
-                        className="rounded"
-                      />
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className={e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}>
-                        {e.type === 'INCOME' ? 'Entrada' : 'Saída'}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">{e.category}</td>
-                    <td className="py-3 pr-4">R$ {Number(e.value).toLocaleString('pt-BR')}</td>
-                    <td className="py-3 pr-4">{new Date(e.date).toLocaleDateString('pt-BR')}</td>
-                    <td className="py-3">{e.description || '—'}</td>
+
+          <div className="card overflow-x-auto">
+            <h2 className="font-semibold mb-2">Lançamentos do período</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Marque como conciliado após confrontar com extrato bancário ou extrato do gateway.
+            </p>
+            {loading ? (
+              <p className="text-gray-500 py-4">Carregando...</p>
+            ) : entries.length === 0 ? (
+              <p className="text-gray-400 py-4">Nenhum lançamento neste período.</p>
+            ) : (
+              <table className="w-full text-sm min-w-[720px]">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b">
+                    <th className="pb-2 pr-4">Conciliado</th>
+                    <th className="pb-2 pr-4">Tipo</th>
+                    <th className="pb-2 pr-4">Categoria</th>
+                    <th className="pb-2 pr-4">Valor</th>
+                    <th className="pb-2 pr-4">Data</th>
+                    <th className="pb-2 pr-4">Pedido</th>
+                    <th className="pb-2">Descrição</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {entries.map((e) => (
+                    <tr key={e.id} className="border-b border-gray-100 last:border-0">
+                      <td className="py-3 pr-4">
+                        <input
+                          type="checkbox"
+                          checked={!!e.reconciled}
+                          onChange={() => toggleReconciled(e.id, !e.reconciled)}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span className={e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}>
+                          {e.type === 'INCOME' ? 'Entrada' : 'Saída'}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-4">{e.category}</td>
+                      <td className="py-3 pr-4">R$ {Number(e.value).toLocaleString('pt-BR')}</td>
+                      <td className="py-3 pr-4">{new Date(e.date).toLocaleDateString('pt-BR')}</td>
+                      <td className="py-3 pr-4 font-mono text-xs">{e.orderId ? e.orderId.slice(-10) : '—'}</td>
+                      <td className="py-3">{e.description || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
+      )}
+
+      {tab === 'vault' && <VaultIntelligenceTab month={month} year={year} />}
+
+      {tab === 'folha' && <FinanceiroPayoutTab onPayoutLiquidated={loadEntries} />}
+
+      {tab === 'contas_fiscal' && (
+        <FinanceiroContasFiscalTab month={month} year={year} onPresetExpense={presetCustoFixo} />
       )}
 
       {tab === 'projecao' && (

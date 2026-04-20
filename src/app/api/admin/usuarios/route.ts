@@ -5,13 +5,23 @@ import { hash } from 'bcryptjs'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
-import { generateNextClientId } from '@/lib/client-id-sequencial'
+import { allocateNextClientCode } from '@/lib/client-id-sequencial'
 
 const createSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
   password: z.string().min(8),
-  role: z.enum(['ADMIN', 'PRODUCER', 'DELIVERER', 'FINANCE', 'COMMERCIAL', 'CLIENT', 'MANAGER', 'PLUG_PLAY']),
+  role: z.enum([
+    'ADMIN',
+    'PRODUCER',
+    'DELIVERER',
+    'FINANCE',
+    'COMMERCIAL',
+    'CLIENT',
+    'MANAGER',
+    'PRODUCTION_MANAGER',
+    'PLUG_PLAY',
+  ]),
   phone: z.string().optional(),
 })
 
@@ -30,7 +40,7 @@ export async function GET() {
       phone: true,
       role: true,
       createdAt: true,
-      clientProfile: { select: { id: true } },
+      clientProfile: { select: { id: true, clientCode: true } },
       producerProfile: { select: { id: true } },
       delivererProfile: { select: { id: true } },
       managerProfile: { select: { id: true } },
@@ -47,6 +57,7 @@ export async function GET() {
       role: u.role,
       createdAt: u.createdAt,
       hasClientProfile: !!u.clientProfile,
+      clientCode: u.clientProfile?.clientCode ?? null,
       hasProducerProfile: !!u.producerProfile,
       hasDelivererProfile: !!u.delivererProfile,
       hasManagerProfile: !!u.managerProfile,
@@ -71,45 +82,54 @@ export async function POST(req: Request) {
     }
 
     const passwordHash = await hash(data.password, 12)
-    const user = await prisma.user.create({
-      data: {
-        email: data.email,
-        name: data.name,
-        passwordHash,
-        role: data.role,
-        phone: data.phone || null,
-      },
-      select: { id: true, email: true, name: true, role: true, createdAt: true },
-    })
 
-    if (data.role === 'CLIENT') {
-      const clientCode = await generateNextClientId()
-      await prisma.clientProfile.create({
-        data: { userId: user.id, clientCode },
+    const { user, clientCode } = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: {
+          email: data.email,
+          name: data.name,
+          passwordHash,
+          role: data.role,
+          phone: data.phone || null,
+        },
+        select: { id: true, email: true, name: true, role: true, createdAt: true },
       })
-    } else if (data.role === 'PRODUCER') {
-      await prisma.producerProfile.create({
-        data: { userId: user.id },
-      })
-    } else if (data.role === 'DELIVERER') {
-      await prisma.delivererProfile.create({
-        data: { userId: user.id },
-      })
-    } else if (data.role === 'MANAGER') {
-      await prisma.managerProfile.create({
-        data: { userId: user.id },
-      })
-    }
+
+      let code: string | null = null
+      if (data.role === 'CLIENT') {
+        code = await allocateNextClientCode(tx)
+        await tx.clientProfile.create({
+          data: { userId: u.id, clientCode: code },
+        })
+      } else if (data.role === 'PRODUCER') {
+        await tx.producerProfile.create({
+          data: { userId: u.id },
+        })
+      } else if (data.role === 'DELIVERER') {
+        await tx.delivererProfile.create({
+          data: { userId: u.id },
+        })
+      } else if (data.role === 'MANAGER') {
+        await tx.managerProfile.create({
+          data: { userId: u.id },
+        })
+      }
+
+      return { user: u, clientCode: code }
+    })
 
     await audit({
       userId: session.user.id,
       action: 'user_created',
       entity: 'User',
       entityId: user.id,
-      details: { email: user.email, role: user.role },
+      details: { email: user.email, role: user.role, clientCode: clientCode ?? undefined },
     })
 
-    return NextResponse.json(user)
+    return NextResponse.json({
+      ...user,
+      clientCode: clientCode ?? undefined,
+    })
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.errors[0].message }, { status: 400 })

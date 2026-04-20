@@ -27,6 +27,12 @@ export async function GET() {
   const reposicoes = await prisma.deliveryReposition.count({
     where: { status: { in: ['SOLICITADA', 'APROVADA'] } },
   })
+  const openRepositionGroupIds = await prisma.deliveryReposition.findMany({
+    where: { status: { in: ['SOLICITADA', 'APROVADA'] } },
+    select: { deliveryId: true },
+    distinct: ['deliveryId'],
+  })
+  const gruposComReposicaoAberta = new Set(openRepositionGroupIds.map((r) => r.deliveryId))
   const devolucoes = await prisma.deliveryReturn.count()
 
   const totalContracted = groups.reduce((s, g) => s + g.quantityContracted, 0)
@@ -42,8 +48,14 @@ export async function GET() {
   }))
 
   const receitaPendente = withMetrics.reduce((s, g) => s + (g.metrics?.receitaPendente ?? 0), 0)
+  // Alinhado ao wireframe: atraso operacional, risco médio/alto ou reposição aberta (cancelamento/reembolso).
   const receitaEmRisco = withMetrics
-    .filter((g) => g.metrics?.riscoOperacional === 'ALTO' || g.metrics?.riscoOperacional === 'MEDIO')
+    .filter(
+      (g) =>
+        g.metrics?.riscoOperacional === 'ALTO' ||
+        g.metrics?.riscoOperacional === 'MEDIO' ||
+        gruposComReposicaoAberta.has(g.id)
+    )
     .reduce((s, g) => s + (g.metrics?.receitaPendente ?? 0), 0)
 
   const porSaldoPendente = [...withMetrics]

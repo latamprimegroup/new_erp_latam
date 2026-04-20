@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -14,19 +15,47 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const hasCustomerId = searchParams.get('hasCustomerId')
 
-  const where: { clientId: { not: null }; googleAdsCustomerId?: { equals: null } | { not: null } } = {
+  const base: Prisma.StockAccountWhereInput = {
     clientId: { not: null },
+    deletedAt: null,
+    platform: 'GOOGLE_ADS',
+    OR: [{ status: 'DELIVERED' }, { deliveredAt: { not: null } }],
   }
-  if (hasCustomerId === 'true') where.googleAdsCustomerId = { not: null }
-  if (hasCustomerId === 'false') where.googleAdsCustomerId = { equals: null }
+  if (hasCustomerId === 'true') base.googleAdsCustomerId = { not: null }
+  if (hasCustomerId === 'false') base.googleAdsCustomerId = { equals: null }
 
   const accounts = await prisma.stockAccount.findMany({
-    where,
+    where: base,
     include: {
       client: { include: { user: { select: { name: true, email: true } } } },
+      manager: { include: { user: { select: { name: true, email: true } } } },
+      supplier: { select: { name: true } },
     },
-    orderBy: { deliveredAt: 'desc' },
+    orderBy: [{ deliveredAt: 'desc' }, { updatedAt: 'desc' }],
   })
 
-  return NextResponse.json(accounts)
+  const accountIds = accounts.map((a) => a.id)
+  const rmaRows =
+    accountIds.length > 0
+      ? await prisma.accountReplacementRequest.groupBy({
+          by: ['originalAccountId'],
+          where: { originalAccountId: { in: accountIds } },
+          _count: { _all: true },
+        })
+      : []
+  const rmaByAccount = Object.fromEntries(rmaRows.map((r) => [r.originalAccountId, r._count._all]))
+
+  const clientSpendGoogle: Record<string, number> = {}
+  for (const a of accounts) {
+    if (!a.clientId) continue
+    const add = Number(a.spent ?? 0)
+    clientSpendGoogle[a.clientId] = (clientSpendGoogle[a.clientId] ?? 0) + add
+  }
+
+  const accountsWithRma = accounts.map((a) => ({
+    ...a,
+    rmaHistoryCount: rmaByAccount[a.id] ?? 0,
+  }))
+
+  return NextResponse.json({ accounts: accountsWithRma, clientSpendGoogle })
 }

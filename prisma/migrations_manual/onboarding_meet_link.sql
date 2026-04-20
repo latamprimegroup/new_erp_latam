@@ -1,0 +1,8 @@
+-- Link Google Meet persistido em OnboardingMeeting (meet_link).
+-- Preferível: `npx prisma db push` ou `prisma migrate dev` a partir do schema.prisma.
+--
+-- PostgreSQL:
+-- ALTER TABLE "onboarding_meetings" ADD COLUMN IF NOT EXISTS meet_link VARCHAR(512);
+--
+-- MySQL:
+-- ALTER TABLE onboarding_meetings ADD COLUMN meet_link VARCHAR(512) NULL;

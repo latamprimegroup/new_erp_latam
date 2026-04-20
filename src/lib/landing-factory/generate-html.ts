@@ -2,6 +2,9 @@
  * Geração de HTML via IA (OpenAI/Anthropic)
  * Fallback: template estático quando API não configurada
  */
+import { injectGtmIntoHtml } from '@/lib/gtm'
+import { injectWhatsAppWidgetBeforeBodyClose } from '@/lib/joinchat-html'
+import { applyLandingInfra, type LandingInfraOptions } from '@/lib/landing-injections'
 import { buildLandingPagePrompt } from './prompt'
 import type { SanitizedBriefing } from './sanitize'
 
@@ -71,7 +74,7 @@ function extractHtml(raw: string): string {
   return raw
 }
 
-function buildStaticTemplate(briefing: SanitizedBriefing): string {
+function buildStaticTemplate(briefing: SanitizedBriefing, gtmId?: string | null): string {
   const nome = briefing.nomeFantasia || briefing.nomeEmpresa || briefing.nicho
   const wa = briefing.whatsapp
     ? `https://wa.me/55${String(briefing.whatsapp).replace(/^55/, '')}`
@@ -83,13 +86,32 @@ function buildStaticTemplate(briefing: SanitizedBriefing): string {
   const oferta = briefing.ofertaUnica || briefing.objetivo || 'Entre em contato'
   const sub = briefing.solucao || briefing.objetivo || ''
 
-  return `<!DOCTYPE html>
+  const legalName = briefing.nomeEmpresa || nome
+  const schema = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: legalName,
+    areaServed: `${briefing.cidade}-${briefing.estado}`,
+    telephone: briefing.telefone || briefing.whatsapp || undefined,
+    address: briefing.endereco
+      ? {
+          '@type': 'PostalAddress',
+          streetAddress: briefing.endereco,
+          addressLocality: briefing.cidade,
+          addressRegion: briefing.estado,
+          addressCountry: 'BR',
+        }
+      : undefined,
+  }
+
+  const raw = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="${briefing.nicho} em ${briefing.cidade} - ${nome}. ${oferta}">
   <title>${nome} - ${briefing.nicho} | ${briefing.cidade}</title>
+  <script type="application/ld+json">${JSON.stringify(schema)}</script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50">
@@ -103,6 +125,7 @@ function buildStaticTemplate(briefing: SanitizedBriefing): string {
     <section class="text-center mb-12">
       <h2 class="text-3xl font-bold text-gray-900 mb-4">${oferta}</h2>
       <p class="text-lg text-gray-600 mb-6">${sub}</p>
+      <p class="text-xs text-gray-500 mb-4">Comunicacao institucional. Sem promessas absolutas de resultado.</p>
       ${wa ? `<a href="${wa}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700">Fale conosco no WhatsApp</a>` : ''}
     </section>
     <section class="mb-12">
@@ -116,22 +139,55 @@ function buildStaticTemplate(briefing: SanitizedBriefing): string {
       <p>${nome} · ${briefing.cidade}/${briefing.estado}</p>
       ${briefing.whatsapp ? `<p>WhatsApp: ${briefing.whatsapp}</p>` : ''}
       ${briefing.horarioAtendimento ? `<p>${briefing.horarioAtendimento}</p>` : ''}
+      <p class="mt-2">Rodape legal: informacoes sujeitas a analise tecnica e comercial.</p>
       <p class="mt-4"><a href="#termos" class="underline">Termos de Uso</a> · <a href="#privacidade" class="underline">Política de Privacidade</a></p>
     </div>
   </footer>
 </body>
 </html>`
+  let out = injectGtmIntoHtml(raw, gtmId)
+  out = injectWhatsAppWidgetBeforeBodyClose(
+    out,
+    briefing.whatsapp || '',
+    briefing.nicho || briefing.nomeEmpresa || 'seus serviços'
+  )
+  return out
 }
 
-export async function generateLandingHtml(briefing: SanitizedBriefing): Promise<string> {
+export type GenerateLandingOptions = {
+  /** Container GTM do cliente (ClientProfile.gtmId); injeta tags + whatsapp_click no HTML. */
+  gtmId?: string | null
+  /** Ecossistema: Vturb, rodapé, tracking, tema */
+  infra?: LandingInfraOptions
+}
+
+export async function generateLandingHtml(
+  briefing: SanitizedBriefing,
+  options?: GenerateLandingOptions
+): Promise<string> {
+  const gtmId = options?.gtmId ?? null
   const prompt = buildLandingPagePrompt(briefing)
 
-  if (OPENAI_API) {
-    return callOpenAI(prompt)
-  }
-  if (ANTHROPIC_API) {
-    return callAnthropic(prompt)
+  const nicheLine = briefing.nicho || briefing.nomeEmpresa || 'seus serviços'
+
+  const applyInfra = (rawHtml: string) => {
+    const infra = options?.infra
+    if (!infra) return rawHtml
+    return applyLandingInfra(rawHtml, infra)
   }
 
-  return buildStaticTemplate(briefing)
+  if (OPENAI_API) {
+    const html = await callOpenAI(prompt)
+    let out = injectGtmIntoHtml(html, gtmId)
+    out = injectWhatsAppWidgetBeforeBodyClose(out, briefing.whatsapp || '', nicheLine)
+    return applyInfra(out)
+  }
+  if (ANTHROPIC_API) {
+    const html = await callAnthropic(prompt)
+    let out = injectGtmIntoHtml(html, gtmId)
+    out = injectWhatsAppWidgetBeforeBodyClose(out, briefing.whatsapp || '', nicheLine)
+    return applyInfra(out)
+  }
+
+  return applyInfra(buildStaticTemplate(briefing, gtmId))
 }

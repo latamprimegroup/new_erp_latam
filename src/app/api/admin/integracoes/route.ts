@@ -3,13 +3,27 @@
  */
 import { NextResponse } from 'next/server'
 import { requireRoles } from '@/lib/api-auth'
+import { prisma } from '@/lib/prisma'
 import { isGoogleCalendarConfigured } from '@/lib/google-calendar'
 import { isGoogleAdsConfigured } from '@/lib/google-ads'
 import { getSmsProvider } from '@/lib/sms'
 
+function isWhatsAppEnvConfigured(): boolean {
+  const url = process.env.WHATSAPP_API_URL?.trim()
+  const key = process.env.WHATSAPP_API_KEY?.trim()
+  if (!url || !key) return false
+  if (url.includes('evolution') && !process.env.WHATSAPP_INSTANCE_ID?.trim()) return false
+  return true
+}
+
 export async function GET() {
   const auth = await requireRoles(['ADMIN'])
   if (!auth.ok) return auth.response
+
+  const joinchatRow = await prisma.systemSetting.findUnique({
+    where: { key: 'joinchat_id' },
+    select: { value: true },
+  })
 
   const integracoes = [
     {
@@ -37,14 +51,14 @@ export async function GET() {
       id: 'whatsapp',
       nome: 'WhatsApp',
       descricao: 'Notificações e mensagens',
-      conectado: !!process.env.WHATSAPP_API_URL,
+      conectado: isWhatsAppEnvConfigured(),
       envVars: ['WHATSAPP_API_URL', 'WHATSAPP_API_KEY', 'WHATSAPP_INSTANCE_ID'],
     },
     {
       id: 'email',
       nome: 'Email (Resend)',
       descricao: 'Envio de emails transacionais',
-      conectado: !!process.env.RESEND_API_KEY,
+      conectado: !!(process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim()),
       envVars: ['RESEND_API_KEY', 'EMAIL_FROM'],
     },
     {
@@ -71,16 +85,46 @@ export async function GET() {
     {
       id: 'gtm',
       nome: 'Google Tag Manager',
-      descricao: 'Rastreamento e evento whatsapp_click',
+      descricao:
+        'Fallback ERP: NEXT_PUBLIC_GTM_ID. Por cliente: ClientProfile.gtm_id (Meu Perfil). Evento dataLayer: whatsapp_click.',
       conectado: !!process.env.NEXT_PUBLIC_GTM_ID,
-      envVars: ['NEXT_PUBLIC_GTM_ID'],
+      envVars: ['NEXT_PUBLIC_GTM_ID (opcional se todos usarem GTM próprio)'],
+      dashboardHref: '/dashboard/gtm-conversao',
     },
     {
       id: 'joinchat',
-      nome: 'Join.Chat',
-      descricao: 'Widget WhatsApp (config via Admin → Configurações)',
-      conectado: true, // Sempre mostra; depende de joinchat_id no SystemSetting
-      envVars: ['joinchat_id (SystemSetting)'],
+      nome: 'Join.Chat / WhatsApp widget',
+      descricao:
+        'Telefone + nicho em Configurações (global) ou Meu Perfil (cliente). Bundle legado só se não houver número válido.',
+      conectado: !!joinchatRow?.value?.trim(),
+      envVars: ['joinchat_id (opcional)', 'whatsapp_number', 'widget_niche'],
+    },
+    {
+      id: 'provisioning-cloudflare',
+      nome: 'Provisioning Engine (Cloudflare + landers)',
+      descricao:
+        'Fila de domínios em massa: zona DNS, proxy laranja, SSL strict, webhook CyberPanel/SSH. Painel: /dashboard/admin/provisioning',
+      conectado: !!process.env.CLOUDFLARE_API_TOKEN?.trim(),
+      envVars: ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'PROVISIONING_SERVER_WEBHOOK_URL', 'PROVISIONING_WEBHOOK_SECRET'],
+      dashboardHref: '/dashboard/admin/provisioning',
+    },
+    {
+      id: 'ads-ativos-guard',
+      nome: 'Ads Ativos Guard',
+      descricao:
+        'Compliance: blacklist + OpenAI + FFmpeg/Vision em VSL. OPENAI_API_KEY, GOOGLE_VISION_API_KEY, FFMPEG_PATH; webhook opcional no painel.',
+      conectado: !!process.env.OPENAI_API_KEY?.trim(),
+      envVars: ['OPENAI_API_KEY', 'GOOGLE_VISION_API_KEY', 'FFMPEG_PATH', 'GUARD_NOTIFICATION_WEBHOOK (opcional)'],
+      dashboardHref: '/dashboard/admin/guard',
+    },
+    {
+      id: 'tintim-roi-crm',
+      nome: 'TinTim.app → ROI & CRM',
+      descricao:
+        'Webhook de leads/UTM para cruzamento com vendas do ERP. Endpoint: POST /api/webhooks/tintim (Authorization: Bearer ou X-Tintim-Secret).',
+      conectado: !!process.env.TINTIM_WEBHOOK_SECRET?.trim(),
+      envVars: ['TINTIM_WEBHOOK_SECRET (recomendado em produção)'],
+      dashboardHref: '/dashboard/roi-crm',
     },
   ]
 

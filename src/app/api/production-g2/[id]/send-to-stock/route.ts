@@ -36,6 +36,7 @@ export async function POST(
       { status: 400 }
     )
   }
+  const canBePlugPlay = g2.status === 'APROVADA' && g2.firstCampaignWhiteApproved === true
 
   const result = await prisma.$transaction(async (tx) => {
     const stock = await tx.stockAccount.create({
@@ -46,7 +47,7 @@ export async function POST(
         status: 'AVAILABLE',
         googleAdsCustomerId: g2.googleAdsCustomerId || undefined,
         niche: null,
-        isPlugPlay: g2.firstCampaignWhiteApproved ?? false,
+        isPlugPlay: canBePlugPlay,
       },
     })
 
@@ -86,7 +87,7 @@ export async function POST(
       },
     })
 
-    return { stockAccountId: stock.id }
+    return { stockAccountId: stock.id, isPlugPlay: canBePlugPlay }
   })
 
   await registerG2AssetsConsumed(id, {
@@ -102,8 +103,30 @@ export async function POST(
     action: 'production_g2_sent_to_stock',
     entity: 'ProductionG2',
     entityId: id,
-    details: { codeG2: g2.codeG2, stockAccountId: result.stockAccountId },
+    details: {
+      codeG2: g2.codeG2,
+      stockAccountId: result.stockAccountId,
+      g2Status: g2.status,
+      firstWhiteCampaign: g2.firstCampaignWhiteApproved === true,
+      approvalDate: g2.approvedAt?.toISOString() ?? null,
+      plugPlayMarked: result.isPlugPlay,
+      plugPlayMarkedBy: result.isPlugPlay ? session.user!.id : null,
+    },
   })
+
+  if (result.isPlugPlay) {
+    await audit({
+      userId: session.user!.id,
+      action: 'stock_account_marked_plug_play',
+      entity: 'StockAccount',
+      entityId: result.stockAccountId,
+      details: {
+        source: 'production_g2_send_to_stock',
+        g2Id: id,
+        rule: 'g2_status_approved_and_first_white_campaign_true',
+      },
+    })
+  }
 
   notifyAdminsStockAdded(g2.codeG2, 'GOOGLE_ADS').catch(console.error)
 

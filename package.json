@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20.0.0 <21"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -19,10 +19,19 @@
     "db:studio": "prisma studio",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:seed:fresh": "prisma db push && npx tsx prisma/seed.ts",
-    "icons:generate": "node scripts/generate-icons.mjs"
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "translate:locales": "node scripts/translate-locales.mjs",
+    "deploy:verify": "npm run lint && npm run typecheck && npx prisma validate && npx prisma generate",
+    "deploy:full-check": "npm run deploy:verify && npm run build",
+    "deploy:hostinger": "node scripts/deploy-hostinger.mjs",
+    "deploy:ship": "npm run deploy:verify && node scripts/git-push-main.mjs && node scripts/deploy-hostinger.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.699.0",
+    "@aws-sdk/s3-request-presigner": "^3.699.0",
     "@ducanh2912/next-pwa": "^10.2.9",
+    "@google-cloud/storage": "^7.14.0",
+    "@monaco-editor/react": "^4.7.0",
     "@prisma/client": "^5.14.0",
     "@tanstack/react-query": "^5.28.4",
     "@testing-library/jest-dom": "^6.0.0",
@@ -34,6 +43,7 @@
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.19",
     "bcryptjs": "^2.4.3",
+    "canvas-confetti": "^1.9.4",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.35",
     "framer-motion": "^11.11.0",
@@ -41,13 +51,18 @@
     "googleapis": "^144.0.0",
     "jsdom": "^24.0.0",
     "lucide-react": "^0.460.0",
+    "monaco-editor": "^0.55.1",
     "next": "14.2.35",
     "next-auth": "^4.24.13",
+    "playwright-core": "^1.49.1",
     "postcss": "^8.4.38",
     "prisma": "^5.14.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-hook-form": "^7.72.0",
+    "react-joyride": "^3.0.2",
     "recharts": "^2.14.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.3",
     "vitest": "^2.0.0",
@@ -55,10 +70,12 @@
     "webpack": "^5.94.0",
     "zod": "^3.23.8"
   },
-  "devDependencies": {
-    "sharp": "^0.34.5"
-  },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "is-extglob": "^2.1.1",
+    "leven": "^4.1.0"
   }
 }

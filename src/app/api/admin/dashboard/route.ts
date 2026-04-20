@@ -14,23 +14,35 @@ export async function GET() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
 
+  const g2NotRemoved = { archivedAt: null, deletedAt: null } as const
+
   const [
     usersCount,
-    productionDaily,
-    productionMonthly,
+    productionDailyPa,
+    productionDailyG2,
+    productionMonthlyPa,
+    productionMonthlyG2,
     stockCritical,
     ordersPending,
     ordersCompleted,
-    deliveriesDelayed,
+    deliveriesDelayedOrder,
+    deliveriesDelayedGroup,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.productionAccount.count({ where: { createdAt: { gte: startOfDay } } }),
+    prisma.productionG2.count({ where: { createdAt: { gte: startOfDay }, ...g2NotRemoved } }),
     prisma.productionAccount.count({ where: { createdAt: { gte: startOfMonth } } }),
+    prisma.productionG2.count({ where: { createdAt: { gte: startOfMonth }, ...g2NotRemoved } }),
     prisma.stockAccount.count({ where: { status: 'CRITICAL' } }),
     prisma.order.count({ where: { status: { in: ['PENDING', 'AWAITING_PAYMENT', 'PAID', 'IN_DELIVERY', 'IN_SEPARATION'] } } }),
     prisma.order.count({ where: { status: 'DELIVERED' } }),
     prisma.delivery.count({ where: { status: 'DELAYED' } }),
+    prisma.deliveryGroup.count({ where: { status: 'ATRASADA' } }),
   ])
+
+  const productionDaily = productionDailyPa + productionDailyG2
+  const productionMonthly = productionMonthlyPa + productionMonthlyG2
+  const deliveriesDelayed = deliveriesDelayedOrder + deliveriesDelayedGroup
 
   const income = prisma.financialEntry.aggregate({
     where: { type: 'INCOME', date: { gte: startOfMonth } },

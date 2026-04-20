@@ -18,7 +18,7 @@ export async function GET() {
       where: { referenceDate: { lte: refDate } },
       orderBy: { referenceDate: 'desc' },
     }),
-    prisma.customerMetrics.findMany({ select: { ticketMedio: true, churnFlag: true } }),
+    prisma.customerMetrics.findMany({ select: { ticketMedio: true } }),
     prisma.systemSetting.findUnique({ where: { key: 'meta_lucro_12m' } }),
   ])
 
@@ -28,7 +28,6 @@ export async function GET() {
   const margemMediaPct = snapshot?.margemLiquidaPct ? Number(snapshot.margemLiquidaPct) : 40
   const ticketMedio =
     metrics.length > 0 ? metrics.reduce((s, m) => s + Number(m.ticketMedio), 0) / metrics.length : 0
-  const churnAtual = metrics.length > 0 ? (metrics.filter((m) => m.churnFlag).length / metrics.length) * 100 : 0
   const clientesAtivos = metrics.length
 
   const result = calcMeta100m({
@@ -37,7 +36,6 @@ export async function GET() {
     receitaAtual12m,
     margemMediaPct,
     ticketMedio,
-    churnAtual,
     clientesAtivos,
   })
 

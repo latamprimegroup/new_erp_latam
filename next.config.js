@@ -9,7 +9,13 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    serverComponentsExternalPackages: ['next-auth'],
+    serverComponentsExternalPackages: [
+      'next-auth',
+      '@aws-sdk/client-s3',
+      '@aws-sdk/s3-request-presigner',
+      '@google-cloud/storage',
+      'playwright-core',
+    ],
   },
   async headers() {
     const csp = [
@@ -19,6 +25,7 @@ const nextConfig = {
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https:",
       "connect-src 'self' https:",
+      "frame-src 'self' https: blob:",
       "frame-ancestors 'none'",
     ].join('; ')
     return [

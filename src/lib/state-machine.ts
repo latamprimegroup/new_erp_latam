@@ -8,7 +8,8 @@ export type Transitions<T extends string> = Record<T, T[]>
 
 /** Produção clássica */
 export const PRODUCTION_ACCOUNT_TRANSITIONS: Transitions<string> = {
-  PENDING: ['APPROVED', 'REJECTED'],
+  PENDING: ['UNDER_REVIEW', 'APPROVED', 'REJECTED'],
+  UNDER_REVIEW: ['APPROVED', 'REJECTED', 'PENDING'],
   APPROVED: [],
   REJECTED: [],
   IN_USE: ['AVAILABLE', 'DELIVERED', 'CRITICAL'],

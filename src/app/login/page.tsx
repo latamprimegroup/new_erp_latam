@@ -1,11 +1,14 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useRef, useCallback } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { TurnstileGate } from '@/components/auth/TurnstileGate'
+
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || ''
 
 function LoginForm() {
   const router = useRouter()
@@ -16,26 +19,80 @@ function LoginForm() {
   const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const turnstileRunRef = useRef<(() => Promise<string>) | null>(null)
+
+  const onTurnstileReady = useCallback((run: () => Promise<string>) => {
+    turnstileRunRef.current = run
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
 
+    let turnstileToken = ''
+    if (turnstileSiteKey) {
+      const run = turnstileRunRef.current
+      if (!run) {
+        setLoading(false)
+        setError('Carregando verificação de segurança… Aguarde um instante e tente novamente.')
+        return
+      }
+      try {
+        turnstileToken = await run()
+      } catch {
+        setLoading(false)
+        setError('Não foi possível validar o acesso humano. Atualize a página e tente de novo.')
+        return
+      }
+    }
+
     const res = await signIn('credentials', {
       email,
       password,
+      turnstileToken: turnstileToken || ' ',
+      remember: remember ? 'true' : 'false',
       redirect: false,
     })
 
     setLoading(false)
+
+    if (res?.status === 429) {
+      setError(
+        'Muitas tentativas de login a partir desta rede. Aguarde alguns minutos ou fale com o suporte.'
+      )
+      return
+    }
+
     if (res?.error) {
-      const msg =
-        String(res.error).toLowerCase().includes('muitas') ||
-        String(res.error).toLowerCase().includes('tentativa')
-        ? 'Muitas tentativas de login. Aguarde 1 minuto e tente novamente.'
-        : 'E-mail ou senha inválidos. Tente novamente.'
-      setError(msg)
+      const err = String(res.error)
+      const low = err.toLowerCase()
+      if (low.includes('muitas') || low.includes('tentativa') || low.includes('rate')) {
+        setError('Muitas tentativas de login. Aguarde e tente novamente.')
+        return
+      }
+      if (
+        low.includes('verificação') ||
+        low.includes('anti-bot') ||
+        low.includes('captcha') ||
+        low.includes('turnstile')
+      ) {
+        setError('Verificação de segurança falhou. Atualize a página e tente de novo.')
+        return
+      }
+      if (low.includes('não encontramos cadastro') || low.includes('e-mail')) {
+        setError(err.length < 200 ? err : 'Não encontramos cadastro com este e-mail.')
+        return
+      }
+      if (low.includes('senha incorreta')) {
+        setError(err.length < 200 ? err : 'Senha incorreta. Use “Esqueceu a senha?” se precisar.')
+        return
+      }
+      setError(
+        err.length > 5 && err.length < 220 && !low.includes('credentialssignin')
+          ? err
+          : 'E-mail ou senha inválidos. Verifique os dados e tente novamente.'
+      )
       return
     }
     router.push(callbackUrl)
@@ -57,9 +114,14 @@ function LoginForm() {
           <p className="text-gray-500 dark:text-gray-400">ERP – Acesse sua conta</p>
         </div>
 
+        {turnstileSiteKey ? <TurnstileGate siteKey={turnstileSiteKey} onReady={onTurnstileReady} /> : null}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm border border-red-100">
+            <div
+              className="bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-200 dark:border-red-800 px-3 py-2 rounded-lg text-sm border border-red-100"
+              role="alert"
+            >
               {error}
             </div>
           )}

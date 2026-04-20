@@ -16,6 +16,8 @@ type DashboardData = {
     emPreparacao: number
     noAr: number
     sobreviveu24h: number
+    interrompidas?: number
+    quedasDia?: number
     survivedMes?: number
     banidas: number
     taxaSucesso: number
@@ -30,7 +32,16 @@ type DashboardData = {
       percentMeta: number
       percentElite: number
     } | null
-    config?: { salarioBase: number; metaMensal: number; metaElite: number }
+    config?: {
+      salarioBase: number
+      metaMensal: number
+      metaElite: number
+      bonusBronze: number
+      bonusPrata: number
+      bonusOuro: number
+      bonusMetaBatida: number
+      bonusElite: number
+    }
   }
   byStatus: Record<string, number>
   porNicho: Array<{ nicho: string; total: number; live: number; survived: number; banned: number }>
@@ -59,7 +70,11 @@ export function PlugPlayDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
     if (!silent) setLoading(true)
     fetch('/api/black/dashboard')
       .then((r) => r.json())
-      .then(setData)
+      .then((d) => {
+        if (d && d.summary && typeof d.summary === 'object') setData(d as DashboardData)
+        else setData(null)
+      })
+      .catch(() => setData(null))
       .finally(() => setLoading(false))
   }
 
@@ -67,7 +82,7 @@ export function PlugPlayDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
     load()
   }, [])
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="animate-pulse grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         {[...Array(8)].map((_, i) => (
@@ -75,6 +90,10 @@ export function PlugPlayDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
         ))}
       </div>
     )
+  }
+
+  if (!data) {
+    return <p className="text-gray-500 py-4">Não foi possível carregar os indicadores.</p>
   }
 
   const s = data.summary
@@ -129,7 +148,12 @@ export function PlugPlayDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Salário base R$ {s.config.salarioBase.toLocaleString('pt-BR')} · 200→R$ 1.000 · 250→R$ 2.000 · 300→R$ 3.000 · 330→R$ 5.000 · 600 Elite→R$ 10.000
+            Salário base: R$ {s.config.salarioBase.toLocaleString('pt-BR')} · 200: +R${' '}
+            {s.config.bonusBronze.toLocaleString('pt-BR')} · 250: +R${' '}
+            {s.config.bonusPrata.toLocaleString('pt-BR')} · 300: +R${' '}
+            {s.config.bonusOuro.toLocaleString('pt-BR')} · {s.config.metaMensal}: +R${' '}
+            {s.config.bonusMetaBatida.toLocaleString('pt-BR')} · {s.config.metaElite} Elite: +R${' '}
+            {s.config.bonusElite.toLocaleString('pt-BR')}
           </p>
         </div>
       )}
@@ -162,28 +186,38 @@ export function PlugPlayDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
         </div>
       </div>
 
-      {/* Segunda linha: financeiro + extras */}
+      {/* Segunda linha: pagamentos legados por conta + ritmo semanal + tempo médio até ban */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="card bg-amber-50 border-amber-200">
-          <p className="text-xs font-medium text-amber-800 uppercase tracking-wide">Pendente (legado)</p>
-          <p className="text-2xl font-bold text-amber-700 mt-1">R$ {p.totalPending.toLocaleString('pt-BR')}</p>
+        <div className="card bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/40">
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-200 uppercase tracking-wide">
+            {isAdmin ? 'Pendente (líquido)' : 'Pendente (legado)'}
+          </p>
+          <p className="text-2xl font-bold text-amber-700 dark:text-amber-300 mt-1">R$ {p.totalPending.toLocaleString('pt-BR')}</p>
           {p.countPending > 0 && (
-            <p className="text-xs text-amber-600 mt-1">{p.countPending} conta(s) — pagamento antigo</p>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              {isAdmin
+                ? `${p.countPending} conta(s)`
+                : `${p.countPending} conta(s) — pagamento antigo`}
+            </p>
           )}
         </div>
-        <div className="card bg-green-50 border-green-200">
-          <p className="text-xs font-medium text-green-800 uppercase tracking-wide">Já pago (legado)</p>
-          <p className="text-2xl font-bold text-green-700 mt-1">R$ {p.totalPaid.toLocaleString('pt-BR')}</p>
-          <p className="text-xs text-gray-500 mt-1">Novo: salário + bônus por meta</p>
+        <div className="card bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800/40">
+          <p className="text-xs font-medium text-green-800 dark:text-green-200 uppercase tracking-wide">
+            {isAdmin ? 'Já pago (líquido)' : 'Já pago (legado)'}
+          </p>
+          <p className="text-2xl font-bold text-green-700 dark:text-green-300 mt-1">R$ {p.totalPaid.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {isAdmin ? 'Nota: salário + bônus por meta' : 'Novo: salário + bônus por meta'}
+          </p>
         </div>
         <div className="card">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Últimos 7 dias</p>
-          <p className="text-2xl font-bold text-[#1F2937] mt-1">{s.ultimos7Dias}</p>
+          <p className="text-2xl font-bold text-[#1F2937] dark:text-white mt-1">{s.ultimos7Dias}</p>
           <p className="text-xs text-gray-500 mt-1">Operações criadas</p>
         </div>
         <div className="card">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Tempo médio até ban</p>
-          <p className="text-2xl font-bold text-[#1F2937] mt-1">
+          <p className="text-2xl font-bold text-[#1F2937] dark:text-white mt-1">
             {s.tempoMedioBanHoras != null ? `${s.tempoMedioBanHoras}h` : '—'}
           </p>
           <p className="text-xs text-gray-500 mt-1">Das contas banidas</p>

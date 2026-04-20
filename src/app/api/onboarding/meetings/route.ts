@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
   const from = req.nextUrl.searchParams.get('from')
   const to = req.nextUrl.searchParams.get('to')
   const clientId = req.nextUrl.searchParams.get('clientId')
+  const order = req.nextUrl.searchParams.get('order')
 
   const where: Record<string, unknown> = {}
   if (from || to) {
@@ -39,11 +40,13 @@ export async function GET(req: NextRequest) {
   const meetings = await prisma.onboardingMeeting.findMany({
     where,
     include: {
-      client: { include: { user: { select: { name: true, email: true } } } },
+      client: {
+        include: { user: { select: { name: true, email: true } } },
+      },
       participants: { include: { user: { select: { id: true, name: true, email: true } } } },
       createdBy: { select: { name: true } },
     },
-    orderBy: { scheduledAt: 'asc' },
+    orderBy: { scheduledAt: order === 'desc' ? 'desc' : 'asc' },
   })
 
   return NextResponse.json(meetings)
@@ -69,6 +72,7 @@ export async function POST(req: NextRequest) {
     const end = new Date(start.getTime() + data.durationMinutes * 60 * 1000)
 
     let googleEventId: string | null = null
+    let meetLinkFromCalendar: string | null = null
     if (isGoogleCalendarConfigured()) {
       const attendees = await prisma.user.findMany({
         where: { id: { in: data.participantIds } },
@@ -86,6 +90,7 @@ export async function POST(req: NextRequest) {
         attendees: attendeeEmails.length > 0 ? attendeeEmails : undefined,
       })
       googleEventId = calEvent?.id ?? null
+      meetLinkFromCalendar = calEvent?.hangoutLink ?? null
     }
 
     const meeting = await prisma.onboardingMeeting.create({
@@ -96,6 +101,7 @@ export async function POST(req: NextRequest) {
         scheduledAt: start,
         durationMinutes: data.durationMinutes,
         googleCalendarEventId: googleEventId,
+        meetLink: meetLinkFromCalendar,
         createdById: auth.session!.user!.id,
         participants: {
           create: data.participantIds.map((userId) => ({ userId })),
@@ -112,7 +118,8 @@ export async function POST(req: NextRequest) {
       meeting.id,
       client.user.name || client.user.email,
       meeting.scheduledAt,
-      meeting.title
+      meeting.title,
+      meetLinkFromCalendar
     )
 
     return NextResponse.json(meeting)

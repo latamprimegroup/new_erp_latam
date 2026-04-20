@@ -9,14 +9,16 @@ export async function notifyOnboardingParticipants(
   meetingId: string,
   clientName: string,
   scheduledAt: Date,
-  title: string
+  title: string,
+  meetLink?: string | null
 ): Promise<void> {
   const dateStr = scheduledAt.toLocaleString('pt-BR', {
     dateStyle: 'short',
     timeStyle: 'short',
   })
   const pushTitle = '📅 Onboarding agendado'
-  const pushBody = `${title} — ${clientName} em ${dateStr}`
+  const meetSuffix = meetLink?.trim() ? ` · Meet: ${meetLink.trim()}` : ''
+  const pushBody = `${title} — ${clientName} em ${dateStr}${meetSuffix}`
   const link = `/dashboard/onboarding?meeting=${meetingId}`
 
   for (const userId of participantUserIds) {

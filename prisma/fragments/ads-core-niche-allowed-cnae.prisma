@@ -1,0 +1,17 @@
+// Fragmento para mesclar em schema.prisma (após `git checkout HEAD -- prisma/schema.prisma`):
+//
+// 1) No model AdsCoreNiche, adicione a relação:
+//    allowedCnaes         AdsCoreNicheAllowedCnae[]
+//
+// 2) Cole o model abaixo após AdsCoreNiche:
+
+model AdsCoreNicheAllowedCnae {
+  id      String       @id @default(cuid())
+  nicheId String       @map("nicho_id")
+  niche   AdsCoreNiche @relation(fields: [nicheId], references: [id], onDelete: Cascade)
+  code    String       @db.VarChar(20)
+
+  @@unique([nicheId, code])
+  @@index([nicheId])
+  @@map("ads_core_niche_allowed_cnaes")
+}

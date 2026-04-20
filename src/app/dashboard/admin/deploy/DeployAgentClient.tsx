@@ -22,7 +22,7 @@ const STEP_LABELS: Record<string, string> = {
   DB_CONNECT: 'Conectando ao banco',
   DB_MIGRATE: 'Criando banco de dados',
   DB_SEED: 'Criando administrador',
-  VALIDATE: 'Validando sistema',
+  VALIDATE: 'Marcar produção ativa',
   DONE: 'Concluído',
 }
 
@@ -116,14 +116,15 @@ export function DeployAgentClient() {
     )
   }
 
-  const showSimpleMode = !status?.productionActive && status?.canDeploy
+  /** Assistente visível até produção ativa; inclui falhas de .env/DB (canDeploy false). */
+  const showSetupWizard = !!status && !status.productionActive
   const needsMigrate = status?.nextStep === 'DB_MIGRATE'
   const needsSeed = status?.nextStep === 'DB_SEED'
+  const needsValidate = status?.nextStep === 'VALIDATE'
 
   return (
     <div className="space-y-6">
-      {/* Modo Simples - Botão único */}
-      {showSimpleMode && (
+      {showSetupWizard && (
         <div className="card bg-gradient-to-br from-primary-50 to-white border-2 border-primary-200">
           <h2 className="text-lg font-semibold text-slate-800 mb-2">
             Colocar ERP no Ar
@@ -155,7 +156,7 @@ export function DeployAgentClient() {
             </div>
           )}
 
-          {needsMigrate && (
+          {needsMigrate && status?.canDeploy && (
             <button
               onClick={runMigrate}
               disabled={action === 'migrate'}
@@ -165,6 +166,12 @@ export function DeployAgentClient() {
                 ? 'Criando banco de dados…'
                 : 'Criar banco de dados'}
             </button>
+          )}
+
+          {needsMigrate && !status?.canDeploy && (
+            <p className="text-sm text-amber-700">
+              Corrija as variáveis de ambiente ou a conexão com o banco antes de criar as tabelas.
+            </p>
           )}
 
           {needsSeed && (
@@ -208,10 +215,20 @@ export function DeployAgentClient() {
             </form>
           )}
 
-          {status?.productionActive && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
-              <p className="text-emerald-700 font-medium text-lg">ERP está no ar com sucesso!</p>
-              <p className="text-emerald-600 text-sm mt-1">Sistema em produção ativa</p>
+          {needsValidate && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                Schema e administrador prontos. Marque produção ativa quando o ERP estiver liberado para operação comercial
+                (data/hora registradas para auditoria).
+              </p>
+              <button
+                type="button"
+                onClick={() => void runComplete()}
+                disabled={action === 'complete'}
+                className="btn-primary w-full py-4 text-lg"
+              >
+                {action === 'complete' ? 'Registrando…' : 'Marcar produção ativa'}
+              </button>
             </div>
           )}
         </div>

@@ -6,22 +6,29 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { generateLandingHtml } from '@/lib/landing-factory/generate-html'
+import { suggestComplianceFooter } from '@/lib/landing-injections'
 
-async function getClientId(session: { user?: { id?: string } }): Promise<string | null> {
+async function getClientContext(session: { user?: { id?: string } }) {
   if (!session?.user?.id) return null
-  const client = await prisma.clientProfile.findUnique({
+  return prisma.clientProfile.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, whatsapp: true },
+    select: {
+      id: true,
+      whatsapp: true,
+      gtmId: true,
+      globalTrackingScript: true,
+      complianceFooterDefault: true,
+    },
   })
-  return client?.id ?? null
 }
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const clientId = await getClientId(session)
-  if (!clientId) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 403 })
+  const clientCtx = await getClientContext(session)
+  if (!clientCtx) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 403 })
+  const clientId = clientCtx.id
 
   let body: { briefingId?: string } = {}
   try {
@@ -42,6 +49,8 @@ export async function POST(req: NextRequest) {
   if (!briefing) {
     return NextResponse.json({ error: 'Briefing não encontrado' }, { status: 404 })
   }
+
+  const templateMode: 'WHITE' | 'BLACK' = briefing.templateMode === 'BLACK' ? 'BLACK' : 'WHITE'
 
   const clean = {
     nomeEmpresa: briefing.nomeEmpresa,
@@ -69,9 +78,32 @@ export async function POST(req: NextRequest) {
     dor: briefing.dor,
     solucao: briefing.solucao,
     ofertaUnica: briefing.ofertaUnica,
+    templateMode,
+    vturbEmbed: briefing.vturbEmbed,
+    footerHtml: briefing.footerHtml,
   }
 
-  const html = await generateLandingHtml(clean)
+  const footerEffective =
+    briefing.footerHtml?.trim() ||
+    clientCtx.complianceFooterDefault?.trim() ||
+    suggestComplianceFooter({
+      nomeEmpresa: briefing.nomeEmpresa,
+      cnpj: briefing.cnpj,
+      cidade: briefing.cidade,
+      estado: briefing.estado,
+    })
+
+  const trackingMerged = [clientCtx.globalTrackingScript].filter(Boolean).join('\n')
+
+  const html = await generateLandingHtml(clean, {
+    gtmId: clientCtx.gtmId,
+    infra: {
+      templateMode,
+      vturbEmbed: briefing.vturbEmbed,
+      footerHtml: footerEffective,
+      trackingScript: trackingMerged || null,
+    },
+  })
 
   const page = await prisma.landingPage.create({
     data: {
@@ -80,6 +112,10 @@ export async function POST(req: NextRequest) {
       html,
       whatsapp: briefing.whatsapp,
       status: 'GERADO',
+      templateMode,
+      vturbEmbed: briefing.vturbEmbed,
+      footerHtml: footerEffective,
+      pageTrackingScript: null,
     },
   })
 

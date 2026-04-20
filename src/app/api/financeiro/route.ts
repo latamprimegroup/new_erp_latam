@@ -35,7 +35,7 @@ export async function GET(req: Request) {
   const end = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59)
   const where = { date: { gte: start, lte: end } }
 
-  const [entries, total] = await Promise.all([
+  const [entries, total, reconciledInPeriod] = await Promise.all([
     prisma.financialEntry.findMany({
       where,
       include: { order: { select: { id: true } } },
@@ -44,9 +44,8 @@ export async function GET(req: Request) {
       take: limit,
     }),
     prisma.financialEntry.count({ where }),
+    prisma.financialEntry.count({ where: { ...where, reconciled: true } }),
   ])
-
-  const reconciledCount = entries.filter((e) => e.reconciled).length
 
   const totals = await prisma.financialEntry.groupBy({
     by: ['type'],
@@ -65,7 +64,8 @@ export async function GET(req: Request) {
       income: Number(income),
       expense: Number(expense),
       balance: Number(income) - Number(expense),
-      reconciledCount,
+      reconciledCount: reconciledInPeriod,
+      entryCount: total,
     },
   })
 }

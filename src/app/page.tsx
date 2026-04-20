@@ -1,8 +1,13 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { HomeStockTeaser } from '@/components/home/HomeStockTeaser'
+import { HomeWhatsAppFab } from '@/components/home/HomeWhatsAppFab'
 
 export default function HomePage() {
+  const homeNews = process.env.NEXT_PUBLIC_HOME_NEWS?.trim()
+  const waSupport = process.env.NEXT_PUBLIC_WHATSAPP_SUPORTE?.trim()
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-8 bg-ads-offwhite dark:bg-ads-navy relative overflow-hidden">
       <div className="absolute top-4 right-4">
@@ -23,6 +28,14 @@ export default function HomePage() {
         <p className="text-slate-600 dark:text-gray-400 mb-10 text-lg">
           Sistema de gestão de produção, estoque, vendas, entregas e financeiro
         </p>
+        {homeNews ? (
+          <div className="mb-8 rounded-xl border border-cyan-500/30 bg-cyan-500/5 px-4 py-3 text-left text-sm text-slate-700 dark:text-cyan-100/90 max-w-xl mx-auto">
+            <p className="text-[10px] uppercase tracking-wider text-cyan-600 dark:text-cyan-400 font-semibold mb-1">
+              Novidades do sistema
+            </p>
+            <p className="text-slate-600 dark:text-gray-300">{homeNews}</p>
+          </div>
+        ) : null}
         <div className="flex gap-4 justify-center flex-wrap">
           <Link href="/login" className="btn-primary">
             Acessar Sistema
@@ -41,7 +54,14 @@ export default function HomePage() {
             Primeira instalação
           </Link>
         </p>
+        <HomeStockTeaser />
       </div>
+      {waSupport ? (
+        <HomeWhatsAppFab
+          phoneE164={waSupport}
+          prefilledMessage="Olá! Preciso de ajuda com o ERP Ads Ativos (acesso ou cadastro)."
+        />
+      ) : null}
     </main>
   )
 }

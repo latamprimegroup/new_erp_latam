@@ -7,6 +7,16 @@ import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
 import { computeDeliveryStatus } from '@/lib/delivery-group-utils'
 import { getGroupMetrics } from '@/lib/delivery-metrics'
+import { notifyDeliveryGroupProgress } from '@/lib/notifications/delivery-tracker'
+
+const bottleneckEnum = z.enum([
+  'AGUARDANDO_PRODUCAO',
+  'AGUARDANDO_URL',
+  'PRODUCAO_EM_ANDAMENTO',
+  'AGUARDANDO_CLIENTE',
+  'EM_VALIDACAO',
+  'NENHUM',
+])
 
 const updateSchema = z.object({
   quantityDelivered: z.number().int().min(0).optional(),
@@ -15,6 +25,9 @@ const updateSchema = z.object({
     'FINALIZADA', 'ATRASADA', 'EM_REPOSICAO', 'CANCELADA',
   ]).optional(),
   expectedCompletionAt: z.string().optional().nullable(),
+  observacoesProducao: z.string().max(8000).optional().nullable(),
+  operationalBottleneck: bottleneckEnum.optional(),
+  trackerUrgent: z.boolean().optional(),
 })
 
 export async function GET(
@@ -24,7 +37,7 @@ export async function GET(
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL']
+  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
@@ -73,7 +86,7 @@ export async function PATCH(
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL']
+  const roles = ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
@@ -95,6 +108,7 @@ export async function PATCH(
     const data = updateSchema.parse(body)
 
     const updateData: Record<string, unknown> = {}
+    const previousDelivered = delivery.quantityDelivered
 
     if (data.quantityDelivered !== undefined) {
       if (data.quantityDelivered < delivery.quantityDelivered) {
@@ -116,6 +130,16 @@ export async function PATCH(
       updateData.expectedCompletionAt = data.expectedCompletionAt
         ? new Date(data.expectedCompletionAt)
         : null
+    }
+
+    if (data.observacoesProducao !== undefined) {
+      updateData.observacoesProducao = data.observacoesProducao
+    }
+    if (data.operationalBottleneck !== undefined) {
+      updateData.operationalBottleneck = data.operationalBottleneck
+    }
+    if (data.trackerUrgent !== undefined) {
+      updateData.trackerUrgent = data.trackerUrgent
     }
 
     if (data.status !== undefined) {
@@ -141,6 +165,10 @@ export async function PATCH(
       )
       updateData.status = autoStatus
       if (autoStatus === 'FINALIZADA') updateData.completedAt = new Date()
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      updateData.lastUpdatedAt = new Date()
     }
 
     const updated = await prisma.deliveryGroup.update({
@@ -170,6 +198,13 @@ export async function PATCH(
       entityId: id,
       details: { changes: Object.keys(updateData) },
     })
+
+    if (
+      data.quantityDelivered !== undefined &&
+      updated.quantityDelivered > previousDelivered
+    ) {
+      await notifyDeliveryGroupProgress(id, previousDelivered, updated.quantityDelivered).catch(() => {})
+    }
 
     return NextResponse.json({
       ...updated,

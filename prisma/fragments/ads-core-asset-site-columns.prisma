@@ -1,0 +1,4 @@
+// Mesclar no model AdsCoreAsset (após restaurar schema.prisma completo):
+//
+//   congruenciaCheck   Boolean  @default(false) @map("congruencia_check")
+//   historicoUrls      Json?    @map("historico_urls") // array de { at, userId, old, new }

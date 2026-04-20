@@ -16,14 +16,17 @@ const ROLE_LABELS: Record<string, string> = {
   CLIENT: 'Cliente',
   MANAGER: 'Gestor',
   PLUG_PLAY: 'Plug & Play',
+  PRODUCTION_MANAGER: 'Gerente produção',
 }
 
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
+  'ads-core': 'ADS CORE',
   producao: 'Produção',
   estoque: 'Estoque',
   base: 'Base',
   vendas: 'Vendas',
+  commercial: 'Pulmão Comercial',
   entregas: 'Entregas',
   financeiro: 'Financeiro',
   saques: 'Saques',
@@ -40,6 +43,7 @@ const LABELS: Record<string, string> = {
   config: 'Configurações',
   fornecedores: 'Fornecedores',
   relatorios: 'Relatórios',
+  'roi-crm': 'ROI & CRM',
   cliente: 'Minha Área',
   pesquisar: 'Pesquisar',
   compras: 'Compras',

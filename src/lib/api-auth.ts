@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from './auth'
+import { isGlobalKillSwitchActive } from './kill-switch'
 
 export type Role = 'ADMIN' | 'PRODUCER' | 'DELIVERER' | 'FINANCE' | 'COMMERCIAL' | 'CLIENT' | 'MANAGER' | 'PRODUCTION_MANAGER' | 'PLUG_PLAY'
 
@@ -38,6 +39,18 @@ export async function requireAuth(): Promise<RequireAuthResult> {
     return {
       ok: false,
       response: NextResponse.json({ error: 'Não autorizado' }, { status: 401 }),
+    }
+  }
+  if (session.user.role !== 'ADMIN') {
+    const paused = await isGlobalKillSwitchActive()
+    if (paused) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Sistema em pausa operacional (kill switch). Contate o administrador.' },
+          { status: 503 }
+        ),
+      }
     }
   }
   return { ok: true, session: session as AuthSession }

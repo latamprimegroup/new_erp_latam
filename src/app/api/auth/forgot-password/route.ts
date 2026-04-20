@@ -27,7 +27,17 @@ export async function POST(req: Request) {
       data: { email, token, expiresAt },
     })
 
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    let requestOrigin = ''
+    try {
+      requestOrigin = new URL(req.url).origin
+    } catch {
+      /* ignore */
+    }
+    const baseUrl =
+      process.env.NEXTAUTH_URL?.trim() ||
+      process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+      requestOrigin ||
+      'http://localhost:3000'
     const resetLink = `${baseUrl}/redefinir-senha?token=${token}`
 
     // TODO: enviar e-mail com resetLink (nodemailer, Resend, etc.)

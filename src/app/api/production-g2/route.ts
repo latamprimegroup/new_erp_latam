@@ -47,9 +47,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const { page, limit, skip } = getPaginationParams(searchParams)
   const status = searchParams.get('status')
-  const creatorId = searchParams.get('creatorId')
+  let creatorId = searchParams.get('creatorId')
   const clientId = searchParams.get('clientId')
   const currency = searchParams.get('currency')
+
+  if (auth.session.user?.role === 'PRODUCER') {
+    creatorId = auth.session.user.id
+  }
 
   const where: Record<string, unknown> = { archivedAt: null, deletedAt: null }
   if (status) where.status = status

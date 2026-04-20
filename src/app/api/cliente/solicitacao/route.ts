@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { notifyStakeholdersNewAccountSolicitation } from '@/lib/notifications/admin-events'
+import { sendTelegramClientSolicitation } from '@/lib/telegram-sales'
 
 const schema = z.object({
   quantity: z.number().int().positive(),
@@ -57,13 +59,28 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    void notifyStakeholdersNewAccountSolicitation(
+      session.user?.email ?? null,
+      data.quantity,
+      data.product,
+      data.accountType,
+    ).catch((e) => console.error('notifyStakeholdersNewAccountSolicitation', e))
+
+    void sendTelegramClientSolicitation({
+      clientEmail: session.user?.email ?? null,
+      quantity: data.quantity,
+      product: data.product,
+      accountType: data.accountType,
+      country: data.country ?? null,
+    })
+
     const user = await prisma.user.findUnique({
       where: { id: session.user!.id },
       select: { email: true },
     })
 
     const whatsappMsg = data.referenceOrderId
-      ? `Olá! Sou ${user?.email || ''}. Gostaria de repetir minha última compra:\n• ${data.quantity} conta(s) - ${data.product} (${data.accountType})\n${data.notes ? `Obs: ${data.notes}` : ''}`
+      ? `Olá! Sou ${user?.email || ''}. Gostaria de repetir minha última compra:\n• ${data.quantity} conta(s) - ${data.product} (${data.accountType})\n${data.country ? `• País: ${data.country}\n` : ''}${data.notes ? `Obs: ${data.notes}` : ''}`
       : `Olá! Sou ${user?.email || ''}. Gostaria de solicitar novas contas:\n• Quantidade: ${data.quantity}\n• Produto: ${data.product}\n• Tipo: ${data.accountType}\n${data.country ? `• País: ${data.country}\n` : ''}${data.notes ? `Obs: ${data.notes}` : ''}`
 
     const whatsappNumber = process.env.WHATSAPP_COMERCIAL || '5511999999999'

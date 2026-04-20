@@ -11,11 +11,16 @@ import {
   Search,
   LogOut,
   Menu,
+  Siren,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CommandPalette } from './CommandPalette'
 import { ThemeToggle } from './ThemeToggle'
 import { NotificationsBell } from './NotificationsBell'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { ClientHeaderGamification } from './cliente/ClientHeaderGamification'
+import { ClientPatenteLevelUp } from './cliente/ClientPatenteLevelUp'
+import { useDashboardI18n } from '@/contexts/DashboardI18nContext'
 import { getModulesForRole, getActiveNavHref } from '@/lib/nav-modules'
 import { getNavIcon } from '@/lib/nav-icons'
 
@@ -28,6 +33,7 @@ const ROLE_LABELS: Record<string, string> = {
   CLIENT: 'Cliente',
   MANAGER: 'Gestor',
   PLUG_PLAY: 'Plug & Play',
+  PRODUCTION_MANAGER: 'Gerente produção',
 }
 
 export function ShellEnterprise({
@@ -37,6 +43,7 @@ export function ShellEnterprise({
   user: { name?: string | null; email?: string | null; role?: string }
   children: React.ReactNode
 }) {
+  const { t } = useDashboardI18n()
   const pathname = usePathname()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -45,6 +52,7 @@ export function ShellEnterprise({
 
   return (
     <div className="min-h-screen flex bg-ads-grey-pale dark:bg-ads-navy">
+      {user.role === 'CLIENT' ? <ClientPatenteLevelUp /> : null}
       <CommandPalette userRole={user.role} />
 
       {/* Sidebar: light = fundo claro | dark = navy + quarter-circle */}
@@ -73,7 +81,7 @@ export function ShellEnterprise({
             type="button"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="p-2 rounded-lg text-gray-600 dark:text-white/70 hover:bg-gray-100 dark:hover:bg-white/10 lg:flex hidden"
-            aria-label={sidebarCollapsed ? 'Expandir' : 'Recolher'}
+            aria-label={sidebarCollapsed ? t('shell.expandSidebar') : t('shell.collapseSidebar')}
           >
             {sidebarCollapsed ? <PanelLeft className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
           </button>
@@ -99,12 +107,28 @@ export function ShellEnterprise({
                   const Icon = getNavIcon(m.icon)
                   return <Icon className="w-4 h-4 shrink-0" />
                 })()}
-                {!sidebarCollapsed && <span className="truncate">{m.label}</span>}
+                {!sidebarCollapsed && (
+                  <span className="truncate">{m.labelKey ? t(m.labelKey) : m.label}</span>
+                )}
               </Link>
             )
             })
           })()}
         </nav>
+
+        {user.role === 'CLIENT' ? (
+          <div className="shrink-0 px-3 pb-2">
+            <Link
+              href="/dashboard/cliente/war-room-live"
+              onClick={() => setMobileOpen(false)}
+              title={sidebarCollapsed ? t('shell.sosContingencia') : undefined}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold border border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-200 hover:bg-rose-500/20 transition-colors"
+            >
+              <Siren className="w-4 h-4 shrink-0" />
+              {!sidebarCollapsed ? <span className="truncate">{t('shell.sosContingencia')}</span> : null}
+            </Link>
+          </div>
+        ) : null}
 
         <div className="shrink-0 p-3 border-t border-gray-200 dark:border-white/10">
           {!sidebarCollapsed && (
@@ -115,7 +139,7 @@ export function ShellEnterprise({
             className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-white/80 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <LogOut className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && <span>Sair</span>}
+            {!sidebarCollapsed && <span>{t('shell.logout')}</span>}
           </button>
         </div>
       </aside>
@@ -134,7 +158,7 @@ export function ShellEnterprise({
             type="button"
             onClick={() => setMobileOpen(true)}
             className="lg:hidden p-2 -ml-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
-            aria-label="Menu"
+            aria-label={t('shell.menu')}
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -147,17 +171,23 @@ export function ShellEnterprise({
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-200 dark:border-white/15"
           >
             <Search className="w-4 h-4" />
-            <span className="hidden sm:inline">Buscar...</span>
+            <span className="hidden sm:inline">{t('shell.search')}</span>
             <kbd className="hidden sm:inline px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-white/10 rounded">
               ⌘K
             </kbd>
           </button>
-          <div className="flex items-center gap-2">
-            <span className="hidden sm:block text-sm font-medium text-gray-900 dark:text-white">
+          <div className="flex items-center gap-2 min-w-0">
+            <LanguageSwitcher />
+            <span className="hidden sm:block text-sm font-medium text-gray-900 dark:text-white truncate max-w-[min(200px,40vw)]">
               {user.name || user.email}
             </span>
-            <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">
-              {user.role ? ROLE_LABELS[user.role] || user.role : ''}
+            {user.role === 'CLIENT' ? <ClientHeaderGamification /> : null}
+            <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 shrink-0">
+              {user.role === 'CLIENT'
+                ? t('shell.roleClient')
+                : user.role
+                  ? ROLE_LABELS[user.role] || user.role
+                  : ''}
             </span>
             <ThemeToggle />
             <NotificationsBell />
