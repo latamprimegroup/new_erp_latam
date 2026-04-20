@@ -26,6 +26,8 @@ const createSchema = z.object({
   // Modo 2: valores manuais (legado)
   email: z.union([z.string().email(), z.literal('')]).optional(),
   cnpj: z.string().optional(),
+  // Senha de acesso à conta
+  password: z.string().optional(),
 })
 
 export async function GET(req: Request) {
@@ -231,6 +233,7 @@ export async function POST(req: Request) {
         g2ApprovalCode: data.g2ApprovalCode || null,
         siteUrl: data.siteUrl || null,
         cnpjBizLink: data.cnpjBizLink || null,
+        passwordPlain: data.password || null,
       },
       include: { producer: { select: { name: true } } },
     })

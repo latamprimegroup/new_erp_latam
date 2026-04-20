@@ -6,7 +6,7 @@ import { audit } from '@/lib/audit'
 import { notifyAdminsProductionAccountApproved } from '@/lib/notifications/admin-events'
 
 const bodySchema = z.object({
-  action: z.enum(['approve', 'reject']),
+  action: z.enum(['approve', 'reject', 'analyze']),
   rejectionReason: z.string().min(1).optional(),
   rejectionReasonCode: z.string().optional(), // DOC_INVALIDO, EMAIL_BLOQUEADO, CNPJ_INVALIDO, etc.
 })
@@ -29,7 +29,26 @@ export async function PATCH(
       include: { producer: { select: { name: true } } },
     })
     if (!production) return NextResponse.json({ error: 'Produção não encontrada' }, { status: 404 })
-    if (production.status !== 'PENDING') {
+
+    // Ação: marcar em análise (apenas contas pendentes)
+    if (action === 'analyze') {
+      if (production.status !== 'PENDING') {
+        return NextResponse.json({ error: 'Apenas contas pendentes podem ser marcadas em análise' }, { status: 400 })
+      }
+      await prisma.productionAccount.update({
+        where: { id },
+        data: { status: 'IN_ANALYSIS' },
+      })
+      await audit({
+        userId: session.user.id,
+        action: 'production_in_analysis',
+        entity: 'ProductionAccount',
+        entityId: id,
+      })
+      return NextResponse.json({ ok: true, status: 'IN_ANALYSIS' })
+    }
+
+    if (production.status !== 'PENDING' && production.status !== 'IN_ANALYSIS') {
       return NextResponse.json({ error: 'Conta já foi aprovada ou rejeitada' }, { status: 400 })
     }
 

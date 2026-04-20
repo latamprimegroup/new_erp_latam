@@ -12,10 +12,11 @@ const updateSchema = z.object({
   currency: z.string().max(5).optional(),
   a2fCode: z.string().optional().nullable(),
   g2ApprovalCode: z.string().optional().nullable(),
-  siteUrl: z.string().optional(),
-  cnpjBizLink: z.string().optional(),
-  email: z.union([z.string().email(), z.literal('')]).optional(),
-  cnpj: z.string().optional(),
+  siteUrl: z.string().optional().nullable(),
+  cnpjBizLink: z.string().optional().nullable(),
+  email: z.union([z.string().email(), z.literal('')]).optional().nullable(),
+  cnpj: z.string().optional().nullable(),
+  password: z.string().optional().nullable(),
 })
 
 export async function PATCH(
@@ -36,8 +37,8 @@ export async function PATCH(
     include: { producer: true },
   })
   if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
-  if (account.status !== 'PENDING') {
-    return NextResponse.json({ error: 'Só é possível editar contas pendentes (em produção)' }, { status: 400 })
+  if (account.status !== 'PENDING' && account.status !== 'IN_ANALYSIS') {
+    return NextResponse.json({ error: 'Só é possível editar contas pendentes ou em análise' }, { status: 400 })
   }
 
   const isProducer = account.producerId === session.user.id
@@ -65,6 +66,7 @@ export async function PATCH(
     if (data.g2ApprovalCode !== undefined) updateData.g2ApprovalCode = data.g2ApprovalCode || null
     if (data.siteUrl !== undefined) updateData.siteUrl = data.siteUrl || null
     if (data.cnpjBizLink !== undefined) updateData.cnpjBizLink = data.cnpjBizLink || null
+    if (data.password !== undefined) updateData.passwordPlain = data.password || null
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: 'Nenhum campo para atualizar' }, { status: 400 })

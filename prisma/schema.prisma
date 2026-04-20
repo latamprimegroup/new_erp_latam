@@ -407,6 +407,7 @@ enum AccountPlatform {
 
 enum AccountStatus {
   PENDING
+  IN_ANALYSIS
   APPROVED
   REJECTED
   IN_USE
@@ -440,6 +441,7 @@ model ProductionAccount {
   siteUrl             String?        @map("site_url") @db.Text
   cnpjBizLink         String?        @map("cnpj_biz_link") @db.Text
   cnpjPdfUrl          String?        @map("cnpj_pdf_url") @db.Text // Path ou URL do PDF
+  passwordPlain       String?        @map("password_plain") @db.Text // Senha de acesso à conta
 
   // Referências aos dados consumidos (unicidade - nunca reutilizar)
   emailId             String?        @unique @map("email_id")
