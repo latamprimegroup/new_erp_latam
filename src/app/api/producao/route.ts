@@ -16,7 +16,7 @@ const ACTIVE_PROD_STATUSES = ['PENDING', 'UNDER_REVIEW', 'APPROVED'] as const
 
 function duplicateGoogleAccountMsg(collaboratorName: string | null) {
   const nome = collaboratorName?.trim()
-  return `Esta conta j├í foi produzida por ${nome || 'outro colaborador'}.`
+  return `Esta conta já foi produzida por ${nome || 'outro colaborador'}.`
 }
 
 async function findActiveProductionByGoogleCustomerId(formattedTenDigit: string, normalizedDigits: string) {
@@ -35,11 +35,11 @@ async function findActiveProductionByGoogleCustomerId(formattedTenDigit: string,
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'N├úo autorizado' }, { status: 401 })
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const allowedRoles = ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER']
   if (!session.user?.role || !allowedRoles.includes(session.user.role)) {
-    return NextResponse.json({ error: 'Sem permiss├úo' }, { status: 403 })
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
   const { searchParams } = new URL(req.url)
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
   const status = searchParams.get('status')
   const q = searchParams.get('q')?.trim() ?? ''
 
-  /** Produtor: isolamento total ÔÇö s├│ v├¬ contas atribu├¡das a ele. Gerente/admin: vis├úo global ou filtro. */
+  /** Produtor: isolamento total — só vê contas atribuídas a ele. Gerente/admin: visão global ou filtro. */
   const scopedProducerId =
     session.user.role === 'PRODUCER'
       ? session.user.id
@@ -145,14 +145,14 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'N├úo autorizado' }, { status: 401 })
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const limited = withRateLimit(req, getAuthenticatedKey(session.user!.id, 'producao:create'), { max: 50, windowMs: 60_000 })
   if (limited) return limited
 
   const roles = ['ADMIN', 'PRODUCER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
-    return NextResponse.json({ error: 'Sem permiss├úo' }, { status: 403 })
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
   try {
@@ -166,7 +166,7 @@ export async function POST(req: Request) {
     })
     if (codeTaken) {
       return NextResponse.json(
-        { error: 'Este identificador de conta j├í est├í em uso. Escolha outro.' },
+        { error: 'Este identificador de conta já está em uso. Escolha outro.' },
         { status: 400 }
       )
     }
@@ -181,7 +181,7 @@ export async function POST(req: Request) {
       })
       if (linkedProfile) {
         return NextResponse.json(
-          { error: 'Este perfil de pagamento j├í est├í vinculado a outra produ├º├úo ativa.' },
+          { error: 'Este perfil de pagamento já está vinculado a outra produção ativa.' },
           { status: 400 }
         )
       }
@@ -202,7 +202,7 @@ export async function POST(req: Request) {
           })
           if (usageCount >= 5) {
             return NextResponse.json(
-              { error: 'Cart├úo Conta Simples atingiu o limite de 5 usos. 6┬¬ tentativa bloqueada.' },
+              { error: 'Cartão Conta Simples atingiu o limite de 5 usos. 6ª tentativa bloqueada.' },
               { status: 400 }
             )
           }
@@ -217,7 +217,7 @@ export async function POST(req: Request) {
       })
       if (domainTaken) {
         return NextResponse.json(
-          { error: 'Este dom├¡nio j├í est├í cadastrado em outra conta (footprint).' },
+          { error: 'Este domínio já está cadastrado em outra conta (footprint).' },
           { status: 400 }
         )
       }
@@ -230,12 +230,12 @@ export async function POST(req: Request) {
     let cnpjVal: string | null = null
 
     if (useStock) {
-      // Validar que os itens est├úo reservados para este produtor
+      // Validar que os itens estão reservados para este produtor
       if (data.emailId) {
         const email = await prisma.email.findUnique({ where: { id: data.emailId } })
         if (!email || email.status !== 'RESERVED' || email.assignedToProducerId !== producerId) {
           return NextResponse.json(
-            { error: 'E-mail n├úo est├í reservado para voc├¬. Reserve-o em Estoque > Itens.' },
+            { error: 'E-mail não está reservado para você. Reserve-o em Estoque > Itens.' },
             { status: 400 }
           )
         }
@@ -245,7 +245,7 @@ export async function POST(req: Request) {
         const cnpj = await prisma.cnpj.findUnique({ where: { id: data.cnpjId } })
         if (!cnpj || cnpj.status !== 'RESERVED' || cnpj.assignedToProducerId !== producerId) {
           return NextResponse.json(
-            { error: 'CNPJ n├úo est├í reservado para voc├¬. Reserve-o em Estoque > Itens.' },
+            { error: 'CNPJ não está reservado para você. Reserve-o em Estoque > Itens.' },
             { status: 400 }
           )
         }
@@ -255,7 +255,7 @@ export async function POST(req: Request) {
         const profile = await prisma.paymentProfile.findUnique({ where: { id: data.paymentProfileId } })
         if (!profile || profile.status !== 'RESERVED' || profile.assignedToProducerId !== producerId) {
           return NextResponse.json(
-            { error: 'Perfil de pagamento n├úo est├í reservado para voc├¬.' },
+            { error: 'Perfil de pagamento não está reservado para você.' },
             { status: 400 }
           )
         }
@@ -266,7 +266,7 @@ export async function POST(req: Request) {
         const existingEmail = await prisma.email.findUnique({ where: { email: emailInput } })
         if (existingEmail) {
           return NextResponse.json(
-            { error: 'E-mail j├í cadastrado na base. Use outro e-mail ou reserve do estoque.' },
+            { error: 'E-mail já cadastrado na base. Use outro e-mail ou reserve do estoque.' },
             { status: 400 }
           )
         }
@@ -277,7 +277,7 @@ export async function POST(req: Request) {
         if (prodWithEmail) {
           return NextResponse.json(
             {
-              error: `Esta conta j├í foi produzida por ${prodWithEmail.producer?.name?.trim() || 'outro colaborador'}.`,
+              error: `Esta conta já foi produzida por ${prodWithEmail.producer?.name?.trim() || 'outro colaborador'}.`,
             },
             { status: 400 }
           )
@@ -291,7 +291,7 @@ export async function POST(req: Request) {
         })
         if (existingCnpj) {
           return NextResponse.json(
-            { error: 'CNPJ j├í cadastrado. Use outro ou reserve do estoque.' },
+            { error: 'CNPJ já cadastrado. Use outro ou reserve do estoque.' },
             { status: 400 }
           )
         }
@@ -302,7 +302,7 @@ export async function POST(req: Request) {
         if (prodWithCnpj) {
           return NextResponse.json(
             {
-              error: `Esta conta j├í foi produzida por ${prodWithCnpj.producer?.name?.trim() || 'outro colaborador'}.`,
+              error: `Esta conta já foi produzida por ${prodWithCnpj.producer?.name?.trim() || 'outro colaborador'}.`,
             },
             { status: 400 }
           )
@@ -319,14 +319,14 @@ export async function POST(req: Request) {
       if (duplicate2fa) {
         return NextResponse.json(
           {
-            error: `Esta conta j├í foi produzida por ${duplicate2fa.producer?.name?.trim() || 'outro colaborador'}.`,
+            error: `Esta conta já foi produzida por ${duplicate2fa.producer?.name?.trim() || 'outro colaborador'}.`,
           },
           { status: 400 }
         )
       }
     }
 
-    // Google Customer ID: bloqueia duplicidade tamb├®m no modo estoque
+    // Google Customer ID: bloqueia duplicidade também no modo estoque
     if (data.googleAdsCustomerId) {
       const normalized = data.googleAdsCustomerId.replace(/\D/g, '')
       if (normalized.length >= 10) {
@@ -344,7 +344,7 @@ export async function POST(req: Request) {
       })
       if (stockDup) {
         return NextResponse.json(
-          { error: 'ID da conta Google Ads j├í existe no estoque/base. Bloqueado por footprint.' },
+          { error: 'ID da conta Google Ads já existe no estoque/base. Bloqueado por footprint.' },
           { status: 400 }
         )
       }

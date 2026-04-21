@@ -21,8 +21,8 @@ const updateSchema = z.object({
   currency: z.string().max(5).optional(),
   a2fCode: z.string().optional().nullable(),
   g2ApprovalCode: z.string().optional().nullable(),
-  siteUrl: z.string().optional().refine((v) => !v || !v.trim() || v.startsWith('http'), { message: 'URL inv├ílida' }),
-  cnpjBizLink: z.string().optional().refine((v) => !v || !v.trim() || v.startsWith('http'), { message: 'URL inv├ílida' }),
+  siteUrl: z.string().optional().refine((v) => !v || !v.trim() || v.startsWith('http'), { message: 'URL inválida' }),
+  cnpjBizLink: z.string().optional().refine((v) => !v || !v.trim() || v.startsWith('http'), { message: 'URL inválida' }),
   email: z.union([z.string().email(), z.literal('')]).optional(),
   cnpj: z.string().optional(),
   countryId: z.string().optional().nullable(),
@@ -35,13 +35,13 @@ const updateSchema = z.object({
   proxyConfigured: z.boolean().optional(),
 })
 
-/** Edi├º├úo flex├¡vel ap├│s aprova├º├úo (URLs/dom├¡nio/proxy + rota├º├úo de senha) */
+/** Edição flexível após aprovação (URLs/domínio/proxy + rotação de senha) */
 const postApprovalSchema = z.object({
   siteUrl: z.string().optional().nullable().refine((v) => v == null || !String(v).trim() || String(v).startsWith('http'), {
-    message: 'URL inv├ílida',
+    message: 'URL inválida',
   }),
   cnpjBizLink: z.string().optional().nullable().refine((v) => v == null || !String(v).trim() || String(v).startsWith('http'), {
-    message: 'URL inv├ílida',
+    message: 'URL inválida',
   }),
   primaryDomain: z.string().optional().nullable(),
   proxyNote: z.string().max(500).optional().nullable(),
@@ -54,19 +54,19 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'N├úo autorizado' }, { status: 401 })
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { id } = await params
   const roles = ['ADMIN', 'PRODUCER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
-    return NextResponse.json({ error: 'Sem permiss├úo' }, { status: 403 })
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
   const account = await prisma.productionAccount.findUnique({
     where: { id, deletedAt: null },
     include: { producer: true },
   })
-  if (!account) return NextResponse.json({ error: 'Conta n├úo encontrada' }, { status: 404 })
+  if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
 
   const isOwner = account.producerId === session.user.id
   if (!isOwner && session.user.role !== 'ADMIN') {
@@ -78,11 +78,11 @@ export async function PATCH(
 
     if (body?.sendToReview === true) {
       if (account.status !== 'PENDING') {
-        return NextResponse.json({ error: 'S├│ ├® poss├¡vel enviar para an├ílise contas com status Pendente' }, { status: 400 })
+        return NextResponse.json({ error: 'Só é possível enviar para análise contas com status Pendente' }, { status: 400 })
       }
       if (process.env.PROXY_REQUIRED_FOR_REVIEW === '1' && !account.proxyConfigured) {
         return NextResponse.json(
-          { error: 'Confirme o proxy (Proxy Cheap / AdsPower) antes de enviar para an├ílise.' },
+          { error: 'Confirme o proxy (Proxy Cheap / AdsPower) antes de enviar para análise.' },
           { status: 400 }
         )
       }
@@ -118,7 +118,7 @@ export async function PATCH(
             where: { primaryDomain: norm, deletedAt: null, id: { not: id } },
           })
           if (taken) {
-            return NextResponse.json({ error: 'Este dom├¡nio j├í est├í em uso em outra conta.' }, { status: 400 })
+            return NextResponse.json({ error: 'Este domínio já está em uso em outra conta.' }, { status: 400 })
           }
         }
         updateData.primaryDomain = norm
@@ -126,7 +126,7 @@ export async function PATCH(
       if (data.password !== undefined && data.password.trim() !== '') {
         const plain = data.password.trim()
         if (plain.length < 4) {
-          return NextResponse.json({ error: 'Senha muito curta (m├¡nimo 4 caracteres).' }, { status: 400 })
+          return NextResponse.json({ error: 'Senha muito curta (mínimo 4 caracteres).' }, { status: 400 })
         }
         updateData.passwordHash = await hashProductionAccountPassword(plain)
       }
@@ -150,7 +150,7 @@ export async function PATCH(
 
     if (!EDITABLE_STATUSES.includes(account.status as (typeof EDITABLE_STATUSES)[number])) {
       return NextResponse.json(
-        { error: 'S├│ ├® poss├¡vel editar contas pendentes ou em an├ílise (antes da aprova├º├úo final)' },
+        { error: 'Só é possível editar contas pendentes ou em análise (antes da aprovação final)' },
         { status: 400 }
       )
     }
@@ -188,7 +188,7 @@ export async function PATCH(
         ])
         if (prodDup || stockDup) {
           return NextResponse.json(
-            { error: 'ID da conta Google Ads j├í existe em outra conta da base. Bloqueado por footprint.' },
+            { error: 'ID da conta Google Ads já existe em outra conta da base. Bloqueado por footprint.' },
             { status: 400 }
           )
         }
@@ -206,7 +206,7 @@ export async function PATCH(
         },
       })
       if (dup2fa) {
-        return NextResponse.json({ error: '2FA j├í existe em outra conta da base.' }, { status: 400 })
+        return NextResponse.json({ error: '2FA já existe em outra conta da base.' }, { status: 400 })
       }
     }
     if (data.g2ApprovalCode !== undefined) updateData.g2ApprovalCode = data.g2ApprovalCode || null
@@ -223,7 +223,7 @@ export async function PATCH(
           where: { primaryDomain: norm, deletedAt: null, id: { not: id } },
         })
         if (taken) {
-          return NextResponse.json({ error: 'Este dom├¡nio j├í est├í em uso em outra conta.' }, { status: 400 })
+          return NextResponse.json({ error: 'Este domínio já está em uso em outra conta.' }, { status: 400 })
         }
       }
       updateData.primaryDomain = norm
@@ -239,7 +239,7 @@ export async function PATCH(
         },
       })
       if (taken) {
-        return NextResponse.json({ error: 'Este identificador de conta j├í est├í em uso.' }, { status: 400 })
+        return NextResponse.json({ error: 'Este identificador de conta já está em uso.' }, { status: 400 })
       }
       updateData.accountCode = nextCode
     }
@@ -253,7 +253,7 @@ export async function PATCH(
         },
       })
       if (dupEmail) {
-        return NextResponse.json({ error: 'E-mail j├í existe em outra conta da base.' }, { status: 400 })
+        return NextResponse.json({ error: 'E-mail já existe em outra conta da base.' }, { status: 400 })
       }
     }
     if (data.cnpj !== undefined && data.cnpj) {
@@ -267,7 +267,7 @@ export async function PATCH(
         },
       })
       if (dupCnpj) {
-        return NextResponse.json({ error: 'CNPJ j├í existe em outra conta da base.' }, { status: 400 })
+        return NextResponse.json({ error: 'CNPJ já existe em outra conta da base.' }, { status: 400 })
       }
     }
 
@@ -308,21 +308,21 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'N├úo autorizado' }, { status: 401 })
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { id } = await params
   const roles = ['ADMIN', 'PRODUCER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
-    return NextResponse.json({ error: 'Sem permiss├úo' }, { status: 403 })
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
   const account = await prisma.productionAccount.findUnique({
     where: { id, deletedAt: null },
   })
-  if (!account) return NextResponse.json({ error: 'Conta n├úo encontrada' }, { status: 404 })
+  if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
   if (!EDITABLE_STATUSES.includes(account.status as (typeof EDITABLE_STATUSES)[number])) {
     return NextResponse.json(
-      { error: 'S├│ ├® poss├¡vel excluir contas pendentes ou em an├ílise (antes da aprova├º├úo final)' },
+      { error: 'Só é possível excluir contas pendentes ou em análise (antes da aprovação final)' },
       { status: 400 }
     )
   }
