@@ -154,6 +154,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'ADS CORE',
   },
   {
+    href: '/dashboard/ads-core/inventario',
+    label: 'Inventário de Estoque',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'ClipboardList',
+    group: 'ADS CORE',
+  },
+  {
     href: '/dashboard/base',
     label: 'Base (E-mails / CNPJs)',
     roles: ['ADMIN', 'PRODUCTION_MANAGER'],

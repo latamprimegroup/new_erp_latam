@@ -16,6 +16,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/ads-core/demandas': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/ads-core/relatorios-producao': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/ads-core/rg-abastecimento': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/inventario': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/producao': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/producao/conferencia': ['ADMIN', 'FINANCE', 'PRODUCTION_MANAGER'],
   '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'FINANCE', 'PRODUCTION_MANAGER'],

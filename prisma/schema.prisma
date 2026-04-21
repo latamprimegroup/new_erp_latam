@@ -118,6 +118,9 @@ model User {
   warRoomLiveMessages      WarRoomLiveMessage[]
   commercialDataAuditLogs  CommercialDataAuditLog[]
 
+  inventoryChecks          InventoryCheck[]
+  stockMovements           StockMovement[]
+
   @@index([phone])
 }
 
@@ -4158,4 +4161,108 @@ model LiveProofLabReplicateLog {
   @@index([clientId, createdAt])
   @@index([caseId])
   @@map("live_proof_lab_replicate_logs")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MÓDULO DE INVENTÁRIO — Gestão de Estoque do Gerente de Produção
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum InventoryCheckStatus {
+  ABERTO
+  FINALIZADO
+  CANCELADO
+}
+
+enum InventoryItemCategory {
+  CONTA_PRODUCAO
+  EMAIL_GMAIL
+  CNPJ
+  RG_DOCUMENTO
+  PROXY
+  PERFIL_PAGAMENTO
+  HARDWARE
+  OUTRO
+}
+
+enum InventoryItemReason {
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
+  QUEBRA_TECNICA
+  ERRO_LANCAMENTO
+  PERDA_EXTRAVIO
+  ENTRADA_FORNECEDOR
+}
+
+/// Sessão de inventário (cíclico por categoria ou geral)
+model InventoryCheck {
+  id              String                @id @default(cuid())
+  title           String                @db.VarChar(200)
+  category        InventoryItemCategory?
+  status          InventoryCheckStatus  @default(ABERTO)
+  managerId       String                @map("manager_id")
+  manager         User                  @relation(fields: [managerId], references: [id])
+  notes           String?               @db.Text
+  /// Impacto financeiro total calculado no fechamento
+  totalValueImpact Decimal?             @map("total_value_impact") @db.Decimal(14, 2)
+  /// Percentual máximo de divergência encontrado (para alerta CEO)
+  maxDivergencePct Decimal?             @map("max_divergence_pct") @db.Decimal(6, 2)
+  /// Disparou alerta de auditoria para o CEO?
+  ceoAlertTriggered Boolean             @default(false) @map("ceo_alert_triggered")
+  finalizedAt     DateTime?             @map("finalized_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  items           InventoryItem[]
+
+  @@index([managerId, status])
+  @@index([createdAt])
+  @@map("inventory_checks")
+}
+
+/// Item dentro de uma sessão de inventário
+model InventoryItem {
+  id            String                @id @default(cuid())
+  checkId       String                @map("check_id")
+  check         InventoryCheck        @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  itemName      String                @db.VarChar(300)
+  itemCategory  InventoryItemCategory @map("item_category")
+  /// Saldo no sistema no momento da abertura do inventário
+  systemStock   Int                   @map("system_stock")
+  /// Quantidade física contada pelo gerente (null = ainda não conferido)
+  physicalStock Int?                  @map("physical_stock")
+  /// Diferença: physicalStock - systemStock (calculado)
+  difference    Int?
+  /// Custo unitário no momento da contagem (para impacto financeiro)
+  unitCost      Decimal?              @map("unit_cost") @db.Decimal(12, 2)
+  /// Motivo obrigatório quando há divergência
+  reason        InventoryItemReason?
+  notes         String?               @db.VarChar(500)
+  /// Classificação ABC automática: A = alto valor/rotatividade, B = médio, C = baixo
+  abcClass      String?               @map("abc_class") @db.Char(1)
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  @@index([checkId])
+  @@index([itemCategory])
+  @@map("inventory_items")
+}
+
+/// Log de movimentação de estoque gerado pelo fechamento de inventário
+model StockMovement {
+  id          String                @id @default(cuid())
+  checkId     String?               @map("check_id")
+  itemName    String                @db.VarChar(300)
+  category    InventoryItemCategory
+  quantity    Int
+  /// ENTRADA_INVENTARIO | SAIDA_INVENTARIO
+  movType     String                @map("mov_type") @db.VarChar(30)
+  reason      InventoryItemReason?
+  unitCost    Decimal?              @map("unit_cost") @db.Decimal(12, 2)
+  managerId   String                @map("manager_id")
+  manager     User                  @relation(fields: [managerId], references: [id])
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  @@index([managerId, createdAt])
+  @@index([category, createdAt])
+  @@map("stock_movements")
 }
