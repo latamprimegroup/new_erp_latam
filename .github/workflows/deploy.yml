@@ -3,7 +3,7 @@
 # 2) job deploy-hostinger — git pull + build + pm2 no VPS (Hostinger)
 #
 # Vercel: com o projeto ligado ao mesmo repositório, o deploy de produção
-# costuma ser automático em paralelo; variáveis ficam só no painel da Vercel.
+# é automático em paralelo; variáveis ficam só no painel da Vercel.
 
 name: Deploy to Hostinger
 
@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # DATABASE_URL necessário para prisma validate/generate no CI
-      DATABASE_URL: ${{ secrets.DATABASE_URL || 'mysql://ci:ci@localhost:3306/ci' }}
-      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'ci-secret-placeholder' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL != '' && secrets.DATABASE_URL || 'mysql://ci:ci@localhost:3306/ci' }}
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET != '' && secrets.NEXTAUTH_SECRET || 'ci-placeholder-secret-32chars' }}
       NEXTAUTH_URL: 'http://localhost:3000'
     steps:
       - uses: actions/checkout@v4
@@ -27,19 +27,25 @@ jobs:
           node-version: '20'
           cache: npm
 
-      - run: npm ci
+      - name: Instalar dependências
+        run: npm ci
 
-      - run: npm run lint
+      - name: Lint
+        run: npm run lint
 
-      - run: npm run typecheck
+      - name: Typecheck
+        run: npm run typecheck
 
-      - run: npx prisma validate
+      - name: Validar schema Prisma
+        run: npx prisma validate
 
-      - run: npx prisma generate
+      - name: Gerar cliente Prisma
+        run: npx prisma generate
 
   deploy-hostinger:
     needs: verify
     runs-on: ubuntu-latest
+    if: ${{ secrets.DEPLOY_HOST != '' }}
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -49,7 +55,8 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -e
-            cd '${{ secrets.DEPLOY_PATH || '/var/www/erp-ads-ativos' }}'
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            cd "${DEPLOY_PATH:-/var/www/erp-ads-ativos}"
             git fetch origin main
             git reset --hard origin/main
             npm ci
