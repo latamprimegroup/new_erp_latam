@@ -145,6 +145,12 @@ function waUrlForClient(row: CrmRow): string {
   return `${base}?text=${encodeURIComponent(msg)}`
 }
 
+async function safeJson(r: Response) {
+  const text = await r.text()
+  if (!text.trim()) return { error: `HTTP ${r.status}: resposta vazia` }
+  try { return JSON.parse(text) } catch { return { error: `HTTP ${r.status}: JSON inválido` } }
+}
+
 export function CommercialOxygenClient() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [gate, setGate] = useState<GateOrder[]>([])
@@ -181,12 +187,12 @@ export function CommercialOxygenClient() {
     const crmUrl = `/api/commercial/crm${crmQs.toString() ? `?${crmQs}` : ''}`
 
     Promise.all([
-      fetch('/api/commercial/stats').then((r) => r.json()),
-      fetch('/api/commercial/orders?tab=gatekeeper').then((r) => r.json()),
-      fetch(crmUrl).then((r) => r.json()),
-      fetch('/api/commercial/wait-queue').then((r) => r.json()),
-      fetch('/api/commercial/contact-logs').then((r) => r.json()),
-      fetch('/api/commercial/coupons').then((r) => r.json()),
+      fetch('/api/commercial/stats').then(safeJson),
+      fetch('/api/commercial/orders?tab=gatekeeper').then(safeJson),
+      fetch(crmUrl).then(safeJson),
+      fetch('/api/commercial/wait-queue').then(safeJson),
+      fetch('/api/commercial/contact-logs').then(safeJson),
+      fetch('/api/commercial/coupons').then(safeJson),
     ])
       .then(([s, o, c, w, l, cp]) => {
         if (s.error) throw new Error(s.error)
