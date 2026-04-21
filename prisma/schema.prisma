@@ -35,6 +35,7 @@ enum Role {
   MANAGER
   PRODUCTION_MANAGER  // Gerente de Produção: conferência diária, valida com senha
   PLUG_PLAY  // Operador Contingência Black - Plug & Play
+  PURCHASING  // Setor de Compras — vê dados de fornecedor (Double-Blind)
 }
 
 model User {
@@ -122,6 +123,10 @@ model User {
   stockMovements           StockMovement[]
   /// Taxa de comissão do vendedor em % (ex: 5.00 = 5%). Usado no bridge comercial→financeiro.
   commissionRate           Decimal? @map("commission_rate") @db.Decimal(5, 2)
+
+  // Supply Chain / Compras
+  assetMovements           AssetMovement[]
+  purchaseOrdersCreated    PurchaseOrder[] @relation("PurchaseOrderCreator")
 
   @@index([phone])
 }
@@ -4358,4 +4363,152 @@ model StockMovement {
   @@index([managerId, createdAt])
   @@index([category, createdAt])
   @@map("stock_movements")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MÓDULO DE SUPPLY CHAIN / WHITE LABEL — Compras, Fornecedores e Ativos
+// Arquitetura Double-Blind: Fornecedor visível apenas para PURCHASING/ADMIN
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum AssetCategory {
+  CONTAS    // Contas de anúncio (Meta, Google, TikTok)
+  PERFIS    // Perfis de usuário (aquecimento)
+  BM        // Business Managers
+  PROXIES   // Proxies dedicados / residenciais
+  SOFTWARE  // Ferramentas, licenças, SaaS
+  INFRA     // Servidores, VPS, chips
+  HARDWARE  // Dispositivos físicos
+  OUTROS
+}
+
+enum AssetStatus {
+  AVAILABLE        // Disponível no estoque
+  QUARANTINE       // Em quarentena — aguarda período de estabilidade
+  SOLD             // Vendido — aguarda liquidação financeira do fornecedor
+  AWAITING_VENDOR  // Aguardando envio do fornecedor
+  RECEIVED         // Recebido em Compras
+  TRIAGEM          // Em triagem / validação
+  DELIVERED        // Enviado ao cliente
+  DEAD             // Dead Switch — baixado por falha antes da entrega
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  CANCELED
+}
+
+/// Cadastro de Fornecedores (suporta até 1.000+ com índices)
+model Vendor {
+  id           String   @id @default(cuid())
+  name         String   @db.VarChar(200)
+  taxId        String?  @unique @map("tax_id") @db.VarChar(30)
+  /// JSON: { email, whatsapp, telegram, country, website }
+  contactInfo  Json?    @map("contact_info")
+  rating       Int      @default(5)             // 1-10
+  paymentTerms String?  @map("payment_terms") @db.VarChar(200)
+  category     String   @db.VarChar(50)         // CONTAS | INFRA | SOFTWARE | PROXIES
+  active       Boolean  @default(true)
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  assets         Asset[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([category, active])
+  @@map("vendors")
+}
+
+/// Sequência para geração de IDs únicos Ads Ativos por categoria
+model AssetCounter {
+  category String @id @db.VarChar(20)
+  lastSeq  Int    @default(0) @map("last_seq")
+
+  @@map("asset_counters")
+}
+
+/// Ativo individual — cada unidade física/digital rastreada
+model Asset {
+  id          String        @id @default(cuid())
+  /// ID exclusivo Ads Ativos: AA-CONT-000001
+  adsId       String        @unique @map("ads_id") @db.VarChar(30)
+  category    AssetCategory
+  subCategory String?       @map("sub_category") @db.VarChar(100)
+  status      AssetStatus   @default(AVAILABLE)
+
+  // ── Dados do Fornecedor (visíveis apenas para PURCHASING / ADMIN) ───────────
+  vendorId    String        @map("vendor_id")
+  costPrice   Decimal       @map("cost_price") @db.Decimal(10, 2)
+  vendorRef   String?       @map("vendor_ref") @db.VarChar(100)
+  /// Credenciais/tokens brutos — nunca expostos fora de PURCHASING
+  rawData     Json?         @map("raw_data")
+
+  // ── Identidade Ads Ativos (visível comercialmente) ───────────────────────
+  salePrice   Decimal       @map("sale_price") @db.Decimal(10, 2)
+  displayName String        @map("display_name") @db.VarChar(200)
+  description String?       @db.Text
+  /// Especificações mascaradas (sem referência a fornecedor)
+  specs       Json?
+  /// Tags separadas por vírgula: warm-up,gold,proxy-dedicado
+  tags        String?       @db.VarChar(500)
+
+  // ── Vínculos ───────────────────────────────────────────────────────────────
+  purchaseOrderId String?   @map("purchase_order_id")
+
+  // ── Auditoria de Ciclo de Vida ─────────────────────────────────────────────
+  receivedAt  DateTime?     @map("received_at")
+  soldAt      DateTime?     @map("sold_at")
+  deliveredAt DateTime?     @map("delivered_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  vendor        Vendor         @relation(fields: [vendorId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  movements     AssetMovement[]
+
+  @@index([status])
+  @@index([vendorId])
+  @@index([category, status])
+  @@map("assets")
+}
+
+/// Histórico de mudança de estado de cada ativo (audit trail completo)
+model AssetMovement {
+  id         String       @id @default(cuid())
+  assetId    String       @map("asset_id")
+  fromStatus AssetStatus? @map("from_status")
+  toStatus   AssetStatus  @map("to_status")
+  reason     String?      @db.VarChar(500)
+  userId     String?      @map("user_id")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([assetId, createdAt])
+  @@map("asset_movements")
+}
+
+/// Ordem de Compra para fornecedor — gera alerta financeiro de pagamento pendente
+model PurchaseOrder {
+  id          String              @id @default(cuid())
+  vendorId    String              @map("vendor_id")
+  totalAmount Decimal             @map("total_amount") @db.Decimal(12, 2)
+  paidAmount  Decimal             @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  status      PurchaseOrderStatus @default(PENDING)
+  paymentDue  DateTime?           @map("payment_due")
+  paidAt      DateTime?           @map("paid_at")
+  notes       String?             @db.Text
+  createdBy   String?             @map("created_by")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  vendor        Vendor  @relation(fields: [vendorId], references: [id])
+  createdByUser User?   @relation("PurchaseOrderCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  assets        Asset[]
+
+  @@index([vendorId, status])
+  @@map("purchase_orders")
 }

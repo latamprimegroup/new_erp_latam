@@ -277,6 +277,15 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Logística',
   },
 
+  // ── Supply Chain ──────────────────────────────────────────────────────────
+  {
+    href: '/dashboard/compras',
+    label: 'Supply Chain & White Label',
+    roles: ['ADMIN', 'PURCHASING'],
+    icon: 'ShoppingCart',
+    group: 'Compras',
+  },
+
   // ── Financeiro ────────────────────────────────────────────────────────────
   {
     href: '/dashboard/financeiro',
