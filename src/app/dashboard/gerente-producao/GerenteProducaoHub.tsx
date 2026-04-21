@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { AdsCoreGerenteInventoryBar } from '../ads-core/AdsCoreGerenteInventoryBar'
 import { AdsCoreGerenteClient } from '../ads-core/AdsCoreGerenteClient'
+import { BaseClient } from '../base/BaseClient'
 
 // ─── Tipos de dados ───────────────────────────────────────────────────────────
 
@@ -325,6 +326,23 @@ export function GerenteProducaoHub() {
         </div>
         <div className="p-4">
           <AdsCoreGerenteClient />
+        </div>
+      </div>
+
+      {/* ── Base de E-mails / CNPJs / Perfis ──────────────────── */}
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-ads-dark-card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
+          <Package className="w-4 h-4 text-primary-500" />
+          <span className="font-semibold text-sm">Base — E-mails, CNPJs e Perfis de Pagamento</span>
+          <Link
+            href="/dashboard/base"
+            className="ml-auto text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+          >
+            Ver em tela cheia <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+        <div className="p-4">
+          <BaseClient />
         </div>
       </div>
 
