@@ -8,6 +8,7 @@ import { syncClientLTV } from '@/lib/client-ltv'
 import { audit } from '@/lib/audit'
 import { notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
+import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 
 const updateSchema = z.object({
@@ -139,6 +140,7 @@ export async function PATCH(
 
     if (becomingPaid) {
       runCommercialOrderPaidBridge(id, 'pedidos_patch').catch((e) => console.error('commercial bridge', e))
+      handleSaleToFinancialBridge(id, 'pedidos_patch').catch((e) => console.error('financial bridge', e))
     }
 
     return NextResponse.json(updated)

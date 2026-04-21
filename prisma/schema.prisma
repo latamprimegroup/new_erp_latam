@@ -120,6 +120,8 @@ model User {
 
   inventoryChecks          InventoryCheck[]
   stockMovements           StockMovement[]
+  /// Taxa de comissão do vendedor em % (ex: 5.00 = 5%). Usado no bridge comercial→financeiro.
+  commissionRate           Decimal? @map("commission_rate") @db.Decimal(5, 2)
 
   @@index([phone])
 }

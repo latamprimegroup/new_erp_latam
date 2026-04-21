@@ -3,6 +3,92 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
+type CacData = {
+  cac: number; ltv: number; ltvCacRatio: number | null; margin: number
+  totalMarketing: number; revenue: number; salesCount: number
+  alert: { level: 'GREEN' | 'YELLOW' | 'RED'; message: string }
+  series: { month: string; cac: number; sales: number }[]
+}
+
+function CacTermometro() {
+  const [cac, setCac] = useState<CacData | null>(null)
+
+  useEffect(() => {
+    fetch('/api/admin/cac?months=1')
+      .then((r) => r.json())
+      .then(setCac)
+      .catch(() => {})
+  }, [])
+
+  if (!cac) return null
+
+  const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  const levelCss = {
+    GREEN:  'border-green-300 bg-green-50 dark:bg-green-950/20',
+    YELLOW: 'border-amber-300 bg-amber-50 dark:bg-amber-950/20',
+    RED:    'border-red-400 bg-red-50 dark:bg-red-950/20 animate-pulse',
+  }[cac.alert.level]
+  const levelText = { GREEN: 'text-green-700', YELLOW: 'text-amber-700', RED: 'text-red-700' }[cac.alert.level]
+  const levelDot  = { GREEN: 'bg-green-500', YELLOW: 'bg-amber-500', RED: 'bg-red-500' }[cac.alert.level]
+
+  return (
+    <div className={`card border-2 mb-6 ${levelCss}`}>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`w-2.5 h-2.5 rounded-full ${levelDot}`} />
+            <h2 className="font-semibold text-slate-800 dark:text-zinc-100">Termômetro de CAC — Este Mês</h2>
+          </div>
+          <p className={`text-sm font-medium ${levelText}`}>{cac.alert.message}</p>
+        </div>
+        <div className="flex items-center gap-1">
+          {[...Array(5)].map((_, i) => (
+            <div key={i}
+              className={`w-3 h-8 rounded transition-all ${i < Math.ceil((cac.cac / 400) * 5) ? (cac.alert.level === 'RED' ? 'bg-red-500' : cac.alert.level === 'YELLOW' ? 'bg-amber-400' : 'bg-green-500') : 'bg-zinc-200 dark:bg-zinc-700'}`}
+              style={{ height: `${(i + 1) * 8 + 16}px` }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+        <div>
+          <p className="text-xs text-zinc-500 mb-0.5">CAC</p>
+          <p className={`text-xl font-bold ${levelText}`}>{brl(cac.cac)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500 mb-0.5">LTV Médio</p>
+          <p className="text-xl font-bold text-primary-600">{brl(cac.ltv)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500 mb-0.5">LTV/CAC</p>
+          <p className={`text-xl font-bold ${(cac.ltvCacRatio ?? 0) >= 3 ? 'text-green-600' : 'text-amber-600'}`}>
+            {cac.ltvCacRatio != null ? `${cac.ltvCacRatio}x` : '—'}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500 mb-0.5">Margem</p>
+          <p className={`text-xl font-bold ${cac.margin >= 40 ? 'text-green-600' : cac.margin >= 20 ? 'text-amber-600' : 'text-red-600'}`}>
+            {cac.margin}%
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 mt-3 text-xs text-zinc-500">
+        <span>📦 {cac.salesCount} vendas</span>
+        <span>💰 {brl(cac.revenue)} receita</span>
+        <span>📣 {brl(cac.totalMarketing)} marketing</span>
+      </div>
+
+      {cac.alert.level !== 'GREEN' && (
+        <div className={`mt-3 rounded-lg p-2 text-xs font-medium ${levelText} border ${levelCss.split(' ')[0]}`}>
+          ⚠️ {cac.alert.level === 'RED' ? 'ALERTA CRÍTICO: ' : 'ATENÇÃO: '}{cac.alert.message}. Revise as despesas de marketing ou aumente o volume de vendas.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MetasDinamicasCard() {
   const [metas, setMetas] = useState<{
     producao?: { metaAtual: number; sugerida: number }
@@ -160,6 +246,7 @@ export function CeoDashboardClient() {
       </div>
 
       <KillSwitchTorreControle />
+      <CacTermometro />
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
         <div className="card">

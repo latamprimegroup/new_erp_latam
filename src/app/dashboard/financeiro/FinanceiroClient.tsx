@@ -7,6 +7,7 @@ import { FinanceiroContasFiscalTab } from './FinanceiroContasFiscalTab'
 import { FinanceiroCarteirasTab } from './FinanceiroCarteirasTab'
 import { FinanceiroInadimplentesTab } from './FinanceiroInadimplentesTab'
 import { FinanceiroNfeTab } from './FinanceiroNfeTab'
+import { FinanceiroConciliacaoVendasTab } from './FinanceiroConciliacaoVendasTab'
 
 type Entry = {
   id: string
@@ -36,7 +37,7 @@ type ProjecaoData = {
   projection: { month: string; balance: number; income: number; expense: number }[]
 }
 
-type Tab = 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe'
+type Tab = 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe' | 'conciliacao_vendas'
 
 export function FinanceiroClient() {
   const [tab, setTab] = useState<Tab>('lancamentos')
@@ -188,6 +189,7 @@ export function FinanceiroClient() {
     { id: 'conciliacao', label: 'Conciliação' },
     { id: 'contas_fiscal', label: 'Contas & Fiscal' },
     { id: 'projecao', label: 'Fluxo Projetado' },
+    { id: 'conciliacao_vendas', label: '🔗 Conciliação Vendas' },
     { id: 'carteiras', label: '🏦 Carteiras' },
     { id: 'inadimplentes', label: '⚠️ Inadimplência' },
     { id: 'nfe', label: '📄 NF-e' },
@@ -636,6 +638,12 @@ export function FinanceiroClient() {
               </table>
             </div>
           ) : null}
+        </div>
+      )}
+
+      {tab === 'conciliacao_vendas' && (
+        <div className="card">
+          <FinanceiroConciliacaoVendasTab />
         </div>
       )}
 
