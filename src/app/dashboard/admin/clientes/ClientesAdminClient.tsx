@@ -174,10 +174,15 @@ export function ClientesAdminClient() {
   const [creating, setCreating] = useState(false)
   const [createStep, setCreateStep] = useState<'form' | 'success'>('form')
 
-  // ── Estado do ajuste de sequência ──
+  // ── Estado do ajuste de sequência (próximo código global) ──
   const [editingCode, setEditingCode] = useState(false)
   const [codeInput, setCodeInput] = useState('')
   const [savingCode, setSavingCode] = useState(false)
+
+  // ── Estado do ajuste de código do cliente selecionado ──
+  const [editingClientCode, setEditingClientCode] = useState(false)
+  const [clientCodeInput, setClientCodeInput] = useState('')
+  const [savingClientCode, setSavingClientCode] = useState(false)
 
   // Debounce de busca
   useEffect(() => {
@@ -224,6 +229,7 @@ export function ClientesAdminClient() {
     setSelectedClient(c)
     setDetailTab('dados')
     setEditing(false)
+    setEditingClientCode(false)
     setEditForm({
       name: c.user.name ?? '',
       phone: c.user.phone ?? '',
@@ -399,6 +405,29 @@ export function ClientesAdminClient() {
       load()
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function saveClientCode() {
+    if (!selectedClient) return
+    const raw = clientCodeInput.trim().toUpperCase()
+    if (!raw) { showToast('error', 'Digite um código válido (ex: C303)'); return }
+    if (!/^C\d{1,6}$/.test(raw)) { showToast('error', 'Formato inválido — use C seguido de números, ex: C303'); return }
+    setSavingClientCode(true)
+    try {
+      const res = await fetch(`/api/admin/clientes/${selectedClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientCode: raw }),
+      })
+      const d = await res.json()
+      if (!res.ok) { showToast('error', d.error || 'Erro ao salvar código'); return }
+      setSelectedClient({ ...selectedClient, clientCode: raw })
+      setClients((prev) => prev.map((c) => c.id === selectedClient.id ? { ...c, clientCode: raw } : c))
+      showToast('success', `Código atualizado para ${raw}`)
+      setEditingClientCode(false)
+    } finally {
+      setSavingClientCode(false)
     }
   }
 
@@ -881,12 +910,46 @@ export function ClientesAdminClient() {
                   )}
                 </div>
                 <p className="text-sm text-zinc-500 mt-0.5">{selectedClient.user.email}</p>
-                {selectedClient.clientCode && (
-                  <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 border border-primary-200 dark:border-primary-700">
-                    <Hash className="w-3 h-3 text-primary-600" />
-                    <span className="text-xs font-bold text-primary-700 dark:text-primary-300 font-mono">{selectedClient.clientCode}</span>
-                  </div>
-                )}
+                {/* Código do cliente — editável inline */}
+                <div className="mt-1">
+                  {editingClientCode ? (
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); saveClientCode() }}
+                      className="inline-flex items-center gap-1"
+                    >
+                      <Hash className="w-3 h-3 text-primary-600 shrink-0" />
+                      <input
+                        type="text"
+                        value={clientCodeInput}
+                        onChange={(e) => setClientCodeInput(e.target.value.toUpperCase())}
+                        className="w-20 px-1.5 py-0.5 rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-zinc-800 text-xs font-mono font-bold text-primary-700 dark:text-primary-300 focus:outline-none focus:ring-1 focus:ring-primary-400 uppercase"
+                        placeholder="C303"
+                        maxLength={8}
+                        autoFocus
+                        onKeyDown={(e) => { if (e.key === 'Escape') setEditingClientCode(false) }}
+                      />
+                      <button type="submit" disabled={savingClientCode} className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600 disabled:opacity-60">
+                        {savingClientCode ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </button>
+                      <button type="button" onClick={() => setEditingClientCode(false)} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-400">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      title="Clique para editar o código"
+                      onClick={() => { setClientCodeInput(selectedClient.clientCode ?? ''); setEditingClientCode(true) }}
+                      className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 border border-primary-200 dark:border-primary-700 hover:border-primary-400 transition-colors"
+                    >
+                      <Hash className="w-3 h-3 text-primary-600" />
+                      <span className="text-xs font-bold text-primary-700 dark:text-primary-300 font-mono">
+                        {selectedClient.clientCode ?? '— sem código'}
+                      </span>
+                      <Pencil className="w-2.5 h-2.5 text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {!editing ? (

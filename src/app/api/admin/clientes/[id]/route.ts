@@ -6,7 +6,11 @@ import { prisma } from '@/lib/prisma'
 
 const SEGMENTATION_TAGS = ['VIP', 'HIGH_TICKET', 'CHURN_RISK', 'BLACK_FRIDAY', 'UPSELL_CANDIDATE', 'INADIMPLENTE', 'NOVO'] as const
 
+const CLIENT_CODE_REGEX = /^C\d{1,6}$/i
+
 const patchSchema = z.object({
+  // Código sequencial do cliente (ex: C303, C001)
+  clientCode: z.string().regex(CLIENT_CODE_REGEX, 'Formato inválido — use C seguido de números, ex: C303').max(10).optional().nullable(),
   taxId: z.string().max(32).optional().nullable(),
   companyName: z.string().max(200).optional().nullable(),
   jobTitle: z.string().max(120).optional().nullable(),
@@ -119,6 +123,24 @@ export async function PATCH(
       return NextResponse.json({ error: 'Só ADMIN altera bloqueio antifraude' }, { status: 403 })
     }
 
+    // Validação de clientCode: somente ADMIN, sem duplicata
+    if (data.clientCode !== undefined) {
+      if (session.user?.role !== 'ADMIN') {
+        return NextResponse.json({ error: 'Só ADMIN pode alterar o código do cliente' }, { status: 403 })
+      }
+      if (data.clientCode) {
+        const normalized = data.clientCode.toUpperCase()
+        const duplicate = await prisma.clientProfile.findFirst({
+          where: { clientCode: normalized, NOT: { id } },
+          select: { id: true, clientCode: true },
+        })
+        if (duplicate) {
+          return NextResponse.json({ error: `O código ${normalized} já está em uso por outro cliente.` }, { status: 409 })
+        }
+        data.clientCode = normalized
+      }
+    }
+
     if (data.accountManagerId) {
       const mgr = await prisma.user.findUnique({
         where: { id: data.accountManagerId },
@@ -175,6 +197,7 @@ export async function PATCH(
         ...(data.creditLimit !== undefined && { creditLimit: data.creditLimit }),
         ...(data.preferredDueDay !== undefined && { preferredDueDay: data.preferredDueDay }),
         ...(data.segmentationTags !== undefined && { segmentationTags: data.segmentationTags }),
+        ...(data.clientCode !== undefined && { clientCode: data.clientCode }),
       },
       include: {
         user: { select: { id: true, email: true, name: true, phone: true } },
