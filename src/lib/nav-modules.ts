@@ -277,6 +277,15 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Logística',
   },
 
+  // ── CEO Command Center ────────────────────────────────────────────────────
+  {
+    href:  '/dashboard/ceo',
+    label: 'CEO Command Center',
+    roles: ['ADMIN'],
+    icon:  'Trophy',
+    group: 'Estratégia',
+  },
+
   // ── Supply Chain ──────────────────────────────────────────────────────────
   {
     href: '/dashboard/compras',
