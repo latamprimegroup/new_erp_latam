@@ -11,7 +11,7 @@ on:
   push:
     branches: [main]
 
-# Cancela runs antigos automaticamente quando um novo push chegar
+# Cancela qualquer run pendente/em-progresso do mesmo workflow ao novo push
 concurrency:
   group: deploy-main
   cancel-in-progress: true
@@ -20,11 +20,35 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
-      # DATABASE_URL necessário para prisma validate/generate no CI
       DATABASE_URL: ${{ secrets.DATABASE_URL != '' && secrets.DATABASE_URL || 'mysql://ci:ci@localhost:3306/ci' }}
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET != '' && secrets.NEXTAUTH_SECRET || 'ci-placeholder-secret-32chars' }}
       NEXTAUTH_URL: 'http://localhost:3000'
     steps:
+      - name: Cancelar runs antigos pendentes
+        run: |
+          gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "deploy.yml" \
+            --status queued \
+            --json databaseId \
+            --jq '.[].databaseId' | while read id; do
+              echo "Cancelando run antigo: $id"
+              gh run cancel "$id" --repo "${{ github.repository }}" || true
+            done
+          gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "deploy.yml" \
+            --status in_progress \
+            --json databaseId \
+            --jq '.[].databaseId' | while read id; do
+              if [ "$id" != "${{ github.run_id }}" ]; then
+                echo "Cancelando run em progresso: $id"
+                gh run cancel "$id" --repo "${{ github.repository }}" || true
+              fi
+            done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
