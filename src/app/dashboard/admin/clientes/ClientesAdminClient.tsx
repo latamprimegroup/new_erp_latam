@@ -6,7 +6,8 @@ import {
   TrendingUp, ShoppingCart, AlertTriangle,
   ChevronLeft, ChevronRight, Edit3, X, Save, Loader2,
   Instagram, Linkedin, ExternalLink, Star, Shield,
-  Clock, DollarSign, Calendar, Globe, Hash, FileSearch
+  Clock, DollarSign, Calendar, Globe, Hash, FileSearch,
+  UserPlus, CheckCircle2
 } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -119,6 +120,30 @@ function churnBadge(risk?: string | null) {
   )
 }
 
+// ─── Tipos do formulário de cadastro ─────────────────────────────────────────
+
+type CreateForm = {
+  name: string
+  email: string
+  phone: string
+  whatsapp: string
+  taxId: string
+  companyName: string
+  jobTitle: string
+  operationNiche: string
+  leadAcquisitionSource: string
+  clientStatus: 'ATIVO' | 'INATIVO' | 'BLOQUEADO'
+  preferredCurrency: 'BRL' | 'USD'
+  commercialNotes: string
+  segmentationTags: string[]
+}
+
+const EMPTY_CREATE: CreateForm = {
+  name: '', email: '', phone: '', whatsapp: '', taxId: '', companyName: '',
+  jobTitle: '', operationNiche: '', leadAcquisitionSource: '', clientStatus: 'ATIVO',
+  preferredCurrency: 'BRL', commercialNotes: '', segmentationTags: [],
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function ClientesAdminClient() {
@@ -141,6 +166,13 @@ export function ClientesAdminClient() {
   const [cnpjLoading, setCnpjLoading] = useState(false)
   const [nextClientCode, setNextClientCode] = useState<string | null>(null)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+
+  // ── Estado do modal de cadastro ──
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE)
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({})
+  const [creating, setCreating] = useState(false)
+  const [createStep, setCreateStep] = useState<'form' | 'success'>('form')
 
   // Debounce de busca
   useEffect(() => {
@@ -310,6 +342,68 @@ export function ClientesAdminClient() {
     })
   }
 
+  function toggleCreateTag(tag: string) {
+    setCreateForm((f) => ({
+      ...f,
+      segmentationTags: f.segmentationTags.includes(tag)
+        ? f.segmentationTags.filter((t) => t !== tag)
+        : [...f.segmentationTags, tag],
+    }))
+  }
+
+  function validateCreate(): boolean {
+    const errs: Record<string, string> = {}
+    if (!createForm.name.trim() || createForm.name.trim().length < 2) errs.name = 'Nome obrigatório (mín. 2 caracteres)'
+    if (!createForm.email.trim() || !/^[^@]+@[^@]+\.[^@]+$/.test(createForm.email)) errs.email = 'E-mail inválido'
+    if (createForm.taxId) {
+      const digits = createForm.taxId.replace(/\D/g, '')
+      if (digits.length !== 0 && digits.length !== 11 && digits.length !== 14) errs.taxId = 'CPF (11 dígitos) ou CNPJ (14 dígitos)'
+    }
+    setCreateErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!validateCreate()) return
+    setCreating(true)
+    try {
+      const res = await fetch('/api/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...createForm,
+          phone: createForm.phone || null,
+          whatsapp: createForm.whatsapp || null,
+          taxId: createForm.taxId || null,
+          companyName: createForm.companyName || null,
+          jobTitle: createForm.jobTitle || null,
+          operationNiche: createForm.operationNiche || null,
+          leadAcquisitionSource: createForm.leadAcquisitionSource || null,
+          commercialNotes: createForm.commercialNotes || null,
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) {
+        showToast('error', d.error || 'Erro ao cadastrar cliente')
+        return
+      }
+      setCreateStep('success')
+      // Atualiza o próximo código
+      fetch('/api/admin/clientes/next-id').then(r => r.json()).then(d => { if (d.nextClientId) setNextClientCode(d.nextClientId) }).catch(() => {})
+      load()
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function closeCreate() {
+    setShowCreate(false)
+    setCreateForm(EMPTY_CREATE)
+    setCreateErrors({})
+    setCreateStep('form')
+  }
+
   return (
     <div className="p-4 md:p-6 max-w-screen-2xl mx-auto">
       {/* Toast */}
@@ -324,16 +418,25 @@ export function ClientesAdminClient() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-xl font-bold">Cadastro de Clientes</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">{total} clientes cadastrados</p>
+          <h1 className="text-xl font-bold">Cadastro de Clientes (CRM)</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">{total} cliente{total !== 1 ? 's' : ''} cadastrado{total !== 1 ? 's' : ''}</p>
         </div>
-        {nextClientCode && (
-          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700">
-            <Hash className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-            <span className="text-xs text-zinc-500">Próximo código:</span>
-            <span className="font-bold text-primary-700 dark:text-primary-300 font-mono text-sm">{nextClientCode}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {nextClientCode && (
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700">
+              <Hash className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+              <span className="text-xs text-zinc-500">Próximo código:</span>
+              <span className="font-bold text-primary-700 dark:text-primary-300 font-mono text-sm">{nextClientCode}</span>
+            </div>
+          )}
+          <button
+            onClick={() => { setShowCreate(true); setCreateStep('form') }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold shadow-sm transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
+            Novo Cliente
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -368,7 +471,27 @@ export function ClientesAdminClient() {
           <Loader2 className="w-6 h-6 animate-spin mr-2" /> Carregando...
         </div>
       ) : clients.length === 0 ? (
-        <div className="text-center py-20 text-zinc-400">Nenhum cliente encontrado.</div>
+        <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+            <UserPlus className="w-8 h-8 text-zinc-400" />
+          </div>
+          <div>
+            <p className="font-semibold text-zinc-600 dark:text-zinc-300 text-base">
+              {searchQuery || statusFilter || tagFilter ? 'Nenhum cliente encontrado para os filtros.' : 'Nenhum cliente cadastrado ainda.'}
+            </p>
+            {!searchQuery && !statusFilter && !tagFilter && (
+              <p className="text-sm text-zinc-400 mt-1">Clique em <strong>Novo Cliente</strong> para começar.</p>
+            )}
+          </div>
+          {!searchQuery && !statusFilter && !tagFilter && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold"
+            >
+              <UserPlus className="w-4 h-4" /> Cadastrar primeiro cliente
+            </button>
+          )}
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {clients.map((c) => (
@@ -395,6 +518,283 @@ export function ClientesAdminClient() {
           >
             <ChevronRight className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* ── Modal de Cadastro de Novo Cliente ── */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 md:p-8">
+          <div className="w-full max-w-2xl bg-white dark:bg-ads-dark-card rounded-2xl shadow-2xl my-auto">
+
+            {/* Cabeçalho */}
+            <div className="flex items-center justify-between p-5 border-b border-zinc-200 dark:border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center">
+                  <UserPlus className="w-5 h-5 text-primary-600" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-lg">Novo Cliente</h2>
+                  {nextClientCode && (
+                    <p className="text-xs text-zinc-500">Código a ser gerado: <span className="font-bold text-primary-600 font-mono">{nextClientCode}</span></p>
+                  )}
+                </div>
+              </div>
+              <button onClick={closeCreate} className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Conteúdo */}
+            {createStep === 'success' ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-4">
+                <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                  <CheckCircle2 className="w-8 h-8 text-green-600" />
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-green-700 dark:text-green-400">Cliente cadastrado com sucesso!</p>
+                  <p className="text-sm text-zinc-500 mt-1">O perfil foi criado e já aparece na listagem.</p>
+                </div>
+                <div className="flex gap-3 mt-2">
+                  <button
+                    onClick={() => { setCreateForm(EMPTY_CREATE); setCreateStep('form') }}
+                    className="px-4 py-2 rounded-lg border border-primary-300 text-primary-700 dark:border-primary-600 dark:text-primary-300 text-sm font-medium hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                  >
+                    Cadastrar outro
+                  </button>
+                  <button
+                    onClick={closeCreate}
+                    className="px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleCreate} className="p-5 space-y-5">
+
+                {/* Identificação */}
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Identificação</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        Nome Completo / Razão Social <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.name}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                        className={`input-field w-full ${createErrors.name ? 'border-red-400' : ''}`}
+                        placeholder="Ex: João Silva ou Empresa LTDA"
+                      />
+                      {createErrors.name && <p className="text-xs text-red-500 mt-1">{createErrors.name}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        E-mail <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={createForm.email}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                        className={`input-field w-full ${createErrors.email ? 'border-red-400' : ''}`}
+                        placeholder="cliente@email.com"
+                      />
+                      {createErrors.email && <p className="text-xs text-red-500 mt-1">{createErrors.email}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">CPF / CNPJ</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={createForm.taxId}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, taxId: e.target.value }))}
+                          className={`input-field flex-1 ${createErrors.taxId ? 'border-red-400' : ''}`}
+                          placeholder="000.000.000-00 ou CNPJ"
+                          maxLength={18}
+                        />
+                        {createForm.taxId.replace(/\D/g, '').length === 14 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const digits = createForm.taxId.replace(/\D/g, '')
+                              setCnpjLoading(true)
+                              fetch(`/api/receita/consulta-cnpj?cnpj=${digits}`)
+                                .then(r => r.json())
+                                .then(d => {
+                                  if (d.razaoSocial) {
+                                    setCreateForm(f => ({
+                                      ...f,
+                                      companyName: d.razaoSocial || f.companyName,
+                                    }))
+                                    showToast('success', `Empresa: ${d.razaoSocial}`)
+                                  } else {
+                                    showToast('error', d.error || 'CNPJ não encontrado')
+                                  }
+                                })
+                                .catch(() => showToast('error', 'Erro ao consultar CNPJ'))
+                                .finally(() => setCnpjLoading(false))
+                            }}
+                            disabled={cnpjLoading}
+                            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-60"
+                          >
+                            {cnpjLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSearch className="w-3.5 h-3.5" />}
+                            CNPJ
+                          </button>
+                        )}
+                      </div>
+                      {createErrors.taxId && <p className="text-xs text-red-500 mt-1">{createErrors.taxId}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">WhatsApp</label>
+                      <input
+                        type="text"
+                        value={createForm.whatsapp}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, whatsapp: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="(11) 99999-9999"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Telefone</label>
+                      <input
+                        type="text"
+                        value={createForm.phone}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="(11) 3333-4444"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Empresa / Nome Fantasia</label>
+                      <input
+                        type="text"
+                        value={createForm.companyName}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, companyName: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="Nome da empresa"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Cargo</label>
+                      <input
+                        type="text"
+                        value={createForm.jobTitle}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, jobTitle: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="Ex: Gestor de Tráfego"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comercial */}
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Informações Comerciais</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Nicho de Operação</label>
+                      <input
+                        type="text"
+                        value={createForm.operationNiche}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, operationNiche: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="Ex: E-commerce, Info produto..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Origem do Lead</label>
+                      <select
+                        value={createForm.leadAcquisitionSource}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, leadAcquisitionSource: e.target.value }))}
+                        className="input-field w-full"
+                      >
+                        <option value="">Selecionar...</option>
+                        <option value="INSTAGRAM">Instagram</option>
+                        <option value="WHATSAPP">WhatsApp</option>
+                        <option value="INDICACAO">Indicação</option>
+                        <option value="GOOGLE_ADS">Google Ads</option>
+                        <option value="YOUTUBE">YouTube</option>
+                        <option value="GRUPO_TELEGRAM">Grupo Telegram</option>
+                        <option value="EVENTO">Evento</option>
+                        <option value="OUTROS">Outros</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Status</label>
+                      <select
+                        value={createForm.clientStatus}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, clientStatus: e.target.value as CreateForm['clientStatus'] }))}
+                        className="input-field w-full"
+                      >
+                        <option value="ATIVO">Ativo</option>
+                        <option value="INATIVO">Inativo</option>
+                        <option value="BLOQUEADO">Bloqueado</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Moeda Preferencial</label>
+                      <select
+                        value={createForm.preferredCurrency}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, preferredCurrency: e.target.value as 'BRL' | 'USD' }))}
+                        className="input-field w-full"
+                      >
+                        <option value="BRL">BRL — Real Brasileiro</option>
+                        <option value="USD">USD — Dólar</option>
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Notas Comerciais</label>
+                      <textarea
+                        value={createForm.commercialNotes}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, commercialNotes: e.target.value }))}
+                        rows={2}
+                        className="input-field w-full text-sm resize-none"
+                        placeholder="Observações internas (visível apenas pelo time)..."
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Tags de Segmentação</p>
+                  <div className="flex flex-wrap gap-2">
+                    {TAG_OPTIONS.map((t) => {
+                      const active = createForm.segmentationTags.includes(t.value)
+                      return (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => toggleCreateTag(t.value)}
+                          className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-all ${
+                            active ? t.color : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-700 dark:text-zinc-400 dark:border-zinc-600'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Ações */}
+                <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-200 dark:border-white/10">
+                  <button type="button" onClick={closeCreate} className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creating}
+                    className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {creating ? <><Loader2 className="w-4 h-4 animate-spin" /> Cadastrando…</> : <><UserPlus className="w-4 h-4" /> Cadastrar Cliente</>}
+                  </button>
+                </div>
+
+              </form>
+            )}
+          </div>
         </div>
       )}
 
