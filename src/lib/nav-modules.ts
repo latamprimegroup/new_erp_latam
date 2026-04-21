@@ -30,7 +30,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/ads-tracker',
     label: 'Ads Tracker — Central',
-    roles: ['ADMIN', 'MANAGER', 'PRODUCTION_MANAGER', 'FINANCE'],
+    roles: ['ADMIN', 'MANAGER', 'FINANCE'],
     icon: 'Gauge',
   },
   { href: '/dashboard/ads-core/bi', label: 'Dashboard de Gestão (BI)', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'BarChart3' },
@@ -52,7 +52,7 @@ export const MODULES_ERP: NavItem[] = [
   { href: '/dashboard/base', label: 'Base (E-mails/CNPJs)', roles: ['ADMIN'], icon: 'Database' },
   { href: '/dashboard/vendas', label: 'Vendas', roles: ['ADMIN', 'COMMERCIAL', 'FINANCE'], icon: 'ShoppingCart' },
   { href: '/dashboard/commercial', label: 'Pulmão Comercial', roles: ['ADMIN', 'COMMERCIAL'], icon: 'Activity' },
-  { href: '/dashboard/gtm-conversao', label: 'GTM & Conversões', roles: ['ADMIN', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'MANAGER', 'PLUG_PLAY'], icon: 'BarChart2' },
+  { href: '/dashboard/gtm-conversao', label: 'GTM & Conversões', roles: ['ADMIN', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'MANAGER', 'PLUG_PLAY'], icon: 'BarChart2' },
   { href: '/dashboard/roi-crm', label: 'ROI & CRM', roles: ['ADMIN', 'COMMERCIAL', 'FINANCE'], icon: 'LineChart' },
   {
     href: '/dashboard/intelligence-leads',
@@ -60,11 +60,11 @@ export const MODULES_ERP: NavItem[] = [
     roles: ['ADMIN', 'COMMERCIAL', 'FINANCE'],
     icon: 'Brain',
   },
-  { href: '/dashboard/onboarding', label: 'Onboarding Clientes', roles: ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'FINANCE', 'MANAGER', 'PRODUCTION_MANAGER'], icon: 'UserPlus' },
+  { href: '/dashboard/onboarding', label: 'Onboarding Clientes', roles: ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'FINANCE', 'MANAGER'], icon: 'UserPlus' },
   { href: '/dashboard/entregas', label: 'Entregas (Pedidos)', roles: ['ADMIN', 'DELIVERER'], icon: 'Truck' },
-  { href: '/dashboard/entregas-grupos', label: 'Entregas por Grupo', roles: ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'], icon: 'PackageCheck' },
-  { href: '/dashboard/logistica/plugplay-tracker', label: 'Delivery Tracker P&P', roles: ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'], icon: 'Truck' },
-  { href: '/dashboard/suporte/rma', label: 'Suporte — RMA', roles: ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'DELIVERER', 'COMMERCIAL'], icon: 'RefreshCw' },
+  { href: '/dashboard/entregas-grupos', label: 'Entregas por Grupo', roles: ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER'], icon: 'PackageCheck' },
+  { href: '/dashboard/logistica/plugplay-tracker', label: 'Delivery Tracker P&P', roles: ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER'], icon: 'Truck' },
+  { href: '/dashboard/suporte/rma', label: 'Suporte — RMA', roles: ['ADMIN', 'PRODUCER', 'DELIVERER', 'COMMERCIAL'], icon: 'RefreshCw' },
   { href: '/dashboard/admin/delivery-dashboard', label: 'Dashboard Entregas', roles: ['ADMIN', 'DELIVERER', 'COMMERCIAL'], icon: 'LayoutList' },
   { href: '/dashboard/financeiro', label: 'Financeiro', roles: ['ADMIN', 'FINANCE'], icon: 'Banknote' },
   { href: '/dashboard/saques', label: 'Saques', roles: ['ADMIN', 'FINANCE'], icon: 'Wallet' },
@@ -88,7 +88,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/admin/creative-vault',
     label: 'Creative Vault — fila edição',
-    roles: ['ADMIN', 'COMMERCIAL', 'PRODUCTION_MANAGER'],
+    roles: ['ADMIN', 'COMMERCIAL'],
     icon: 'Clapperboard',
   },
   {
@@ -100,7 +100,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/admin/war-room-live',
     label: 'War Room Live — comando',
-    roles: ['ADMIN', 'COMMERCIAL', 'PRODUCTION_MANAGER'],
+    roles: ['ADMIN', 'COMMERCIAL'],
     icon: 'Radio',
   },
   { href: '/dashboard/admin/solicitacoes', label: 'Solicitações de contas', roles: ['ADMIN', 'COMMERCIAL'], icon: 'Inbox' },
