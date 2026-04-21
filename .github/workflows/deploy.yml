@@ -1,9 +1,5 @@
-# Push em main:
-# 1) job verify — lint/typecheck/prisma (sem tocar no servidor)
-# 2) job deploy-hostinger — git pull + build + pm2 no VPS (Hostinger)
-#
-# Vercel: com o projeto ligado ao mesmo repositório, o deploy de produção
-# é automático em paralelo; variáveis ficam só no painel da Vercel.
+# Deploy pipeline — main branch only
+# verify → deploy-hostinger (se secrets configurados)
 
 name: Deploy to Hostinger
 
@@ -11,7 +7,6 @@ on:
   push:
     branches: [main]
 
-# Cancela qualquer run pendente/em-progresso do mesmo workflow ao novo push
 concurrency:
   group: deploy-main
   cancel-in-progress: true
@@ -24,28 +19,21 @@ jobs:
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET != '' && secrets.NEXTAUTH_SECRET || 'ci-placeholder-secret-32chars' }}
       NEXTAUTH_URL: 'http://localhost:3000'
     steps:
-      - name: Cancelar runs antigos pendentes
+      - name: Cancelar runs anteriores pendentes
+        continue-on-error: true
         run: |
-          gh run list \
-            --repo "${{ github.repository }}" \
-            --workflow "deploy.yml" \
-            --status queued \
-            --json databaseId \
-            --jq '.[].databaseId' | while read id; do
-              echo "Cancelando run antigo: $id"
-              gh run cancel "$id" --repo "${{ github.repository }}" || true
-            done
-          gh run list \
-            --repo "${{ github.repository }}" \
-            --workflow "deploy.yml" \
-            --status in_progress \
-            --json databaseId \
-            --jq '.[].databaseId' | while read id; do
-              if [ "$id" != "${{ github.run_id }}" ]; then
-                echo "Cancelando run em progresso: $id"
+          for status in queued in_progress; do
+            gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow "deploy.yml" \
+              --status "$status" \
+              --json databaseId \
+              --jq '.[].databaseId' | while read id; do
+                [ "$id" = "${{ github.run_id }}" ] && continue
+                echo "Cancelando run $id ($status)"
                 gh run cancel "$id" --repo "${{ github.repository }}" || true
-              fi
             done
+          done
         env:
           GH_TOKEN: ${{ github.token }}
 
