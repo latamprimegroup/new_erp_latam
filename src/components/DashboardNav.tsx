@@ -38,38 +38,96 @@ export function DashboardNav({
           <span className="text-xs text-gray-500 dark:text-white/80 font-medium bg-gray-200 dark:bg-white/20 px-2 py-0.5 rounded">ERP</span>
         </Link>
       </div>
-      <nav className="flex-1 min-h-0 p-3 space-y-1 overflow-y-auto scrollbar-ads">
+      <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-ads">
         {visibleModules.length > 0 ? (
           (() => {
             const activeHref = getActiveNavHref(pathname, visibleModules)
-            return visibleModules.map((m) => {
-              const isActive = m.href === activeHref
-              const Icon = getNavIcon(m.icon)
+
+            // Agrupa módulos por grupo preservando a ordem de aparição
+            const groups: { name: string; items: typeof visibleModules }[] = []
+            const seen = new Map<string, number>()
+            for (const m of visibleModules) {
+              const g = m.group ?? ''
+              if (!seen.has(g)) {
+                seen.set(g, groups.length)
+                groups.push({ name: g, items: [] })
+              }
+              groups[seen.get(g)!].items.push(m)
+            }
+
+            const hasGroups = groups.some((g) => g.name !== '')
+
+            if (!hasGroups) {
               return (
-              <Link
-                key={m.href}
-                href={m.href}
-                onClick={onClose}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? 'bg-primary-100 dark:bg-primary-500 text-primary-700 dark:text-white shadow-lg dark:shadow-primary-500/30'
-                    : 'text-gray-700 dark:text-white/85 hover:bg-gray-100 dark:hover:bg-white/15 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                {m.label}
-              </Link>
+                <div className="p-3 space-y-1">
+                  {visibleModules.map((m) => {
+                    const isActive = m.href === activeHref
+                    const Icon = getNavIcon(m.icon)
+                    return (
+                      <Link
+                        key={m.href}
+                        href={m.href}
+                        onClick={onClose}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          isActive
+                            ? 'bg-primary-100 dark:bg-primary-500 text-primary-700 dark:text-white shadow-lg dark:shadow-primary-500/30'
+                            : 'text-gray-700 dark:text-white/85 hover:bg-gray-100 dark:hover:bg-white/15 hover:text-gray-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {m.label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )
+            }
+
+            return (
+              <div className="p-3 space-y-4">
+                {groups.map((group) => (
+                  <div key={group.name}>
+                    {group.name && (
+                      <p className="px-3 mb-1 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-white/35 select-none">
+                        {group.name}
+                      </p>
+                    )}
+                    <div className="space-y-0.5">
+                      {group.items.map((m) => {
+                        const isActive = m.href === activeHref
+                        const Icon = getNavIcon(m.icon)
+                        return (
+                          <Link
+                            key={m.href}
+                            href={m.href}
+                            onClick={onClose}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                              isActive
+                                ? 'bg-primary-100 dark:bg-primary-500 text-primary-700 dark:text-white shadow-md dark:shadow-primary-500/30'
+                                : 'text-gray-700 dark:text-white/80 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <Icon className={`w-4 h-4 shrink-0 ${isActive ? '' : 'opacity-70'}`} />
+                            <span className="truncate">{m.label}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )
-            })
           })()
         ) : (
-          <Link
-            href="/dashboard"
-            onClick={onClose}
-            className="block px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-white/90 hover:bg-gray-100 dark:hover:bg-white/10"
-          >
-            Dashboard
-          </Link>
+          <div className="p-3">
+            <Link
+              href="/dashboard"
+              onClick={onClose}
+              className="block px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-white/90 hover:bg-gray-100 dark:hover:bg-white/10"
+            >
+              Dashboard
+            </Link>
+          </div>
         )}
       </nav>
       <div className="shrink-0 p-4 border-t border-gray-200 dark:border-white/10">
