@@ -662,6 +662,7 @@ enum AccountPlatform {
 enum AccountStatus {
   PENDING
   IN_ANALYSIS
+  UNDER_REVIEW
   APPROVED
   REJECTED
   IN_USE

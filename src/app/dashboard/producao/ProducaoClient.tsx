@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { Fragment, useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
@@ -13,8 +13,8 @@ import { GLOBAL_CURRENCY_OPTIONS } from '@/lib/global-currencies'
 
 const ROLE_BADGE: Record<string, string> = {
   ADMIN: 'Admin',
-  PRODUCER: 'Produção',
-  PRODUCTION_MANAGER: 'Gerente produção',
+  PRODUCER: 'Produ├º├úo',
+  PRODUCTION_MANAGER: 'Gerente produ├º├úo',
   FINANCE: 'Financeiro',
   DELIVERER: 'Entregas',
   COMMERCIAL: 'Vendas',
@@ -33,7 +33,7 @@ const ACCOUNT_TYPES = [
   { value: 'BLACK', label: 'BLACK', color: '#3b82f6' },
   { value: 'G2_PREMIUM', label: 'G2 Premium', color: '#8b5cf6' },
   { value: 'BOV_PENDENTE', label: 'BOV Pendente', color: '#f59e0b' },
-  { value: 'EM_CONTESTACAO', label: 'Em Contestação', color: '#f97316' },
+  { value: 'EM_CONTESTACAO', label: 'Em Contesta├º├úo', color: '#f97316' },
   { value: '__OUTRO__', label: 'Outro (digitar)', color: '#6b7280' },
 ]
 
@@ -52,7 +52,7 @@ const PRODUCTION_NICHES = [
 
 const VERIFICATION_GOALS = [
   { value: 'G2_AND_ADVERTISER', label: 'G2 + Anunciante' },
-  { value: 'ADVERTISER_AND_COMMERCIAL_OPS', label: 'Anunciante + Operações Comerciais' },
+  { value: 'ADVERTISER_AND_COMMERCIAL_OPS', label: 'Anunciante + Opera├º├Áes Comerciais' },
 ] as const
 
 function formatAccountId(v: string): string {
@@ -62,26 +62,6 @@ function formatAccountId(v: string): string {
   return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6, 10)}`
 }
 
-function statusLabel(status: string) {
-  switch (status) {
-    case 'PENDING': return 'Pendente'
-    case 'IN_ANALYSIS': return 'Em Análise'
-    case 'APPROVED': return 'Aprovado'
-    case 'REJECTED': return 'Rejeitado'
-    default: return status
-  }
-}
-
-function statusClass(status: string) {
-  switch (status) {
-    case 'PENDING': return 'bg-amber-100 text-amber-800'
-    case 'IN_ANALYSIS': return 'bg-blue-100 text-blue-800'
-    case 'APPROVED': return 'bg-green-100 text-green-800'
-    case 'REJECTED': return 'bg-red-100 text-red-800'
-    default: return 'bg-gray-100 text-gray-800'
-  }
-}
-
 type Account = {
   id: string
   accountCode: string | null
@@ -89,14 +69,7 @@ type Account = {
   type: string
   email: string | null
   cnpj: string | null
-  googleAdsCustomerId: string | null
-  currency: string | null
-  a2fCode: string | null
-  g2ApprovalCode: string | null
-  siteUrl: string | null
-  cnpjBizLink: string | null
-  cnpjPdfUrl: string | null
-  passwordPlain: string | null
+  countryId: string | null
   status: string
   rejectionReason: string | null
   producerId: string
@@ -117,25 +90,25 @@ type Account = {
   cnpjPdfUrl?: string | null
 }
 
-/** Identificador que o utilizador opera: código manual; senão ID Google Ads; nunca o cuid interno. */
+/** Identificador que o utilizador opera: c├│digo manual; sen├úo ID Google Ads; nunca o cuid interno. */
 function displayAccountId(a: Account): string {
   const code = a.accountCode?.trim()
   if (code) return code
   const g = a.googleAdsCustomerId?.trim()
   if (g) return g
-  return '—'
+  return 'ÔÇö'
 }
 
-/** Texto auxiliar sob o identificador (ex.: Google quando o código manual é o principal). */
+/** Texto auxiliar sob o identificador (ex.: Google quando o c├│digo manual ├® o principal). */
 function accountIdSubtitle(a: Account): string | null {
   const code = a.accountCode?.trim()
   const g = a.googleAdsCustomerId?.trim()
   if (code && g) return `Google Ads: ${g}`
-  if (!code && !g) return 'Defina o identificador manual em Editar (não exibimos o ID automático do sistema).'
+  if (!code && !g) return 'Defina o identificador manual em Editar (n├úo exibimos o ID autom├ítico do sistema).'
   return null
 }
 
-/** Valor a copiar: código manual, ou Google, ou ID interno só como último recurso. */
+/** Valor a copiar: c├│digo manual, ou Google, ou ID interno s├│ como ├║ltimo recurso. */
 function copyableAccountId(a: Account): string {
   const code = a.accountCode?.trim()
   if (code) return code
@@ -146,7 +119,7 @@ function copyableAccountId(a: Account): string {
 
 function nicheLabel(v: string | undefined) {
   const f = PRODUCTION_NICHES.find((n) => n.value === v)
-  return f?.label ?? v ?? '—'
+  return f?.label ?? v ?? 'ÔÇö'
 }
 
 function statusLabel(status: string): string {
@@ -154,7 +127,7 @@ function statusLabel(status: string): string {
     case 'PENDING':
       return 'Pendente'
     case 'UNDER_REVIEW':
-      return 'Em análise (verificação)'
+      return 'Em an├ílise (verifica├º├úo)'
     case 'APPROVED':
       return 'Aprovada (verificada)'
     case 'REJECTED':
@@ -164,7 +137,7 @@ function statusLabel(status: string): string {
   }
 }
 
-/** Alerta visual quando pendente ou em análise há mais de 24 h (SLA da fila). */
+/** Alerta visual quando pendente ou em an├ílise h├í mais de 24 h (SLA da fila). */
 function slaPendingBadge(createdAt: string, status: string) {
   if (status !== 'PENDING' && status !== 'UNDER_REVIEW') return null
   const hours = (Date.now() - new Date(createdAt).getTime()) / 3_600_000
@@ -174,33 +147,33 @@ function slaPendingBadge(createdAt: string, status: string) {
   return (
     <span
       className="inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-600/30 dark:border-amber-500/40"
-      title={`Na fila há ${hRounded} h (acima do SLA de 24 h)`}
+      title={`Na fila h├í ${hRounded} h (acima do SLA de 24 h)`}
     >
-      SLA +24h{days >= 1 ? ` · ${days}d` : ` · ${hRounded}h`}
+      SLA +24h{days >= 1 ? ` ┬À ${days}d` : ` ┬À ${hRounded}h`}
     </span>
   )
 }
 
-/** Dias corridos desde o registro (referência de fila / aquecimento). */
+/** Dias corridos desde o registro (refer├¬ncia de fila / aquecimento). */
 function daysSinceRegistration(createdAt: string) {
   const start = new Date(createdAt).setHours(0, 0, 0, 0)
   const today = new Date().setHours(0, 0, 0, 0)
   return Math.max(0, Math.round((today - start) / 86_400_000))
 }
 
-/** Sinais rápidos de credenciais (complementa o checklist de processo). */
+/** Sinais r├ípidos de credenciais (complementa o checklist de processo). */
 function CredentialHints({ a }: { a: Account }) {
   const has2fa = !!(a.a2fCode && String(a.a2fCode).trim())
   return (
     <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 max-w-[11rem]">
-      <span title={a.hasPassword ? 'Senha registrada no sistema' : 'Senha ainda não cadastrada'}>
-        {a.hasPassword ? '✓ Senha' : '○ Senha'}
+      <span title={a.hasPassword ? 'Senha registrada no sistema' : 'Senha ainda n├úo cadastrada'}>
+        {a.hasPassword ? 'Ô£ô Senha' : 'Ôùï Senha'}
       </span>
-      <span title={has2fa ? '2FA / chave informada' : '2FA não informado'}>
-        {has2fa ? '✓ 2FA' : '○ 2FA'}
+      <span title={has2fa ? '2FA / chave informada' : '2FA n├úo informado'}>
+        {has2fa ? 'Ô£ô 2FA' : 'Ôùï 2FA'}
       </span>
-      <span title={a.proxyConfigured ? 'Proxy/perfil (sessão) sinalizado' : 'Proxy/perfil não sinalizado'}>
-        {a.proxyConfigured ? '✓ Sessão' : '○ Sessão'}
+      <span title={a.proxyConfigured ? 'Proxy/perfil (sess├úo) sinalizado' : 'Proxy/perfil n├úo sinalizado'}>
+        {a.proxyConfigured ? 'Ô£ô Sess├úo' : 'Ôùï Sess├úo'}
       </span>
     </div>
   )
@@ -221,70 +194,99 @@ type StockDisponivel = {
   reservadoParaMim: { emails: number; cnpjs: number; perfisPagamento: number }
 }
 
-const EMPTY_FORM = {
-  platform: 'GOOGLE_ADS' as string,
-  type: '',
-  typeCustom: '',
-  email: '',
-  cnpj: '',
-  emailId: '',
-  cnpjId: '',
-  paymentProfileId: '',
-  googleAdsCustomerId: '',
-  currency: 'BRL',
-  a2fCode: '',
-  g2ApprovalCode: '',
-  siteUrl: '',
-  cnpjBizLink: '',
-  password: '',
-}
-
-const REJECTION_CODES = [
-  { value: 'DOC_INVALIDO', label: 'Documento inválido' },
-  { value: 'EMAIL_BLOQUEADO', label: 'E-mail bloqueado' },
-  { value: 'CNPJ_INVALIDO', label: 'CNPJ inválido' },
-  { value: 'PAGAMENTO_RECUSADO', label: 'Pagamento recusado' },
-  { value: 'DADOS_INCONSISTENTES', label: 'Dados inconsistentes' },
-  { value: 'OUTRO', label: 'Outro' },
-]
-
 export function ProducaoClient() {
   const { data: session } = useSession()
   const canApprove = session?.user?.role === 'ADMIN' || session?.user?.role === 'FINANCE'
-  const isProducer = session?.user?.role === 'PRODUCER'
-
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [kpis, setKpis] = useState({ daily: 0, monthly: 0, dailyProd: 0, monthlyProd: 0, dailyG2: 0, monthlyG2: 0 })
+  const [kpis, setKpis] = useState({
+    daily: 0,
+    monthly: 0,
+    dailyProd: 0,
+    monthlyProd: 0,
+    dailyG2: 0,
+    monthlyG2: 0,
+    pendingReview: 0,
+  })
   const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState('')
-  const [metaMensal] = useState(330)
-
-  // Formulário de criação
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [formSection, setFormSection] = useState<'geral' | 'senha' | 'documentos'>('geral')
   const [mode, setMode] = useState<'manual' | 'estoque'>('manual')
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [formTab, setFormTab] = useState<'dados' | 'senha'>('dados')
+  const [showPasswordCreate, setShowPasswordCreate] = useState(false)
+  const [form, setForm] = useState({
+    accountCode: '',
+    password: '',
+    platform: 'GOOGLE_ADS' as string,
+    type: '',
+    typeCustom: '',
+    email: '',
+    cnpj: '',
+    emailId: '',
+    cnpjId: '',
+    paymentProfileId: '',
+    googleAdsCustomerId: '',
+    currency: 'BRL',
+    a2fCode: '',
+    g2ApprovalCode: '',
+    siteUrl: '',
+    cnpjBizLink: '',
+    productionNiche: 'OTHER' as string,
+    verificationGoal: 'G2_AND_ADVERTISER' as string,
+    primaryDomain: '',
+    proxyNote: '',
+    proxyConfigured: false,
+  })
   const [cnpjPdfFile, setCnpjPdfFile] = useState<File | null>(null)
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+  const [nowTick, setNowTick] = useState(() => new Date())
+  const [duplicateBanner, setDuplicateBanner] = useState<string | null>(null)
+  const [pdfRenameBanner, setPdfRenameBanner] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-
-  // Rejeição inline
+  const [filterStatus, setFilterStatus] = useState('')
+  const [metaMensal, setMetaMensal] = useState(330)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [rejectCode, setRejectCode] = useState('')
-
-  // Modal de detalhes / edição
-  const [modalAccount, setModalAccount] = useState<Account | null>(null)
-  const [modalEditMode, setModalEditMode] = useState(false)
-  const [modalEditForm, setModalEditForm] = useState({
-    platform: '', type: '', typeCustom: '', googleAdsCustomerId: '',
-    currency: '', a2fCode: '', g2ApprovalCode: '', siteUrl: '',
-    cnpjBizLink: '', email: '', cnpj: '', password: '',
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({
+    platform: '',
+    type: '',
+    typeCustom: '',
+    accountCode: '',
+    googleAdsCustomerId: '',
+    currency: 'BRL',
+    a2fCode: '',
+    g2ApprovalCode: '',
+    siteUrl: '',
+    cnpjBizLink: '',
+    email: '',
+    cnpj: '',
+    password: '',
+    productionNiche: 'OTHER' as string,
+    verificationGoal: 'G2_AND_ADVERTISER' as string,
+    primaryDomain: '',
+    proxyNote: '',
+    proxyConfigured: false,
   })
-  const [modalSubmitting, setModalSubmitting] = useState(false)
-  const [showModalPassword, setShowModalPassword] = useState(false)
+  const [editKind, setEditKind] = useState<'full' | 'approved-review'>('full')
+  const [managerProducerFilter, setManagerProducerFilter] = useState('')
+  const [producers, setProducers] = useState<{ id: string; name: string | null; email: string }[]>([])
+  const [pdfPreviewId, setPdfPreviewId] = useState<string | null>(null)
+  const [editPasswordVisible, setEditPasswordVisible] = useState(false)
+  const [editTab, setEditTab] = useState<'dados' | 'senha' | 'urls'>('dados')
 
-  // Estoque de base
+  const REJECTION_CODES = [
+    { value: 'DOC_INVALIDO', label: 'Documento inv├ílido' },
+    { value: 'EMAIL_BLOQUEADO', label: 'E-mail bloqueado' },
+    { value: 'CNPJ_INVALIDO', label: 'CNPJ inv├ílido' },
+    { value: 'PAGAMENTO_RECUSADO', label: 'Pagamento recusado' },
+    { value: 'DADOS_INCONSISTENTES', label: 'Dados inconsistentes' },
+    { value: 'OUTRO', label: 'Outro' },
+  ]
+
   const [stockDisponivel, setStockDisponivel] = useState<StockDisponivel | null>(null)
   const [emailsDisponiveis, setEmailsDisponiveis] = useState<StockItem[]>([])
   const [cnpjsDisponiveis, setCnpjsDisponiveis] = useState<StockItem[]>([])
@@ -379,7 +381,7 @@ export function ProducaoClient() {
       setCopiedRowId(rowId)
       window.setTimeout(() => setCopiedRowId(null), 2000)
     } catch {
-      alert('Não foi possível copiar. Selecione o texto manualmente.')
+      alert('N├úo foi poss├¡vel copiar. Selecione o texto manualmente.')
     }
   }
 
@@ -404,8 +406,9 @@ export function ProducaoClient() {
     setLoadingStock(false)
   }
 
-  useEffect(() => { load() }, [filterStatus])
-  useEffect(() => { if (showForm && mode === 'estoque') loadStock() }, [showForm, mode])
+  useEffect(() => {
+    if (showForm && mode === 'estoque') loadStock()
+  }, [showForm, mode])
 
   async function reserveItem(tipo: 'email' | 'cnpj' | 'perfil', id: string) {
     setReservingId(id)
@@ -419,28 +422,114 @@ export function ProducaoClient() {
     setReservingId(null)
   }
 
+  async function releaseItem(tipo: 'email' | 'cnpj' | 'perfil', id: string) {
+    setReservingId(id)
+    const res = await fetch('/api/estoque/liberar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, id }),
+    })
+    if (res.ok) loadStock()
+    else { const e = await res.json(); alert(e.error || 'Erro ao liberar') }
+    setReservingId(null)
+  }
+
+  async function validateFootprintRealtime(input: {
+    accountId?: string
+    email?: string
+    cnpj?: string
+    googleAdsCustomerId?: string
+    a2fCode?: string
+  }) {
+    const hasAny =
+      !!input.email?.trim() ||
+      !!input.cnpj?.trim() ||
+      !!input.googleAdsCustomerId?.trim() ||
+      !!input.a2fCode?.trim()
+    if (!hasAny) return
+    const res = await fetch('/api/producao/validate-uniqueness', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    if (!data.ok && Array.isArray(data.issues) && data.issues.length > 0) {
+      setDuplicateBanner(data.issues.join(' '))
+    } else if (duplicateBanner) {
+      setDuplicateBanner(null)
+    }
+  }
+
   const resolvedType = form.type === '__OUTRO__' ? form.typeCustom : form.type
+
+  const basePayload = {
+    accountCode: form.accountCode.trim(),
+    platform: form.platform,
+    type: resolvedType.trim(),
+    googleAdsCustomerId: form.googleAdsCustomerId || undefined,
+    currency: form.currency,
+    a2fCode: form.a2fCode || undefined,
+    g2ApprovalCode: form.g2ApprovalCode || undefined,
+    siteUrl: form.siteUrl || undefined,
+    cnpjBizLink: form.cnpjBizLink || undefined,
+    productionNiche: form.productionNiche,
+    verificationGoal: form.verificationGoal,
+    primaryDomain: form.primaryDomain?.trim() || undefined,
+    proxyNote: form.proxyNote?.trim() || undefined,
+    proxyConfigured: form.proxyConfigured,
+    ...(form.password.trim() ? { password: form.password } : {}),
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!resolvedType.trim()) { alert('Selecione ou informe o tipo da conta'); return }
-    setSubmitting(true)
-    const base = {
-      platform: form.platform,
-      type: resolvedType.trim(),
-      googleAdsCustomerId: form.googleAdsCustomerId || undefined,
-      currency: form.currency,
-      a2fCode: form.a2fCode || undefined,
-      g2ApprovalCode: form.g2ApprovalCode || undefined,
-      siteUrl: form.siteUrl || undefined,
-      cnpjBizLink: form.cnpjBizLink || undefined,
-      password: form.password || undefined,
+    if (!form.accountCode.trim() || form.accountCode.trim().length < 2) {
+      alert('Informe o identificador da conta (m├¡nimo 2 caracteres)')
+      return
+    }
+    if (!resolvedType.trim()) {
+      alert('Selecione ou informe o tipo da conta')
+      return
+    }
+    if (!form.verificationGoal) {
+      alert('Selecione a meta de verifica├º├úo (ADS CORE)')
+      return
+    }
+    if (mode === 'manual' && !form.email.trim()) {
+      alert('E-mail ├® obrigat├│rio no formul├írio de produ├º├úo.')
+      return
+    }
+    if (mode === 'estoque' && !form.emailId) {
+      alert('Selecione um e-mail reservado (obrigat├│rio).')
+      return
+    }
+    if (!form.password.trim()) {
+      alert('Senha ├® obrigat├│ria no formul├írio de produ├º├úo.')
+      return
+    }
+    if (!form.a2fCode.trim()) {
+      alert('2FA ├® obrigat├│rio no formul├írio de produ├º├úo.')
+      return
+    }
+    if (!cnpjPdfFile) {
+      alert('Cart├úo CNPJ (PDF) ├® obrigat├│rio.')
+      return
     }
     const payload =
       mode === 'estoque' && (form.emailId || form.cnpjId || form.paymentProfileId)
-        ? { ...base, emailId: form.emailId || undefined, cnpjId: form.cnpjId || undefined, paymentProfileId: form.paymentProfileId || undefined }
-        : { ...base, email: form.email || undefined, cnpj: form.cnpj || undefined }
+        ? { ...basePayload, emailId: form.emailId || undefined, cnpjId: form.cnpjId || undefined, paymentProfileId: form.paymentProfileId || undefined }
+        : { ...basePayload, email: form.email || undefined, cnpj: form.cnpj || undefined }
 
+    const validated = productionAccountCreateSchema.safeParse(payload)
+    if (!validated.success) {
+      const msg = validated.error.errors[0]?.message ?? 'Dados inv├ílidos'
+      alert(msg)
+      return
+    }
+
+    setDuplicateBanner(null)
+    setPdfRenameBanner(null)
+    setSubmitting(true)
     const res = await fetch('/api/producao', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -457,8 +546,8 @@ export function ProducaoClient() {
         if (pdfRes.ok) {
           pdfMessage =
             typeof pdfJson.filename === 'string'
-              ? `Cartão CNPJ salvo como ${pdfJson.filename}.`
-              : 'Cartão CNPJ (PDF) enviado e renomeado no storage.'
+              ? `Cart├úo CNPJ salvo como ${pdfJson.filename}.`
+              : 'Cart├úo CNPJ (PDF) enviado e renomeado no storage.'
           if (typeof pdfJson.filename === 'string') {
             setPdfRenameBanner(`Arquivo renomeado para ${pdfJson.filename} e guardado no servidor.`)
           }
@@ -470,7 +559,30 @@ export function ProducaoClient() {
         }
         setCnpjPdfFile(null)
       }
-      setForm(EMPTY_FORM)
+      setFormTab('dados')
+      setForm({
+        accountCode: '',
+        password: '',
+        platform: 'GOOGLE_ADS',
+        type: '',
+        typeCustom: '',
+        email: '',
+        cnpj: '',
+        emailId: '',
+        cnpjId: '',
+        paymentProfileId: '',
+        googleAdsCustomerId: '',
+        currency: 'BRL',
+        a2fCode: '',
+        g2ApprovalCode: '',
+        siteUrl: '',
+        cnpjBizLink: '',
+        productionNiche: 'OTHER',
+        verificationGoal: 'G2_AND_ADVERTISER',
+        primaryDomain: '',
+        proxyNote: '',
+        proxyConfigured: false,
+      })
       setShowForm(false)
       await load()
       if (mode === 'estoque') loadStock()
@@ -482,13 +594,13 @@ export function ProducaoClient() {
       setToast({
         kind: 'success',
         message:
-          (pdfMessage ? `Produção registrada. ${pdfMessage} ` : 'Produção registrada com sucesso. ') +
-          'Painel de edição aberto na linha — confira ou ajuste dados e aba Senha.',
+          (pdfMessage ? `Produ├º├úo registrada. ${pdfMessage} ` : 'Produ├º├úo registrada com sucesso. ') +
+          'Painel de edi├º├úo aberto na linha ÔÇö confira ou ajuste dados e aba Senha.',
       })
     } else {
       const err = await res.json().catch(() => ({}))
       const msg = typeof err.error === 'string' ? err.error : 'Erro ao registrar'
-      if (/produzida|já está em uso|duplic|footprint|domínio já/i.test(msg)) {
+      if (/produzida|j├í est├í em uso|duplic|footprint|dom├¡nio j├í/i.test(msg)) {
         setDuplicateBanner(msg)
       }
       setToast({ kind: 'error', message: msg })
@@ -538,7 +650,7 @@ export function ProducaoClient() {
     if (ids.length === 0) return
     if (
       !confirm(
-        `Aprovar ${ids.length} conta(s) selecionada(s)? Cada uma gerará um item no estoque disponível.`
+        `Aprovar ${ids.length} conta(s) selecionada(s)? Cada uma gerar├í um item no estoque dispon├¡vel.`
       )
     )
       return
@@ -566,51 +678,44 @@ export function ProducaoClient() {
     }
   }
 
-  async function handleMarkAnalysis(id: string) {
-    const res = await fetch(`/api/producao/${id}/aprovar`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'analyze' }),
-    })
-    if (res.ok) load()
-    else { const e = await res.json(); alert(e.error || 'Erro') }
-  }
-
   async function handleReject(id: string) {
-    if (!rejectReason.trim()) { alert('Informe o motivo da rejeição'); return }
+    if (!rejectReason.trim()) {
+      alert('Informe o motivo da rejei├º├úo')
+      return
+    }
     const res = await fetch(`/api/producao/${id}/aprovar`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reject', rejectionReason: rejectReason.trim(), rejectionReasonCode: rejectCode || undefined }),
+      body: JSON.stringify({
+        action: 'reject',
+        rejectionReason: rejectReason.trim(),
+        rejectionReasonCode: rejectCode || undefined,
+      }),
     })
     if (res.ok) {
-      setRejectingId(null); setRejectReason(''); setRejectCode(''); load()
+      setRejectingId(null)
+      setRejectReason('')
+      setRejectCode('')
+      load()
     } else {
-      const e = await res.json(); alert(e.error || 'Erro')
+      const e = await res.json()
+      alert(e.error || 'Erro')
     }
   }
 
-  async function handleDelete(id: string) {
-    if (
-      !confirm(
-        'Excluir este registo de produção? O item deixa de aparecer na lista (exclusão lógica). Esta ação não pode ser desfeita pelo painel.'
-      )
-    )
-      return
-    const res = await fetch(`/api/producao/${id}`, { method: 'DELETE' })
-    if (res.ok) load()
-    else { const e = await res.json(); alert(e.error || 'Erro ao excluir') }
-  }
+  const percentMeta = metaMensal > 0 ? Math.min(100, Math.round((kpis.monthly / metaMensal) * 100)) : 0
 
-  function openModal(account: Account, editMode = false) {
+  const isProducer = session?.user?.role === 'PRODUCER'
+  const canManageView =
+    session?.user?.role === 'ADMIN' || session?.user?.role === 'PRODUCTION_MANAGER'
+
+  function populateEditFormFromAccount(account: Account, mode: 'full' | 'approved' | 'urls') {
     const isPredefined = ACCOUNT_TYPES.some((t) => t.value === account.type && t.value !== '__OUTRO__')
-    setModalAccount(account)
-    setModalEditMode(editMode)
-    setShowModalPassword(false)
-    setModalEditForm({
+    setEditForm({
       platform: account.platform,
-      type: isPredefined ? account.type : '__OUTRO__',
-      typeCustom: isPredefined ? '' : account.type,
+      type: mode === 'urls' ? account.type : isPredefined ? account.type : '__OUTRO__',
+      typeCustom: mode === 'urls' ? '' : isPredefined ? '' : account.type,
+      accountCode: account.accountCode || '',
       googleAdsCustomerId: account.googleAdsCustomerId || '',
       currency: account.currency || 'BRL',
       a2fCode: account.a2fCode || '',
@@ -619,92 +724,333 @@ export function ProducaoClient() {
       cnpjBizLink: account.cnpjBizLink || '',
       email: account.email || '',
       cnpj: account.cnpj || '',
-      password: account.passwordPlain || '',
+      password: '',
+      productionNiche: account.productionNiche || 'OTHER',
+      verificationGoal: account.verificationGoal || 'G2_AND_ADVERTISER',
+      primaryDomain: account.primaryDomain || '',
+      proxyNote: account.proxyNote || '',
+      proxyConfigured: account.proxyConfigured ?? false,
     })
   }
 
-  function closeModal() { setModalAccount(null); setModalEditMode(false) }
+  async function handleEdit(account: Account) {
+    setEditingId(account.id)
+    setEditKind('full')
+    setEditTab('dados')
+    populateEditFormFromAccount(account, 'full')
+    setEditPasswordVisible(false)
+  }
 
-  async function handleSaveModalEdit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!modalAccount) return
-    const typeVal = modalEditForm.type === '__OUTRO__' ? modalEditForm.typeCustom : modalEditForm.type
-    if (!typeVal.trim()) { alert('Informe o tipo'); return }
-    setModalSubmitting(true)
-    const res = await fetch(`/api/producao/${modalAccount.id}`, {
+  /** Conta aprovada: conferir dados (leitura), trocar senha, ajustar URLs. */
+  function openApprovedReview(account: Account, initialTab: 'dados' | 'senha' | 'urls' = 'dados') {
+    setEditingId(account.id)
+    setEditKind('approved-review')
+    setEditTab(initialTab)
+    populateEditFormFromAccount(account, 'full')
+    setEditPasswordVisible(false)
+  }
+
+  async function copyFooterText(accountId: string) {
+    try {
+      const res = await fetch(`/api/producao/${accountId}/footer`)
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Erro ao gerar rodap├®')
+        return
+      }
+      await navigator.clipboard.writeText(data.text || '')
+      alert('Texto do rodap├® copiado.')
+    } catch {
+      alert('N├úo foi poss├¡vel copiar. Tente novamente.')
+    }
+  }
+
+  async function handleSendToReview(id: string) {
+    const res = await fetch(`/api/producao/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        platform: modalEditForm.platform,
-        type: typeVal.trim(),
-        googleAdsCustomerId: modalEditForm.googleAdsCustomerId || null,
-        currency: modalEditForm.currency,
-        a2fCode: modalEditForm.a2fCode || null,
-        g2ApprovalCode: modalEditForm.g2ApprovalCode || null,
-        siteUrl: modalEditForm.siteUrl || null,
-        cnpjBizLink: modalEditForm.cnpjBizLink || null,
-        email: modalEditForm.email || null,
-        cnpj: modalEditForm.cnpj || null,
-        password: modalEditForm.password || null,
-      }),
+      body: JSON.stringify({ sendToReview: true }),
     })
-    if (res.ok) {
-      const updated = await res.json()
-      setModalAccount(updated as Account)
-      setModalEditMode(false)
-      load()
-    } else {
-      const e = await res.json(); alert(e.error || 'Erro ao salvar')
+    if (res.ok) load()
+    else {
+      const e = await res.json()
+      alert(e.error || 'Erro')
     }
-    setModalSubmitting(false)
   }
 
-  const percentMeta = metaMensal > 0 ? Math.min(100, Math.round((kpis.monthly / metaMensal) * 100)) : 0
+  async function handleSaveEdit() {
+    if (!editingId) return
+    if (editKind === 'approved-review') {
+      if (editTab === 'dados') {
+        alert('A aba Conferir dados ├® s├│ leitura. Use Senha ou URLs / dom├¡nio para altera├º├Áes.')
+        return
+      }
+      if (editTab === 'senha') {
+        const plain = editForm.password.trim()
+        if (plain.length < 4) {
+          alert('Informe a nova senha (m├¡nimo 4 caracteres).')
+          return
+        }
+        const res = await fetch(`/api/producao/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: plain }),
+        })
+        if (res.ok) {
+          setEditForm((f) => ({ ...f, password: '' }))
+          load()
+          alert('Senha atualizada.')
+        } else {
+          const e = await res.json()
+          alert(e.error || 'Erro ao salvar senha')
+        }
+        return
+      }
+      if (editTab === 'urls') {
+        const payload = {
+          siteUrl: editForm.siteUrl || undefined,
+          cnpjBizLink: editForm.cnpjBizLink || undefined,
+          primaryDomain: editForm.primaryDomain?.trim() || null,
+          proxyNote: editForm.proxyNote?.trim() || null,
+          proxyConfigured: editForm.proxyConfigured,
+        }
+        const res = await fetch(`/api/producao/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+          load()
+          alert('URLs e dom├¡nio atualizados.')
+        } else {
+          const e = await res.json()
+          alert(e.error || 'Erro ao salvar')
+        }
+        return
+      }
+    }
+    const typeVal = editForm.type === '__OUTRO__' ? editForm.typeCustom : editForm.type
+    if (!typeVal.trim()) {
+      alert('Informe o tipo')
+      return
+    }
+    if (!editForm.accountCode.trim() || editForm.accountCode.trim().length < 2) {
+      alert('Informe o identificador da conta (m├¡nimo 2 caracteres)')
+      return
+    }
+    const payload: Record<string, unknown> = {
+      platform: editForm.platform,
+      type: typeVal.trim(),
+      accountCode: editForm.accountCode.trim(),
+      googleAdsCustomerId: editForm.googleAdsCustomerId || null,
+      currency: editForm.currency,
+      a2fCode: editForm.a2fCode || null,
+      g2ApprovalCode: editForm.g2ApprovalCode || null,
+      siteUrl: editForm.siteUrl || undefined,
+      cnpjBizLink: editForm.cnpjBizLink || undefined,
+      email: editForm.email || undefined,
+      cnpj: editForm.cnpj || undefined,
+      productionNiche: editForm.productionNiche,
+      verificationGoal: editForm.verificationGoal,
+      primaryDomain: editForm.primaryDomain?.trim() || null,
+      proxyNote: editForm.proxyNote?.trim() || null,
+      proxyConfigured: editForm.proxyConfigured,
+    }
+    if (editForm.password.trim()) payload.password = editForm.password.trim()
 
-  const tabBtn = (active: boolean) =>
-    `px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-      active
-        ? 'bg-primary-500 text-white'
-        : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-    }`
+    const res = await fetch(`/api/producao/${editingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) {
+      setEditingId(null)
+      setEditKind('full')
+      load()
+    } else {
+      const e = await res.json()
+      alert(e.error || 'Erro ao salvar')
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (
+      !confirm(
+        'Excluir este registo de produ├º├úo? O item deixa de aparecer na lista (exclus├úo l├│gica). Esta a├º├úo n├úo pode ser desfeita pelo painel.'
+      )
+    )
+      return
+    const res = await fetch(`/api/producao/${id}`, { method: 'DELETE' })
+    if (res.ok) load()
+    else {
+      const e = await res.json()
+      alert(e.error || 'Erro ao excluir')
+    }
+  }
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="heading-1">Produção de Contas</h1>
-        <div className="flex gap-2">
-          <Link href="/dashboard/producao-g2" className="btn-secondary text-sm">Produção Google G2</Link>
-          <Link href="/dashboard/producao/metrics" className="btn-secondary text-sm">Métricas</Link>
-          <Link href="/dashboard/producao/saldo" className="btn-secondary text-sm">Saldo e Saque</Link>
+      <section
+        className="mb-5 rounded-xl border border-gray-200 dark:border-slate-600/50 bg-white/90 dark:bg-slate-900/50 p-4 shadow-sm"
+        aria-label="Cabe├ºalho da tabela de produ├º├úo"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative flex-1 min-w-0 max-w-xl">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Buscar contaÔÇª"
+              className="input-field py-2.5 pl-10 pr-3 w-full text-sm"
+              aria-label="Buscar conta na produ├º├úo"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3 justify-start lg:justify-end">
+            <div className="hidden sm:block text-right min-w-0">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                {session?.user?.name || session?.user?.email || 'Utilizador'}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {session?.user?.role ? ROLE_BADGE[session.user.role] || session.user.role : ''}
+              </p>
+            </div>
+            {session?.user?.role === 'ADMIN' && (
+              <Link href="/dashboard/admin" className="btn-secondary text-xs py-2 px-3 shrink-0">
+                Admin
+              </Link>
+            )}
+            <NotificationsBell />
+          </div>
+        </div>
+        <p className="sm:hidden text-xs text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-100 dark:border-slate-700/80 mt-3">
+          {session?.user?.name || session?.user?.email}
+          {session?.user?.role ? ` ┬À ${ROLE_BADGE[session.user.role] || session.user.role}` : ''}
+        </p>
+      </section>
+
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+        <div>
+          <h1 className="heading-1 text-2xl sm:text-3xl">Tabela de Produ├º├úo</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Registo de contas no sistema</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-2xl">
+            Fluxo: <strong>Pendente</strong> ÔåÆ <strong>Em an├ílise (verifica├º├úo)</strong> ÔåÆ{' '}
+            <strong>Aprovada (verificada)</strong>. Use as abas <strong>Dados da conta</strong> e{' '}
+            <strong>Senha</strong> no registo; ap├│s criar, o painel de edi├º├úo abre na linha para confer├¬ncia. Contas{' '}
+            <strong>aprovadas</strong>: bot├úo <strong>Conferir / ajustar</strong> (dados em leitura, senha e URLs
+            edit├íveis). Na lista mostramos o <strong>identificador que voc├¬ digitou</strong>, n├úo o ID autom├ítico do
+            sistema (refer├¬ncia interna s├│ no painel e no tooltip).
+          </p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 font-mono tabular-nums">
+            Atualizado em tempo real ÔÇö {nowTick.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' })}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <Link
+            href="/dashboard/producao-g2?openForm=1"
+            className="btn-secondary text-sm"
+            title="Abre o m├│dulo G2 com o formul├írio de nova tarefa"
+          >
+            Produ├º├úo Google G2
+          </Link>
+          <Link href="/dashboard/producao/metrics" className="btn-secondary text-sm">
+            M├®tricas
+          </Link>
+          <Link href="/dashboard/producao/saldo" className="btn-secondary text-sm">
+            Saldo e Saque
+          </Link>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {loading ? <SkeletonCards count={3} /> : (
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 max-w-3xl">
+        <span className="font-medium text-primary-600">ADS CORE</span> ÔÇö F├íbrica de contas: nicho e meta de verifica├º├úo alinham site e documentos;
+        dom├¡nio ├║nico reduz footprint; rodap├® gerado para paridade com o Google. Ger├¬ncia usa a{' '}
+        <Link href="/dashboard/base" className="underline hover:text-primary-600">
+          Base
+        </Link>{' '}
+        para atribuir lotes a produtores; produtores veem apenas o que lhes foi designado.
+      </p>
+
+      {(duplicateBanner || pdfRenameBanner) && (
+        <div className="mb-4 space-y-2" role="region" aria-label="Mensagens do formul├írio">
+          {duplicateBanner && (
+            <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/50 px-4 py-3 text-sm text-red-900 dark:text-red-100">
+              <span className="font-semibold">Alerta: </span>
+              {duplicateBanner}
+            </div>
+          )}
+          {pdfRenameBanner && (
+            <div className="rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+              <span className="font-semibold">Sucesso: </span>
+              {pdfRenameBanner}
+            </div>
+          )}
+        </div>
+      )}
+
+      {loadError && (
+        <div
+          className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 text-sm border border-red-200 dark:border-red-800"
+          role="alert"
+        >
+          {loadError}
+        </div>
+      )}
+
+      {toast && (
+        <div
+          className={`mb-4 p-3 rounded-lg text-sm border shadow-lg fixed bottom-6 right-6 z-[70] max-w-md ${
+            toast.kind === 'success'
+              ? 'bg-emerald-950/95 text-emerald-50 border-emerald-700/60'
+              : 'bg-red-950/95 text-red-50 border-red-700/60'
+          }`}
+          role="status"
+        >
+          {toast.message}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {loading ? (
+          <SkeletonCards count={4} />
+        ) : (
           <>
             <div className="card transition-all duration-200 hover:shadow-ads-md">
-              <p className="text-sm text-gray-500">Produção Diária (Total)</p>
+              <p className="text-sm text-gray-500">Produ├º├úo Di├íria (Total)</p>
               <p className="text-2xl font-bold text-primary-600">{kpis.daily}</p>
-              <p className="text-xs text-slate-500 mt-1">Contas: {kpis.dailyProd ?? kpis.daily} · G2: {kpis.dailyG2 ?? 0}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Contas: {kpis.dailyProd ?? kpis.daily} ┬À G2: {kpis.dailyG2 ?? 0}
+              </p>
             </div>
             <div className="card transition-all duration-200 hover:shadow-ads-md">
-              <p className="text-sm text-gray-500">Produção Mensal (Total)</p>
+              <p className="text-sm text-gray-500">Produ├º├úo Mensal (Total)</p>
               <p className="text-2xl font-bold text-primary-600">{kpis.monthly}</p>
-              <p className="text-xs text-slate-500 mt-1">Contas: {kpis.monthlyProd ?? kpis.monthly} · G2: {kpis.monthlyG2 ?? 0}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Contas: {kpis.monthlyProd ?? kpis.monthly} ┬À G2: {kpis.monthlyG2 ?? 0}
+              </p>
+            </div>
+            <div className="card transition-all duration-200 hover:shadow-ads-md border-sky-200/60 dark:border-sky-800/40">
+              <p className="text-sm text-gray-500">Em an├ílise (pipeline)</p>
+              <p className="text-2xl font-bold text-sky-600">{kpis.pendingReview ?? 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Aguardando confer├¬ncia / aprova├º├úo</p>
             </div>
             <div className="card transition-all duration-200 hover:shadow-ads-md">
               <p className="text-sm text-gray-500">% da Meta</p>
               <p className="text-2xl font-bold text-primary-600">{percentMeta}%</p>
               <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-accent-500 rounded-full transition-all duration-500" style={{ width: `${percentMeta}%` }} />
+                <div
+                  className="h-full bg-accent-500 rounded-full transition-all duration-500"
+                  style={{ width: `${percentMeta}%` }}
+                />
               </div>
               <p className="text-xs text-slate-500 mt-1.5">
                 {session?.user?.role === 'PRODUCER' ? (
-                  <>Meta individual: {metaMensal.toLocaleString('pt-BR')} contas/mês.</>
+                  <>Meta individual: {metaMensal.toLocaleString('pt-BR')} contas/m├¬s.</>
                 ) : (
-                  <>Meta global: {metaMensal.toLocaleString('pt-BR')} contas/mês.</>
+                  <>Meta global: {metaMensal.toLocaleString('pt-BR')} contas/m├¬s.</>
                 )}
               </p>
             </div>
@@ -712,7 +1058,6 @@ export function ProducaoClient() {
         )}
       </div>
 
-      {/* Main card */}
       <div className="card">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
           <h2 className="font-semibold text-gray-900 dark:text-gray-100">Listagem de contas</h2>
@@ -724,290 +1069,572 @@ export function ProducaoClient() {
             >
               <option value="">Todos status</option>
               <option value="PENDING">Pendente</option>
-              <option value="IN_ANALYSIS">Em Análise</option>
-              <option value="APPROVED">Aprovado</option>
-              <option value="REJECTED">Rejeitado</option>
+              <option value="UNDER_REVIEW">Em an├ílise / aguard. verifica├º├úo</option>
+              <option value="APPROVED">Aprovada</option>
+              <option value="REJECTED">Rejeitada (erro)</option>
             </select>
-            <button
-              onClick={() => { setShowForm(!showForm); setFormSection('geral') }}
-              className="btn-primary"
-            >
-              {showForm ? 'Cancelar' : 'Registrar Produção'}
+            {canManageView && (
+              <select
+                value={managerProducerFilter}
+                onChange={(e) => setManagerProducerFilter(e.target.value)}
+                className="input-field py-1.5 px-2 w-52 text-sm"
+                title="Filtrar por produtor"
+              >
+                <option value="">Todos os produtores</option>
+                {producers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name || p.email}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button type="button" onClick={() => setShowForm(!showForm)} className="btn-primary">
+              {showForm ? 'Cancelar' : 'Registrar Produ├º├úo'}
             </button>
           </div>
         </div>
 
-        {/* ===== FORMULÁRIO DE CRIAÇÃO ===== */}
-        {showForm && (
-          <div className="production-form-area mb-6 p-4 bg-gray-50 dark:bg-ads-dark-card/80 rounded-lg border border-primary-600/5 dark:border-white/10 space-y-4">
+        {canApprove && approvableIdList.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mb-4 px-3 py-2.5 rounded-lg border border-primary-500/20 bg-primary-500/5 dark:bg-primary-900/15">
+            <button
+              type="button"
+              onClick={() => void handleBulkApprove()}
+              disabled={bulkApproving || selectedIds.size === 0}
+              className="btn-primary text-sm disabled:opacity-50"
+            >
+              {bulkApproving ? 'AprovandoÔÇª' : `Aprovar selecionados (${selectedIds.size})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              disabled={selectedIds.size === 0}
+              className="btn-secondary text-sm disabled:opacity-50"
+            >
+              Limpar sele├º├úo
+            </button>
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {approvableIdList.length} conta(s) eleg├¡veis nesta lista (pendente ou em an├ílise).
+            </span>
+          </div>
+        )}
 
-            {/* Abas do formulário */}
-            <div className="flex gap-2 pb-3 border-b border-gray-200 dark:border-white/10">
-              <button type="button" onClick={() => setFormSection('geral')} className={tabBtn(formSection === 'geral')}>
-                Geral
+        {showForm && (
+          <div className="production-form-area mb-6 p-4 bg-gray-50 dark:bg-slate-900/85 rounded-lg border border-primary-600/5 dark:border-slate-600/40 space-y-4 shadow-sm dark:shadow-black/30">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Formul├írio de Cadastro de Produ├º├úo</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Preencha os dados da conta; o PDF do cart├úo CNPJ ├® validado como application/pdf no servidor.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMode('manual')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  mode === 'manual' ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Informar manualmente
               </button>
-              <button type="button" onClick={() => setFormSection('senha')} className={tabBtn(formSection === 'senha')}>
+              <button
+                type="button"
+                onClick={() => setMode('estoque')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  mode === 'estoque' ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Usar do estoque
+              </button>
+            </div>
+
+            {mode === 'estoque' && (
+              <div className="border-t border-gray-200 pt-4">
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Estoque de base (e-mails, CNPJs, perfis)</h3>
+                {loadingStock ? (
+                  <p className="text-sm text-gray-500">Carregando...</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="font-medium text-gray-600 mb-1">Dispon├¡vel</p>
+                      <p>
+                        {stockDisponivel?.disponivel.emails ?? 0} e-mails ┬À {stockDisponivel?.disponivel.cnpjs ?? 0} CNPJs ┬À{' '}
+                        {stockDisponivel?.disponivel.perfisPagamento ?? 0} perfis
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-600 mb-1">Reservado para mim</p>
+                      <p>
+                        {stockDisponivel?.reservadoParaMim.emails ?? 0} e-mails ┬À {stockDisponivel?.reservadoParaMim.cnpjs ?? 0} CNPJs ┬À{' '}
+                        {stockDisponivel?.reservadoParaMim.perfisPagamento ?? 0} perfis
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {emailsDisponiveis.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500">E-mails dispon├¡veis</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {emailsDisponiveis.slice(0, 3).map((e) => (
+                              <button
+                                key={e.id}
+                                type="button"
+                                onClick={() => reserveItem('email', e.id)}
+                                disabled={reservingId === e.id}
+                                className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200"
+                              >
+                                Reservar {e.email?.slice(0, 12)}...
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {cnpjsDisponiveis.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500">CNPJs dispon├¡veis</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {cnpjsDisponiveis.slice(0, 3).map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => reserveItem('cnpj', c.id)}
+                                disabled={reservingId === c.id}
+                                className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200"
+                              >
+                                Reservar {c.cnpj?.slice(0, 10)}...
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {perfisDisponiveis.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500">Perfis dispon├¡veis</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {perfisDisponiveis.slice(0, 3).map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => reserveItem('perfil', p.id)}
+                                disabled={reservingId === p.id}
+                                className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200"
+                              >
+                                Reservar {p.type}/{p.gateway}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {(emailsDisponiveis.length === 0 && cnpjsDisponiveis.length === 0 && perfisDisponiveis.length === 0) && (
+                        <p className="text-xs text-amber-600">Nenhum item dispon├¡vel. O admin deve cadastrar em Base.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2 border-b border-gray-200 dark:border-white/10 pb-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setFormTab('dados')}
+                className={`px-4 py-2 rounded-t-lg text-sm font-medium ${
+                  formTab === 'dados'
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-200'
+                }`}
+              >
+                Dados da conta
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormTab('senha')}
+                className={`px-4 py-2 rounded-t-lg text-sm font-medium inline-flex items-center gap-2 ${
+                  formTab === 'senha'
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-200'
+                }`}
+              >
                 Senha
-              </button>
-              <button type="button" onClick={() => setFormSection('documentos')} className={tabBtn(formSection === 'documentos')}>
-                Documentos
+                <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-500/25 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded">
+                  Obrigat├│ria
+                </span>
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3">
-
-              {/* Aba: Geral */}
-              {formSection === 'geral' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {formTab === 'senha' ? (
+                <div className="max-w-md space-y-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Plataforma</label>
-                    <select
-                      value={form.platform}
-                      onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
-                      className="input-field"
+                    <label className="block text-sm font-medium mb-1">Identificador da conta *</label>
+                    <input
+                      type="text"
+                      value={form.accountCode}
+                      onChange={(e) => setForm((f) => ({ ...f, accountCode: e.target.value }))}
+                      className="input-field font-mono"
+                      placeholder="Mesmo identificador da aba Dados"
                       required
-                    >
-                      {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Tipo</label>
-                    <select
-                      value={ACCOUNT_TYPES.some((t) => t.value === form.type) ? form.type : '__OUTRO__'}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, type: e.target.value, typeCustom: e.target.value === '__OUTRO__' ? f.typeCustom : '' }))
-                      }
-                      className="input-field"
-                      required={form.type !== '__OUTRO__'}
-                    >
-                      {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                    {form.type === '__OUTRO__' && (
-                      <input
-                        type="text"
-                        value={form.typeCustom}
-                        onChange={(e) => setForm((f) => ({ ...f, typeCustom: e.target.value }))}
-                        className="input-field mt-2"
-                        placeholder="Ex: Ads USD"
-                        required
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">ID da Conta</label>
-                    <input
-                      type="text"
-                      value={form.googleAdsCustomerId}
-                      onChange={(e) => setForm((f) => ({ ...f, googleAdsCustomerId: formatAccountId(e.target.value) }))}
-                      className="input-field font-mono"
-                      placeholder="000-000-0000"
-                      maxLength={12}
+                      minLength={2}
+                      maxLength={120}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Moeda</label>
-                    <select
-                      value={form.currency}
-                      onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-                      className="input-field"
-                    >
-                      {CURRENCIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {/* Aba: Senha */}
-              {formSection === 'senha' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1">Senha da Conta</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={form.password}
-                        onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                        className="input-field pr-20"
-                        placeholder="Senha de acesso à conta"
-                        autoComplete="new-password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
-                      >
-                        {showPassword ? 'Ocultar' : 'Mostrar'}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Código A2F (2FA)</label>
-                    <input
-                      type="text"
-                      value={form.a2fCode}
-                      onChange={(e) => setForm((f) => ({ ...f, a2fCode: e.target.value }))}
-                      className="input-field font-mono"
-                      placeholder="Chave secreta 2FA"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Código G2 Aprovada</label>
-                    <input
-                      type="text"
-                      value={form.g2ApprovalCode}
-                      onChange={(e) => setForm((f) => ({ ...f, g2ApprovalCode: e.target.value }))}
-                      className="input-field"
-                      placeholder="ID de aprovação G2"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Aba: Documentos */}
-              {formSection === 'documentos' && (
-                <div className="space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    A senha ├® armazenada com seguran├ºa (hash bcrypt). Obrigat├│ria no envio do cadastro ÔÇö pode
+                    conferir ou alterar depois em <strong>Editar</strong> (aba Senha).
+                  </p>
+                  <label className="block text-sm font-medium mb-1">Senha da conta *</label>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => setMode('manual')} className={tabBtn(mode === 'manual')}>
-                      Informar manualmente
-                    </button>
-                    <button type="button" onClick={() => { setMode('estoque'); loadStock() }} className={tabBtn(mode === 'estoque')}>
-                      Usar do estoque
+                    <input
+                      type={showPasswordCreate ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                      className="input-field flex-1"
+                      placeholder="Obrigat├│ria"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordCreate((v) => !v)}
+                      className="btn-secondary px-3 shrink-0"
+                      title={showPasswordCreate ? 'Ocultar' : 'Mostrar'}
+                      aria-label={showPasswordCreate ? 'Ocultar senha' : 'Mostrar senha'}
+                    >
+                      {showPasswordCreate ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-
-                  {mode === 'estoque' && (
-                    <div className="border-t border-gray-200 pt-4">
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Estoque de base (e-mails, CNPJs, perfis)</h3>
-                      {loadingStock ? <p className="text-sm text-gray-500">Carregando...</p> : (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="font-medium text-gray-600 mb-1">Disponível</p>
-                            <p>{stockDisponivel?.disponivel.emails ?? 0} e-mails · {stockDisponivel?.disponivel.cnpjs ?? 0} CNPJs · {stockDisponivel?.disponivel.perfisPagamento ?? 0} perfis</p>
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-600 mb-1">Reservado para mim</p>
-                            <p>{stockDisponivel?.reservadoParaMim.emails ?? 0} e-mails · {stockDisponivel?.reservadoParaMim.cnpjs ?? 0} CNPJs · {stockDisponivel?.reservadoParaMim.perfisPagamento ?? 0} perfis</p>
-                          </div>
-                          <div className="space-y-2">
-                            {emailsDisponiveis.length > 0 && (
-                              <div>
-                                <p className="text-xs text-gray-500">E-mails disponíveis</p>
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {emailsDisponiveis.slice(0, 3).map((e) => (
-                                    <button key={e.id} type="button" onClick={() => reserveItem('email', e.id)}
-                                      disabled={reservingId === e.id}
-                                      className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200">
-                                      Reservar {e.email?.slice(0, 12)}...
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {cnpjsDisponiveis.length > 0 && (
-                              <div>
-                                <p className="text-xs text-gray-500">CNPJs disponíveis</p>
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {cnpjsDisponiveis.slice(0, 3).map((c) => (
-                                    <button key={c.id} type="button" onClick={() => reserveItem('cnpj', c.id)}
-                                      disabled={reservingId === c.id}
-                                      className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200">
-                                      Reservar {c.cnpj?.slice(0, 10)}...
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {perfisDisponiveis.length > 0 && (
-                              <div>
-                                <p className="text-xs text-gray-500">Perfis disponíveis</p>
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {perfisDisponiveis.slice(0, 3).map((p) => (
-                                    <button key={p.id} type="button" onClick={() => reserveItem('perfil', p.id)}
-                                      disabled={reservingId === p.id}
-                                      className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200">
-                                      Reservar {p.type}/{p.gateway}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {emailsDisponiveis.length === 0 && cnpjsDisponiveis.length === 0 && perfisDisponiveis.length === 0 && (
-                              <p className="text-xs text-amber-600">Nenhum item disponível. O admin deve cadastrar em Base.</p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                </div>
+              ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1">Identificador da conta *</label>
+                  <input
+                    type="text"
+                    value={form.accountCode}
+                    onChange={(e) => setForm((f) => ({ ...f, accountCode: e.target.value }))}
+                    className="input-field font-mono"
+                    placeholder="ID que voc├¬ usa para localizar esta conta (├║nico)"
+                    required
+                    minLength={2}
+                    maxLength={120}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Este c├│digo aparece na lista no lugar do ID interno do sistema.
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300/90 mt-1">
+                    Antes de salvar, abra a aba <strong>Senha</strong> ÔÇö a senha da conta ├® obrigat├│ria.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Plataforma</label>
+                  <select
+                    value={form.platform}
+                    onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
+                    className="input-field"
+                    required
+                  >
+                    {PLATFORMS.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Tipo</label>
+                  <select
+                    value={ACCOUNT_TYPES.some((t) => t.value === form.type) ? form.type : '__OUTRO__'}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        type: e.target.value,
+                        typeCustom: e.target.value === '__OUTRO__' ? f.typeCustom : '',
+                      }))
+                    }
+                    className="input-field"
+                    required={form.type !== '__OUTRO__'}
+                  >
+                    {ACCOUNT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  {form.type === '__OUTRO__' && (
+                    <input
+                      type="text"
+                      value={form.typeCustom}
+                      onChange={(e) => setForm((f) => ({ ...f, typeCustom: e.target.value }))}
+                      className="input-field mt-2"
+                      placeholder="Ex: Ads USD"
+                      required
+                    />
                   )}
+                </div>
 
+                <div className="md:col-span-2 border border-primary-500/20 rounded-lg p-3 bg-primary-500/5 dark:bg-primary-900/10">
+                  <p className="text-xs font-medium text-primary-700 dark:text-primary-300 mb-2">
+                    ADS CORE ÔÇö nicho, meta e footprint
+                  </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {mode === 'manual' ? (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">E-mail (opcional)</label>
-                          <input type="email" value={form.email}
-                            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                            className="input-field" placeholder="conta@email.com" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">CNPJ (opcional)</label>
-                          <input type="text" value={form.cnpj}
-                            onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))}
-                            className="input-field" placeholder="00.000.000/0001-00" />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">E-mail (reservado)</label>
-                          <select value={form.emailId} onChange={(e) => setForm((f) => ({ ...f, emailId: e.target.value }))} className="input-field">
-                            <option value="">— Nenhum —</option>
-                            {emailsReservados.map((e) => <option key={e.id} value={e.id}>{e.email}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">CNPJ (reservado)</label>
-                          <select value={form.cnpjId} onChange={(e) => setForm((f) => ({ ...f, cnpjId: e.target.value }))} className="input-field">
-                            <option value="">— Nenhum —</option>
-                            {cnpjsReservados.map((c) => <option key={c.id} value={c.id}>{c.cnpj} — {c.razaoSocial || '—'}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Perfil de pagamento (reservado)</label>
-                          <select value={form.paymentProfileId} onChange={(e) => setForm((f) => ({ ...f, paymentProfileId: e.target.value }))} className="input-field">
-                            <option value="">— Nenhum —</option>
-                            {perfisReservados.map((p) => <option key={p.id} value={p.id}>{p.type} / {p.gateway}</option>)}
-                          </select>
-                        </div>
-                      </>
-                    )}
                     <div>
-                      <label className="block text-sm font-medium mb-1">Site (URL da Landing)</label>
-                      <input type="url" value={form.siteUrl}
-                        onChange={(e) => setForm((f) => ({ ...f, siteUrl: e.target.value }))}
-                        className="input-field" placeholder="https://..." />
+                      <label className="block text-sm font-medium mb-1">Nicho *</label>
+                      <select
+                        value={form.productionNiche}
+                        onChange={(e) => setForm((f) => ({ ...f, productionNiche: e.target.value }))}
+                        className="input-field"
+                        required
+                      >
+                        {PRODUCTION_NICHES.map((n) => (
+                          <option key={n.value} value={n.value}>
+                            {n.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Link CNPJ BIZ</label>
-                      <input type="url" value={form.cnpjBizLink}
-                        onChange={(e) => setForm((f) => ({ ...f, cnpjBizLink: e.target.value }))}
-                        className="input-field" placeholder="https://..." />
+                      <label className="block text-sm font-medium mb-1">Meta de verifica├º├úo *</label>
+                      <select
+                        value={form.verificationGoal}
+                        onChange={(e) => setForm((f) => ({ ...f, verificationGoal: e.target.value }))}
+                        className="input-field"
+                        required
+                      >
+                        {VERIFICATION_GOALS.map((g) => (
+                          <option key={g.value} value={g.value}>
+                            {g.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium mb-1">Cartão CNPJ (PDF)</label>
+                      <label className="block text-sm font-medium mb-1">Dom├¡nio principal (├║nico no sistema)</label>
                       <input
-                        type="file"
-                        accept="application/pdf"
-                        onChange={(e) => setCnpjPdfFile(e.target.files?.[0] || null)}
-                        className="input-field file:mr-2 file:py-2 file:px-4 file:rounded file:border-0 file:bg-primary-500 file:text-white file:cursor-pointer"
+                        type="text"
+                        value={form.primaryDomain}
+                        onChange={(e) => setForm((f) => ({ ...f, primaryDomain: e.target.value }))}
+                        className="input-field"
+                        placeholder="ex.: loja.com.br (sem duplicar em outra conta)"
                       />
-                      {cnpjPdfFile && <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ Será renomeado para cnpj_[ID].pdf</p>}
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium mb-1">Nota de proxy (Proxy Cheap / AdsPower)</label>
+                      <input
+                        type="text"
+                        value={form.proxyNote}
+                        onChange={(e) => setForm((f) => ({ ...f, proxyNote: e.target.value }))}
+                        className="input-field"
+                        placeholder="Identificador ou perfil usado"
+                      />
+                      <label className="inline-flex items-center gap-2 mt-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.proxyConfigured}
+                          onChange={(e) => setForm((f) => ({ ...f, proxyConfigured: e.target.checked }))}
+                        />
+                        Proxy configurado nesta conta
+                      </label>
                     </div>
                   </div>
                 </div>
-              )}
 
-              <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-white/10">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    ID da Conta Google Ads {form.platform === 'GOOGLE_ADS' ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(opcional)</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.googleAdsCustomerId}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        googleAdsCustomerId: formatAccountId(e.target.value),
+                      }))
+                    }
+                    onBlur={() =>
+                      void validateFootprintRealtime({
+                        googleAdsCustomerId: form.googleAdsCustomerId,
+                        email: mode === 'manual' ? form.email : undefined,
+                        cnpj: mode === 'manual' ? form.cnpj : undefined,
+                        a2fCode: form.a2fCode,
+                      })
+                    }
+                    className="input-field font-mono"
+                    placeholder="000-000-0000"
+                    maxLength={12}
+                    inputMode="numeric"
+                    autoComplete="off"
+                  />
+                  {form.platform === 'GOOGLE_ADS' && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300/90 mt-1">
+                      Obrigat├│rio para Google Ads (10 d├¡gitos). Usado para evitar duplicidade entre o time.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Tipo de moeda (ISO 4217)</label>
+                  <select
+                    value={GLOBAL_CURRENCY_OPTIONS.some((o) => o.code === form.currency) ? form.currency : 'BRL'}
+                    onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                    className="input-field"
+                  >
+                    {GLOBAL_CURRENCY_OPTIONS.map((o) => (
+                      <option key={o.code} value={o.code}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">C├│digo A2F (2FA)</label>
+                  <input
+                    type="text"
+                    value={form.a2fCode}
+                    onChange={(e) => setForm((f) => ({ ...f, a2fCode: e.target.value }))}
+                    onBlur={() =>
+                      void validateFootprintRealtime({
+                        a2fCode: form.a2fCode,
+                        googleAdsCustomerId: form.googleAdsCustomerId,
+                      })
+                    }
+                    className="input-field font-mono"
+                    placeholder="Chave secreta 2FA"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">C├│digo G2 Aprovada</label>
+                  <input
+                    type="text"
+                    value={form.g2ApprovalCode}
+                    onChange={(e) => setForm((f) => ({ ...f, g2ApprovalCode: e.target.value }))}
+                    className="input-field"
+                    placeholder="ID de aprova├º├úo G2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Site (URL da Landing)</label>
+                  <input
+                    type="url"
+                    value={form.siteUrl}
+                    onChange={(e) => setForm((f) => ({ ...f, siteUrl: e.target.value }))}
+                    className="input-field"
+                    placeholder="https://..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Link CNPJ BIZ</label>
+                  <input
+                    type="url"
+                    value={form.cnpjBizLink}
+                    onChange={(e) => setForm((f) => ({ ...f, cnpjBizLink: e.target.value }))}
+                    className="input-field"
+                    placeholder="https://..."
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-1">Cart├úo CNPJ (PDF)</label>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => setCnpjPdfFile(e.target.files?.[0] || null)}
+                    className="input-field file:mr-2 file:py-2 file:px-4 file:rounded file:border-0 file:bg-primary-500 file:text-white file:cursor-pointer"
+                  />
+                  {cnpjPdfFile && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      Ô£ô Ser├í renomeado para cnpj_[ID].pdf
+                    </p>
+                  )}
+                </div>
+
+                {mode === 'manual' ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">E-mail (opcional)</label>
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                        onBlur={() =>
+                          void validateFootprintRealtime({
+                            email: form.email,
+                            cnpj: form.cnpj,
+                            googleAdsCustomerId: form.googleAdsCustomerId,
+                            a2fCode: form.a2fCode,
+                          })
+                        }
+                        className="input-field"
+                        placeholder="conta@email.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CNPJ (opcional)</label>
+                      <input
+                        type="text"
+                        value={form.cnpj}
+                        onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))}
+                        onBlur={() =>
+                          void validateFootprintRealtime({
+                            cnpj: form.cnpj,
+                            email: form.email,
+                            googleAdsCustomerId: form.googleAdsCustomerId,
+                            a2fCode: form.a2fCode,
+                          })
+                        }
+                        className="input-field"
+                        placeholder="00.000.000/0001-00"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">E-mail (reservado)</label>
+                      <select
+                        value={form.emailId}
+                        onChange={(e) => setForm((f) => ({ ...f, emailId: e.target.value }))}
+                        className="input-field"
+                      >
+                        <option value="">ÔÇö Nenhum ÔÇö</option>
+                        {emailsReservados.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">CNPJ (reservado)</label>
+                      <select
+                        value={form.cnpjId}
+                        onChange={(e) => setForm((f) => ({ ...f, cnpjId: e.target.value }))}
+                        className="input-field"
+                      >
+                        <option value="">ÔÇö Nenhum ÔÇö</option>
+                        {cnpjsReservados.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.cnpj} ÔÇö {c.razaoSocial || 'ÔÇö'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Perfil de pagamento (reservado)</label>
+                      <select
+                        value={form.paymentProfileId}
+                        onChange={(e) => setForm((f) => ({ ...f, paymentProfileId: e.target.value }))}
+                        className="input-field"
+                      >
+                        <option value="">ÔÇö Nenhum ÔÇö</option>
+                        {perfisReservados.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.type} / {p.gateway}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+              )}
+              <div className="flex gap-2 pt-2">
                 <button type="submit" disabled={submitting} className="btn-primary">
                   {submitting ? 'Salvando...' : 'Salvar'}
                 </button>
@@ -1020,15 +1647,37 @@ export function ProducaoClient() {
           </div>
         )}
 
-        {/* ===== TABELA ===== */}
+        {accounts.some((a) => !a.accountCode) && (
+          <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-100 text-sm border border-amber-200/80 dark:border-amber-800/50">
+            Existem registros sem identificador manual ÔÇö use <strong>Editar</strong> para definir o c├│digo
+            exibido na lista (substitui o ID interno do sistema).
+          </div>
+        )}
+
         <div className="overflow-x-auto">
-          {loading ? <SkeletonTable rows={6} /> : accounts.length === 0 ? (
-            <p className="text-gray-400 py-4">Nenhum registro ainda.</p>
+          {loading ? (
+            <SkeletonTable rows={6} />
+          ) : accounts.length === 0 ? (
+            <p className="text-gray-400 py-4">
+              {searchQuery
+                ? 'Nenhum resultado para esta busca. Tente outro termo ou limpe o campo de busca.'
+                : 'Nenhum registro ainda.'}
+            </p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-500 border-b">
-                  <th className="pb-2 pr-4">ID Conta</th>
+                  {canApprove && (
+                    <th className="pb-2 pr-2 w-10">
+                      <input
+                        type="checkbox"
+                        checked={allApprovableSelected}
+                        onChange={toggleSelectAllApprovable}
+                        aria-label="Selecionar todas as contas eleg├¡veis para aprova├º├úo"
+                      />
+                    </th>
+                  )}
+                  <th className="pb-2 pr-4">Identificador</th>
                   <th className="pb-2 pr-4">Plataforma</th>
                   <th className="pb-2 pr-4">Tipo</th>
                   <th className="pb-2 pr-4">Nicho</th>
@@ -1042,35 +1691,96 @@ export function ProducaoClient() {
                     Dias
                   </th>
                   <th className="pb-2 pr-4">Data</th>
-                  <th className="pb-2">Ações</th>
+                  <th className="pb-2">A├º├Áes</th>
                 </tr>
               </thead>
               <tbody>
                 {accounts.map((a) => (
-                  <tr key={a.id} className="border-b border-gray-100 dark:border-white/5 last:border-0">
-                    <td className="py-3 pr-4 font-mono text-xs">
-                      {a.googleAdsCustomerId || a.id.slice(0, 8)}
-                    </td>
-                    <td className="py-3 pr-4">{PLATFORMS.find((p) => p.value === a.platform)?.label || a.platform}</td>
+                  <Fragment key={a.id}>
+                  <tr
+                    className="border-b border-gray-100 dark:border-white/5 last:border-0"
+                    title={`Identificador: ${copyableAccountId(a)} ┬À Ref. interna: ${a.id}`}
+                  >
+                    {canApprove && (
+                      <td className="py-3 pr-2 align-middle">
+                        {a.status === 'PENDING' || a.status === 'UNDER_REVIEW' ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(a.id)}
+                            onChange={() => toggleRowSelected(a.id)}
+                            aria-label={`Selecionar conta ${displayAccountId(a)}`}
+                          />
+                        ) : (
+                          <span className="inline-block w-4" aria-hidden />
+                        )}
+                      </td>
+                    )}
                     <td className="py-3 pr-4">
-                      <span className="px-2 py-0.5 rounded text-xs font-medium"
-                        style={{ backgroundColor: `${getTypeColor(a.type)}20`, color: getTypeColor(a.type) }}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">
+                          {displayAccountId(a)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyIdentifier(copyableAccountId(a), a.id)}
+                          className="p-1 rounded text-slate-500 hover:text-primary-600 hover:bg-slate-100 dark:hover:bg-white/10"
+                          title="Copiar identificador"
+                          aria-label="Copiar identificador"
+                        >
+                          {copiedRowId === a.id ? (
+                            <Check className="w-3.5 h-3.5 text-green-600" aria-hidden />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" aria-hidden />
+                          )}
+                        </button>
+                      </div>
+                      {accountIdSubtitle(a) && (
+                        <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-[14rem] leading-snug">
+                          {accountIdSubtitle(a)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {PLATFORMS.find((p) => p.value === a.platform)?.label || a.platform}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span
+                        className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          backgroundColor: `${getTypeColor(a.type)}20`,
+                          color: getTypeColor(a.type),
+                        }}
+                      >
                         {a.type}
                       </span>
                     </td>
+                    <td className="py-3 pr-4 text-gray-600 dark:text-gray-400 text-xs">
+                      {nicheLabel(a.productionNiche)}
+                    </td>
                     <td className="py-3 pr-4">
-                      <span className={`px-2 py-0.5 rounded text-xs ${statusClass(a.status)}`}>
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          a.status === 'PENDING'
+                            ? 'bg-amber-100 text-amber-800'
+                            : a.status === 'UNDER_REVIEW'
+                              ? 'bg-sky-100 text-sky-800'
+                              : a.status === 'APPROVED'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                        }`}
+                      >
                         {statusLabel(a.status)}
                       </span>
                       {a.status === 'REJECTED' && a.rejectionReason && (
                         <span className="block text-xs text-red-600 mt-1" title={a.rejectionReason}>
-                          {a.rejectionReason.slice(0, 40)}{a.rejectionReason.length > 40 ? '...' : ''}
+                          Motivo: {a.rejectionReason.slice(0, 40)}
+                          {a.rejectionReason.length > 40 ? '...' : ''}
                         </span>
                       )}
                     </td>
-                    <td className="py-3 pr-4">{a.producer.name || '—'}</td>
+                    <td className="py-3 pr-4">{a.producer.name || 'ÔÇö'}</td>
                     <td className="py-3 pr-4">
-                      {(a.status === 'PENDING' || a.status === 'IN_ANALYSIS') && (
+                      <div className="flex flex-col gap-1">
                         <ProductionChecklist
                           accountId={a.id}
                           isProducer={isProducer && a.producerId === session?.user?.id}
@@ -1089,73 +1799,138 @@ export function ProducaoClient() {
                       </div>
                     </td>
                     <td className="py-3">
-                      <div className="flex flex-wrap gap-x-2 gap-y-1 items-center">
-                        {/* Ver detalhes */}
-                        <button type="button" onClick={() => openModal(a)}
-                          className="text-primary-500 hover:underline text-xs">
-                          Ver
-                        </button>
-
-                        {/* Editar */}
-                        {(a.status === 'PENDING' || a.status === 'IN_ANALYSIS') &&
-                          (canApprove || (isProducer && a.producerId === session?.user?.id)) && (
-                            <button type="button" onClick={() => openModal(a, true)}
-                              className="text-primary-500 hover:underline text-xs">
-                              Editar
-                            </button>
+                      {editingId !== a.id && (
+                        <>
+                          {(canManageView ||
+                            (isProducer && a.producerId === session?.user?.id)) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => copyFooterText(a.id)}
+                                className="inline-flex items-center gap-0.5 text-gray-600 hover:text-primary-600 text-xs mr-2"
+                                title="Copiar texto de rodap├®"
+                              >
+                                <FileText className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span>Rodap├®</span>
+                              </button>
+                              {a.cnpjPdfUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPdfPreviewId(a.id)}
+                                  className="inline-flex items-center gap-0.5 text-gray-600 hover:text-primary-600 text-xs mr-2"
+                                  title="Ver PDF do CNPJ"
+                                >
+                                  <span>PDF</span>
+                                </button>
+                              )}
+                            </>
                           )}
-
-                        {/* Excluir */}
-                        {a.status === 'PENDING' && (canApprove || (isProducer && a.producerId === session?.user?.id)) && (
-                          <button type="button" onClick={() => handleDelete(a.id)}
-                            className="text-red-600 hover:underline text-xs">
-                            Excluir
-                          </button>
-                        )}
-
-                        {/* Em Análise */}
-                        {canApprove && a.status === 'PENDING' && (
-                          <button type="button" onClick={() => handleMarkAnalysis(a.id)}
-                            className="text-blue-600 hover:underline text-xs">
-                            Em Análise
-                          </button>
-                        )}
-
-                        {/* Aprovar */}
-                        {canApprove && (a.status === 'PENDING' || a.status === 'IN_ANALYSIS') && (
-                          <button type="button" onClick={() => handleApprove(a.id)}
-                            className="text-green-600 hover:underline text-xs">
-                            Aprovar
-                          </button>
-                        )}
-
-                        {/* Rejeitar */}
-                        {canApprove && (a.status === 'PENDING' || a.status === 'IN_ANALYSIS') && (
-                          rejectingId === a.id ? (
-                            <div className="inline-block space-y-1">
-                              <select value={rejectCode} onChange={(e) => setRejectCode(e.target.value)}
-                                className="input-field py-1 px-2 text-xs w-40 block">
-                                <option value="">Código (opcional)</option>
-                                {REJECTION_CODES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                              </select>
-                              <input type="text" value={rejectReason}
-                                onChange={(e) => setRejectReason(e.target.value)}
-                                placeholder="Motivo (obrigatório)"
-                                className="input-field py-1 px-2 text-xs w-40" />
-                              <div>
-                                <button type="button" onClick={() => handleReject(a.id)} className="text-red-600 text-xs mr-2">Ok</button>
-                                <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); setRejectCode('') }}
-                                  className="text-gray-500 text-xs">Cancelar</button>
+                          {a.status === 'APPROVED' &&
+                            (canManageView || (isProducer && a.producerId === session?.user?.id)) && (
+                              <button
+                                type="button"
+                                onClick={() => openApprovedReview(a, 'dados')}
+                                className="inline-flex items-center gap-0.5 text-primary-600 hover:underline text-xs mr-2"
+                                title="Conferir dados, senha e URLs"
+                              >
+                                <Pencil className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span>Conferir / ajustar</span>
+                              </button>
+                            )}
+                          {(a.status === 'PENDING' || a.status === 'UNDER_REVIEW') &&
+                            (canApprove || (isProducer && a.producerId === session?.user?.id)) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(a)}
+                                className="inline-flex items-center gap-0.5 text-primary-600 hover:underline text-xs mr-2"
+                                title="Editar"
+                              >
+                                <Pencil className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span>Editar</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(a.id)}
+                                className="inline-flex items-center gap-0.5 text-red-600 hover:underline text-xs mr-2"
+                                title="Excluir"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span>Excluir</span>
+                              </button>
+                            </>
+                          )}
+                          {isProducer &&
+                            a.producerId === session?.user?.id &&
+                            a.status === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={() => handleSendToReview(a.id)}
+                                className="inline-flex items-center gap-0.5 text-sky-600 hover:underline text-xs mr-2"
+                                title="Enviar para an├ílise"
+                              >
+                                <Send className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                                <span>Enviar p/ an├ílise</span>
+                              </button>
+                            )}
+                          {canApprove && (a.status === 'PENDING' || a.status === 'UNDER_REVIEW') && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApprove(a.id)}
+                                className="text-green-600 hover:underline text-xs mr-2"
+                              >
+                                Aprovar
+                              </button>
+                              {rejectingId === a.id ? (
+                              <div className="inline-block space-y-1">
+                                <select
+                                  value={rejectCode}
+                                  onChange={(e) => setRejectCode(e.target.value)}
+                                  className="input-field py-1 px-2 text-xs w-40 block"
+                                >
+                                  <option value="">C├│digo (opcional)</option>
+                                  {REJECTION_CODES.map((c) => (
+                                    <option key={c.value} value={c.value}>{c.label}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  value={rejectReason}
+                                  onChange={(e) => setRejectReason(e.target.value)}
+                                  placeholder="Motivo (obrigat├│rio)"
+                                  className="input-field py-1 px-2 text-xs w-40"
+                                />
+                                <div>
+                                  <button type="button" onClick={() => handleReject(a.id)} className="text-red-600 text-xs mr-2">
+                                    Ok
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRejectingId(null)
+                                      setRejectReason('')
+                                      setRejectCode('')
+                                    }}
+                                    className="text-gray-500 text-xs"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <button type="button" onClick={() => setRejectingId(a.id)}
-                              className="text-red-600 hover:underline text-xs">
-                              Rejeitar
-                            </button>
-                          )
-                        )}
-                      </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setRejectingId(a.id)}
+                                className="text-red-600 hover:underline text-xs"
+                              >
+                                Rejeitar
+                              </button>
+                            )}
+                            </>
+                          )}
+                        </>
+                      )}
                     </td>
                   </tr>
                   {editingId === a.id && (
@@ -1163,12 +1938,12 @@ export function ProducaoClient() {
                       <td colSpan={canApprove ? 11 : 10} className="py-4 px-2">
                         <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                           {editKind === 'approved-review'
-                            ? 'Conta aprovada — conferir dados, senha e URLs'
+                            ? 'Conta aprovada ÔÇö conferir dados, senha e URLs'
                             : 'Editar conta'}{' '}
                           <span className="font-mono">{displayAccountId(a)}</span>
                         </p>
                         <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 font-mono break-all">
-                          Referência interna (suporte): {a.id}
+                          Refer├¬ncia interna (suporte): {a.id}
                         </p>
 
                         {editKind === 'approved-review' && (
@@ -1207,7 +1982,7 @@ export function ProducaoClient() {
                                   : 'bg-gray-200 dark:bg-white/10'
                               }`}
                             >
-                              URLs / domínio
+                              URLs / dom├¡nio
                             </button>
                           </div>
                         )}
@@ -1215,15 +1990,15 @@ export function ProducaoClient() {
                         {editKind === 'approved-review' && editTab === 'dados' && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm max-w-3xl rounded-lg border border-gray-200 dark:border-white/10 p-3 bg-white/50 dark:bg-black/20">
                             <p className="sm:col-span-2 text-xs text-gray-500 mb-1">
-                              Leitura apenas — os dados registados na produção permanecem visíveis após aprovação.
+                              Leitura apenas ÔÇö os dados registados na produ├º├úo permanecem vis├¡veis ap├│s aprova├º├úo.
                             </p>
                             <div>
                               <span className="text-xs text-gray-500">Identificador manual</span>
-                              <p className="font-mono font-medium">{a.accountCode?.trim() || '—'}</p>
+                              <p className="font-mono font-medium">{a.accountCode?.trim() || 'ÔÇö'}</p>
                             </div>
                             <div>
                               <span className="text-xs text-gray-500">ID Google Ads</span>
-                              <p className="font-mono">{a.googleAdsCustomerId?.trim() || '—'}</p>
+                              <p className="font-mono">{a.googleAdsCustomerId?.trim() || 'ÔÇö'}</p>
                             </div>
                             <div>
                               <span className="text-xs text-gray-500">Plataforma</span>
@@ -1235,42 +2010,42 @@ export function ProducaoClient() {
                             </div>
                             <div>
                               <span className="text-xs text-gray-500">E-mail</span>
-                              <p className="break-all">{a.email || '—'}</p>
+                              <p className="break-all">{a.email || 'ÔÇö'}</p>
                             </div>
                             <div>
                               <span className="text-xs text-gray-500">CNPJ</span>
-                              <p className="font-mono">{a.cnpj || '—'}</p>
+                              <p className="font-mono">{a.cnpj || 'ÔÇö'}</p>
                             </div>
                             <div>
                               <span className="text-xs text-gray-500">Moeda</span>
-                              <p>{a.currency || '—'}</p>
+                              <p>{a.currency || 'ÔÇö'}</p>
                             </div>
                             <div>
                               <span className="text-xs text-gray-500">Nicho / meta</span>
                               <p>
-                                {nicheLabel(a.productionNiche)} ·{' '}
+                                {nicheLabel(a.productionNiche)} ┬À{' '}
                                 {VERIFICATION_GOALS.find((g) => g.value === a.verificationGoal)?.label ||
                                   a.verificationGoal ||
-                                  '—'}
+                                  'ÔÇö'}
                               </p>
                             </div>
                             <div className="sm:col-span-2">
                               <span className="text-xs text-gray-500">2FA (A2F)</span>
                               <p className="font-mono text-xs break-all whitespace-pre-wrap">
-                                {a.a2fCode?.trim() || '—'}
+                                {a.a2fCode?.trim() || 'ÔÇö'}
                               </p>
                             </div>
                             <div className="sm:col-span-2">
-                              <span className="text-xs text-gray-500">Código G2</span>
-                              <p className="font-mono">{a.g2ApprovalCode || '—'}</p>
+                              <span className="text-xs text-gray-500">C├│digo G2</span>
+                              <p className="font-mono">{a.g2ApprovalCode || 'ÔÇö'}</p>
                             </div>
                             <div className="sm:col-span-2">
                               <span className="text-xs text-gray-500">Site</span>
-                              <p className="break-all">{a.siteUrl || '—'}</p>
+                              <p className="break-all">{a.siteUrl || 'ÔÇö'}</p>
                             </div>
                             <div className="sm:col-span-2">
-                              <span className="text-xs text-gray-500">Domínio principal</span>
-                              <p>{a.primaryDomain || '—'}</p>
+                              <span className="text-xs text-gray-500">Dom├¡nio principal</span>
+                              <p>{a.primaryDomain || 'ÔÇö'}</p>
                             </div>
                             <div className="sm:col-span-2 flex gap-2 pt-2">
                               <button
@@ -1309,7 +2084,7 @@ export function ProducaoClient() {
                               />
                             </div>
                             <div className="md:col-span-2">
-                              <label className="block text-xs font-medium mb-1">Domínio principal</label>
+                              <label className="block text-xs font-medium mb-1">Dom├¡nio principal</label>
                               <input
                                 value={editForm.primaryDomain}
                                 onChange={(e) => setEditForm((f) => ({ ...f, primaryDomain: e.target.value }))}
@@ -1336,7 +2111,7 @@ export function ProducaoClient() {
                             </div>
                             <div className="md:col-span-2 flex gap-2 pt-2">
                               <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm">
-                                Salvar URLs / domínio
+                                Salvar URLs / dom├¡nio
                               </button>
                               <button
                                 type="button"
@@ -1356,7 +2131,7 @@ export function ProducaoClient() {
                         {editKind === 'approved-review' && editTab === 'senha' && (
                           <div className="max-w-md space-y-3">
                             <p className="text-xs text-gray-500">
-                              A senha não pode ser exibida (armazenada com hash). Defina uma nova para substituir a
+                              A senha n├úo pode ser exibida (armazenada com hash). Defina uma nova para substituir a
                               anterior.
                             </p>
                             <div className="flex gap-2">
@@ -1365,7 +2140,7 @@ export function ProducaoClient() {
                                 value={editForm.password}
                                 onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
                                 className="input-field flex-1"
-                                placeholder="Nova senha (mín. 4 caracteres)"
+                                placeholder="Nova senha (m├¡n. 4 caracteres)"
                                 autoComplete="new-password"
                               />
                               <button
@@ -1428,7 +2203,7 @@ export function ProducaoClient() {
                         {editTab === 'senha' ? (
                           <div className="max-w-md space-y-2">
                             <p className="text-xs text-gray-500">
-                              Digite uma nova senha para substituir a anterior. O armazenamento é em hash (bcrypt).
+                              Digite uma nova senha para substituir a anterior. O armazenamento ├® em hash (bcrypt).
                             </p>
                             <div className="flex gap-2">
                               <input
@@ -1530,7 +2305,7 @@ export function ProducaoClient() {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs font-medium mb-1">Código A2F</label>
+                              <label className="block text-xs font-medium mb-1">C├│digo A2F</label>
                               <input
                                 value={editForm.a2fCode}
                                 onChange={(e) => setEditForm((f) => ({ ...f, a2fCode: e.target.value }))}
@@ -1538,7 +2313,7 @@ export function ProducaoClient() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium mb-1">Código G2</label>
+                              <label className="block text-xs font-medium mb-1">C├│digo G2</label>
                               <input
                                 value={editForm.g2ApprovalCode}
                                 onChange={(e) => setEditForm((f) => ({ ...f, g2ApprovalCode: e.target.value }))}
@@ -1591,7 +2366,7 @@ export function ProducaoClient() {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs font-medium mb-1">Meta de verificação</label>
+                              <label className="block text-xs font-medium mb-1">Meta de verifica├º├úo</label>
                               <select
                                 value={editForm.verificationGoal}
                                 onChange={(e) => setEditForm((f) => ({ ...f, verificationGoal: e.target.value }))}
@@ -1603,7 +2378,7 @@ export function ProducaoClient() {
                               </select>
                             </div>
                             <div className="md:col-span-2">
-                              <label className="block text-xs font-medium mb-1">Domínio principal</label>
+                              <label className="block text-xs font-medium mb-1">Dom├¡nio principal</label>
                               <input
                                 value={editForm.primaryDomain}
                                 onChange={(e) => setEditForm((f) => ({ ...f, primaryDomain: e.target.value }))}
@@ -1632,7 +2407,7 @@ export function ProducaoClient() {
                         )}
                         <div className="flex gap-2 mt-4">
                           <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm py-1.5">
-                            Salvar alterações
+                            Salvar altera├º├Áes
                           </button>
                           <button
                             type="button"
@@ -1658,239 +2433,30 @@ export function ProducaoClient() {
         </div>
       </div>
 
-      {/* ===== MODAL DE DETALHES / EDIÇÃO ===== */}
-      {modalAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white dark:bg-ads-dark-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-white/10">
-              <div>
-                <h2 className="text-lg font-semibold">Detalhes da Conta</h2>
-                <p className="text-xs text-gray-500 font-mono mt-0.5">{modalAccount.id}</p>
-              </div>
-              <button onClick={closeModal}
-                className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xl font-bold leading-none">
-                ✕
+      {pdfPreviewId && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setPdfPreviewId(null)}
+          role="presentation"
+        >
+          <div
+            className="bg-white dark:bg-ads-dark-card rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Visualiza├º├úo do PDF do CNPJ"
+          >
+            <div className="flex justify-between items-center p-3 border-b border-gray-200 dark:border-white/10">
+              <span className="text-sm font-medium">Cart├úo CNPJ (preview)</span>
+              <button type="button" onClick={() => setPdfPreviewId(null)} className="btn-secondary text-xs">
+                Fechar
               </button>
             </div>
-
-            {modalEditMode ? (
-              /* Modo edição */
-              <form onSubmit={handleSaveModalEdit} className="p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Plataforma</label>
-                    <select value={modalEditForm.platform}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, platform: e.target.value }))}
-                      className="input-field">
-                      {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Tipo</label>
-                    <select value={modalEditForm.type}
-                      onChange={(e) => setModalEditForm((f) => ({
-                        ...f, type: e.target.value, typeCustom: e.target.value === '__OUTRO__' ? f.typeCustom : '',
-                      }))}
-                      className="input-field">
-                      {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                    {modalEditForm.type === '__OUTRO__' && (
-                      <input type="text" value={modalEditForm.typeCustom}
-                        onChange={(e) => setModalEditForm((f) => ({ ...f, typeCustom: e.target.value }))}
-                        className="input-field mt-2" placeholder="Ex: Ads USD" required />
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">ID da Conta</label>
-                    <input type="text" value={modalEditForm.googleAdsCustomerId}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, googleAdsCustomerId: formatAccountId(e.target.value) }))}
-                      className="input-field font-mono" placeholder="000-000-0000" maxLength={12} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Moeda</label>
-                    <select value={modalEditForm.currency}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, currency: e.target.value }))}
-                      className="input-field">
-                      {CURRENCIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Senha da Conta</label>
-                    <div className="relative">
-                      <input
-                        type={showModalPassword ? 'text' : 'password'}
-                        value={modalEditForm.password}
-                        onChange={(e) => setModalEditForm((f) => ({ ...f, password: e.target.value }))}
-                        className="input-field pr-20"
-                        placeholder="Senha de acesso"
-                        autoComplete="new-password"
-                      />
-                      <button type="button" onClick={() => setShowModalPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
-                        {showModalPassword ? 'Ocultar' : 'Mostrar'}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Código A2F (2FA)</label>
-                    <input type="text" value={modalEditForm.a2fCode}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, a2fCode: e.target.value }))}
-                      className="input-field font-mono" placeholder="Chave secreta 2FA" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Código G2 Aprovada</label>
-                    <input type="text" value={modalEditForm.g2ApprovalCode}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, g2ApprovalCode: e.target.value }))}
-                      className="input-field" placeholder="ID de aprovação G2" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">E-mail</label>
-                    <input type="email" value={modalEditForm.email}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, email: e.target.value }))}
-                      className="input-field" placeholder="conta@email.com" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">CNPJ</label>
-                    <input type="text" value={modalEditForm.cnpj}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, cnpj: e.target.value }))}
-                      className="input-field" placeholder="00.000.000/0001-00" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Site (URL da Landing)</label>
-                    <input type="url" value={modalEditForm.siteUrl}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, siteUrl: e.target.value }))}
-                      className="input-field" placeholder="https://..." />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Link CNPJ BIZ</label>
-                    <input type="url" value={modalEditForm.cnpjBizLink}
-                      onChange={(e) => setModalEditForm((f) => ({ ...f, cnpjBizLink: e.target.value }))}
-                      className="input-field" placeholder="https://..." />
-                  </div>
-                </div>
-                <div className="flex gap-2 pt-3 border-t border-gray-200 dark:border-white/10">
-                  <button type="submit" disabled={modalSubmitting} className="btn-primary">
-                    {modalSubmitting ? 'Salvando...' : 'Salvar Alterações'}
-                  </button>
-                  <button type="button" onClick={() => setModalEditMode(false)} className="btn-secondary">
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            ) : (
-              /* Modo visualização */
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Plataforma</p>
-                    <p className="font-medium">{PLATFORMS.find((p) => p.value === modalAccount.platform)?.label || modalAccount.platform}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Tipo</p>
-                    <span className="px-2 py-0.5 rounded text-xs font-medium"
-                      style={{ backgroundColor: `${getTypeColor(modalAccount.type)}20`, color: getTypeColor(modalAccount.type) }}>
-                      {modalAccount.type}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Status</p>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusClass(modalAccount.status)}`}>
-                      {statusLabel(modalAccount.status)}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">ID da Conta</p>
-                    <p className="font-mono font-medium">{modalAccount.googleAdsCustomerId || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Moeda</p>
-                    <p className="font-medium">{modalAccount.currency || 'BRL'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">E-mail</p>
-                    <p className="font-medium">{modalAccount.email || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">CNPJ</p>
-                    <p className="font-medium">{modalAccount.cnpj || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Senha da Conta</p>
-                    {modalAccount.passwordPlain ? (
-                      <div className="flex items-center gap-2">
-                        <p className="font-mono font-medium">
-                          {showModalPassword ? modalAccount.passwordPlain : '••••••••'}
-                        </p>
-                        <button type="button" onClick={() => setShowModalPassword((v) => !v)}
-                          className="text-xs text-primary-500 hover:underline">
-                          {showModalPassword ? 'Ocultar' : 'Mostrar'}
-                        </button>
-                      </div>
-                    ) : <p className="text-gray-400">—</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Código A2F</p>
-                    <p className="font-mono font-medium">{modalAccount.a2fCode || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Código G2</p>
-                    <p className="font-medium">{modalAccount.g2ApprovalCode || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Site (Landing)</p>
-                    {modalAccount.siteUrl ? (
-                      <a href={modalAccount.siteUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-primary-500 hover:underline text-sm break-all">
-                        {modalAccount.siteUrl.length > 50 ? modalAccount.siteUrl.slice(0, 50) + '...' : modalAccount.siteUrl}
-                      </a>
-                    ) : <p className="text-gray-400">—</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Link CNPJ BIZ</p>
-                    {modalAccount.cnpjBizLink ? (
-                      <a href={modalAccount.cnpjBizLink} target="_blank" rel="noopener noreferrer"
-                        className="text-primary-500 hover:underline text-sm break-all">
-                        {modalAccount.cnpjBizLink.length > 50 ? modalAccount.cnpjBizLink.slice(0, 50) + '...' : modalAccount.cnpjBizLink}
-                      </a>
-                    ) : <p className="text-gray-400">—</p>}
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Produtor</p>
-                    <p className="font-medium">{modalAccount.producer.name || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-0.5">Criado em</p>
-                    <p className="font-medium">{new Date(modalAccount.createdAt).toLocaleDateString('pt-BR')}</p>
-                  </div>
-                  {modalAccount.cnpjPdfUrl && (
-                    <div className="md:col-span-2">
-                      <p className="text-xs text-gray-500 mb-0.5">Cartão CNPJ (PDF)</p>
-                      <a href={modalAccount.cnpjPdfUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-primary-500 hover:underline text-sm">
-                        Visualizar PDF
-                      </a>
-                    </div>
-                  )}
-                  {modalAccount.status === 'REJECTED' && modalAccount.rejectionReason && (
-                    <div className="md:col-span-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-                      <p className="text-xs text-red-600 font-medium mb-1">Motivo da Rejeição</p>
-                      <p className="text-sm text-red-700 dark:text-red-400">{modalAccount.rejectionReason}</p>
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2 mt-6 pt-4 border-t border-gray-200 dark:border-white/10">
-                  {(modalAccount.status === 'PENDING' || modalAccount.status === 'IN_ANALYSIS') &&
-                    (canApprove || (isProducer && modalAccount.producerId === session?.user?.id)) && (
-                      <button type="button" onClick={() => setModalEditMode(true)} className="btn-primary">
-                        Editar
-                      </button>
-                    )}
-                  <button type="button" onClick={closeModal} className="btn-secondary">
-                    Fechar
-                  </button>
-                </div>
-              </div>
-            )}
+            <iframe
+              title="Cart├úo CNPJ"
+              src={`/api/producao/${pdfPreviewId}/arquivo/cnpj-pdf`}
+              className="w-full min-h-[70vh] rounded-b-lg border-0 bg-gray-100 dark:bg-gray-900"
+            />
           </div>
         </div>
       )}
