@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Edit3, X, Save, Loader2,
   Instagram, Linkedin, ExternalLink, Star, Shield,
   Clock, DollarSign, Calendar, Globe, Hash, FileSearch,
-  UserPlus, CheckCircle2
+  UserPlus, CheckCircle2, Pencil, Check
 } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -173,6 +173,11 @@ export function ClientesAdminClient() {
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState(false)
   const [createStep, setCreateStep] = useState<'form' | 'success'>('form')
+
+  // ── Estado do ajuste de sequência ──
+  const [editingCode, setEditingCode] = useState(false)
+  const [codeInput, setCodeInput] = useState('')
+  const [savingCode, setSavingCode] = useState(false)
 
   // Debounce de busca
   useEffect(() => {
@@ -397,6 +402,27 @@ export function ClientesAdminClient() {
     }
   }
 
+  async function saveSequence() {
+    const raw = codeInput.trim().replace(/^C/i, '')
+    const n = parseInt(raw, 10)
+    if (!n || n < 1) { showToast('error', 'Número inválido'); return }
+    setSavingCode(true)
+    try {
+      const res = await fetch('/api/admin/clientes/next-id', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nextNumber: n }),
+      })
+      const d = await res.json()
+      if (!res.ok) { showToast('error', d.error || 'Erro ao ajustar'); return }
+      setNextClientCode(d.nextClientId)
+      showToast('success', `Sequência ajustada → próximo: ${d.nextClientId}`)
+      setEditingCode(false)
+    } finally {
+      setSavingCode(false)
+    }
+  }
+
   function closeCreate() {
     setShowCreate(false)
     setCreateForm(EMPTY_CREATE)
@@ -424,9 +450,44 @@ export function ClientesAdminClient() {
         <div className="flex items-center gap-3 flex-wrap">
           {nextClientCode && (
             <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700">
-              <Hash className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-              <span className="text-xs text-zinc-500">Próximo código:</span>
-              <span className="font-bold text-primary-700 dark:text-primary-300 font-mono text-sm">{nextClientCode}</span>
+              <Hash className="w-4 h-4 text-primary-600 dark:text-primary-400 shrink-0" />
+              <span className="text-xs text-zinc-500 shrink-0">Próximo código:</span>
+              {editingCode ? (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); saveSequence() }}
+                  className="flex items-center gap-1"
+                >
+                  <span className="font-bold text-primary-700 dark:text-primary-300 font-mono text-sm">C</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="999999"
+                    value={codeInput}
+                    onChange={(e) => setCodeInput(e.target.value)}
+                    className="w-20 px-1.5 py-0.5 rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-zinc-800 text-sm font-mono font-bold text-primary-700 dark:text-primary-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                    autoFocus
+                    onKeyDown={(e) => { if (e.key === 'Escape') setEditingCode(false) }}
+                  />
+                  <button type="submit" disabled={savingCode} className="p-1 rounded hover:bg-primary-100 dark:hover:bg-primary-800 text-primary-600 disabled:opacity-60">
+                    {savingCode ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  <button type="button" onClick={() => setEditingCode(false)} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-400">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <span className="font-bold text-primary-700 dark:text-primary-300 font-mono text-sm">{nextClientCode}</span>
+                  <button
+                    type="button"
+                    title="Ajustar sequência"
+                    onClick={() => { setCodeInput(nextClientCode.replace(/^C/i, '')); setEditingCode(true) }}
+                    className="p-1 rounded hover:bg-primary-100 dark:hover:bg-primary-800 text-primary-400 hover:text-primary-600 transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
           <button
