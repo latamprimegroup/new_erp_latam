@@ -109,6 +109,16 @@ export function FinanceiroClient() {
     loadEntries()
   }, [month, year])
 
+  // Permite que o FinanceiroOverviewTab navegue para outras abas via evento customizado
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const target = (e as CustomEvent<string>).detail as Tab
+      if (target) setTab(target)
+    }
+    window.addEventListener('financeTabChange', handler)
+    return () => window.removeEventListener('financeTabChange', handler)
+  }, [])
+
   useEffect(() => {
     if (tab === 'dre') {
       setLoadingDre(true)
@@ -277,9 +287,7 @@ export function FinanceiroClient() {
       </div>
 
       {tab === 'overview' && (
-        <div className="card">
-          <FinanceiroOverviewTab />
-        </div>
+        <FinanceiroOverviewTab onTabChange={(t) => setTab(t as Tab)} />
       )}
 
       {tab === 'lancamentos' && (
