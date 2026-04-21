@@ -1,13 +1,20 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Search, Star, Store, Loader2, RefreshCw, X, Check, ChevronDown } from 'lucide-react'
+import { Plus, Search, Star, Store, Loader2, RefreshCw, X, Check, ChevronDown, ShieldCheck, ShieldAlert, ShieldX, Building2 } from 'lucide-react'
 
 type Vendor = {
   id: string; name: string; taxId: string | null; category: string; rating: number
   paymentTerms: string | null; active: boolean; notes: string | null
-  contactInfo: Record<string, string> | null
+  contactInfo: Record<string, string | boolean | number | null> | null
   _count: { assets: number; purchaseOrders: number }
+}
+
+type CnpjResult = {
+  valid: boolean | null; cnpj?: string; status?: string
+  razaoSocial?: string; nomeFantasia?: string | null; localizacao?: string
+  porte?: string; capitalSocial?: number; socios?: string | null
+  alert?: string | null; paymentBlocked?: boolean; error?: string; hint?: string
 }
 
 const CATEGORIES = ['CONTAS','INFRA','SOFTWARE','PROXIES','HARDWARE','OUTROS']
@@ -24,6 +31,9 @@ export function FornecedoresTab() {
   const [saving, setSaving]     = useState(false)
   const [flash, setFlash]       = useState<string | null>(null)
   const [editing, setEditing]   = useState<Vendor | null>(null)
+  // CNPJ validation state
+  const [cnpjLoading, setCnpjLoading]   = useState<string | null>(null)
+  const [cnpjResults, setCnpjResults]   = useState<Record<string, CnpjResult>>({})
 
   const [form, setForm] = useState({
     name: '', taxId: '', category: 'CONTAS', rating: 8,
@@ -48,9 +58,9 @@ export function FornecedoresTab() {
       name: v.name, taxId: v.taxId ?? '', category: v.category,
       rating: v.rating, paymentTerms: v.paymentTerms ?? '',
       notes: v.notes ?? '',
-      whatsapp: v.contactInfo?.whatsapp ?? '',
-      email: v.contactInfo?.email ?? '',
-      telegram: v.contactInfo?.telegram ?? '',
+      whatsapp: String(v.contactInfo?.whatsapp ?? ''),
+      email:    String(v.contactInfo?.email    ?? ''),
+      telegram: String(v.contactInfo?.telegram ?? ''),
     })
     setShowForm(true)
   }
@@ -85,6 +95,16 @@ export function FornecedoresTab() {
     if (!confirm('Arquivar este fornecedor?')) return
     await fetch(`/api/compras/fornecedores/${id}`, { method: 'DELETE' })
     load()
+  }
+
+  const validateCnpj = async (vendorId: string) => {
+    setCnpjLoading(vendorId)
+    const r = await fetch(`/api/compras/fornecedores/${vendorId}/validar-cnpj`, { method: 'POST' })
+    const data = await r.json() as CnpjResult
+    setCnpjResults((prev) => ({ ...prev, [vendorId]: data }))
+    setCnpjLoading(null)
+    // Recarrega para pegar contactInfo atualizado
+    if (r.ok && data.valid !== null) load()
   }
 
   return (
@@ -220,11 +240,52 @@ export function FornecedoresTab() {
                   </div>
 
                   {v.contactInfo?.whatsapp && (
-                    <a href={`https://wa.me/${v.contactInfo.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+                    <a href={`https://wa.me/${String(v.contactInfo.whatsapp).replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
                       className="mt-3 text-[11px] text-green-600 hover:underline flex items-center gap-1">
-                      💬 {v.contactInfo.whatsapp}
+                      💬 {String(v.contactInfo.whatsapp)}
                     </a>
                   )}
+
+                  {/* CNPJ Validation */}
+                  <div className="mt-3 space-y-2">
+                    <button
+                      onClick={() => validateCnpj(v.id)}
+                      disabled={cnpjLoading === v.id}
+                      className="w-full flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 font-semibold"
+                    >
+                      {cnpjLoading === v.id
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Consultando Receita...</>
+                        : <><Building2 className="w-3.5 h-3.5" />Validar CNPJ na Receita</>
+                      }
+                    </button>
+
+                    {/* Resultado da validação */}
+                    {cnpjResults[v.id] && (() => {
+                      const r = cnpjResults[v.id]
+                      if (r.error) return (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/10 p-2 text-[11px] text-amber-700">
+                          ⚠️ {r.error}
+                          {r.hint && <p className="mt-0.5 text-zinc-500">{r.hint}</p>}
+                        </div>
+                      )
+                      return (
+                        <div className={`rounded-lg border p-2.5 text-[11px] space-y-1 ${r.valid === true ? 'border-green-300 bg-green-50 dark:bg-green-950/10' : r.valid === false ? 'border-red-300 bg-red-50 dark:bg-red-950/10' : 'border-zinc-200 bg-zinc-50'}`}>
+                          <div className="flex items-center gap-1.5 font-bold">
+                            {r.valid === true  ? <><ShieldCheck className="w-4 h-4 text-green-600" /><span className="text-green-700">CNPJ ATIVO — Pagamento Liberado</span></>
+                              : r.valid === false ? <><ShieldX className="w-4 h-4 text-red-600" /><span className="text-red-700">CNPJ {r.status} — Pagamento Bloqueado</span></>
+                              : <><ShieldAlert className="w-4 h-4 text-amber-600" /><span className="text-amber-700">Verificação Indisponível</span></>
+                            }
+                          </div>
+                          {r.razaoSocial  && <p className="text-zinc-600">🏢 {r.razaoSocial}</p>}
+                          {r.nomeFantasia && <p className="text-zinc-500">✨ {r.nomeFantasia}</p>}
+                          {r.localizacao  && <p className="text-zinc-500">📍 {r.localizacao}</p>}
+                          {r.porte        && <p className="text-zinc-500">📊 Porte: {r.porte}</p>}
+                          {r.socios       && <p className="text-zinc-500">👤 Sócios: {r.socios}</p>}
+                          {r.alert        && <p className="font-bold text-red-700 mt-1">{r.alert}</p>}
+                        </div>
+                      )
+                    })()}
+                  </div>
 
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => openEdit(v)} className="flex-1 text-xs py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">

@@ -63,14 +63,38 @@ _Estoque limitado. Prioridade para quem chamar primeiro com o ID acima._${tagsLi
 }
 
 export function CopyGeneratorTab() {
-  const [assets, setAssets]     = useState<Asset[]>([])
-  const [loading, setLoading]   = useState(false)
-  const [q, setQ]               = useState('')
-  const [selected, setSelected] = useState<Asset | null>(null)
-  const [template, setTemplate] = useState<'standard' | 'telegram' | 'vip'>('standard')
-  const [extra, setExtra]       = useState('')
-  const [copied, setCopied]     = useState(false)
-  const textareaRef             = useRef<HTMLTextAreaElement>(null)
+  const [assets, setAssets]         = useState<Asset[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [q, setQ]                   = useState('')
+  const [selected, setSelected]     = useState<Asset | null>(null)
+  const [template, setTemplate]     = useState<'standard' | 'telegram' | 'vip'>('standard')
+  const [extra, setExtra]           = useState('')
+  const [copied, setCopied]         = useState(false)
+  const textareaRef                 = useRef<HTMLTextAreaElement>(null)
+
+  // ── Catálogo em Massa ───────────────────────────────────────────────────
+  const [bulkLoading, setBulkLoading]   = useState(false)
+  const [bulkText, setBulkText]         = useState('')
+  const [bulkTemplate, setBulkTemplate] = useState<'fire' | 'pro' | 'minimal' | 'vip'>('fire')
+  const [bulkCount, setBulkCount]       = useState(0)
+  const [bulkCopied, setBulkCopied]     = useState(false)
+  const [showBulk, setShowBulk]         = useState(false)
+
+  const generateBulkCatalog = async () => {
+    setBulkLoading(true); setBulkText('')
+    const p = new URLSearchParams({ format: 'telegram', template: bulkTemplate, status: 'AVAILABLE' })
+    const r = await fetch(`/api/compras/ativos/catalogo?${p}`)
+    if (r.ok) {
+      setBulkText(await r.text())
+      setBulkCount(parseInt(r.headers.get('X-Asset-Count') ?? '0', 10))
+    }
+    setBulkLoading(false)
+  }
+
+  const copyBulk = async () => {
+    await navigator.clipboard.writeText(bulkText)
+    setBulkCopied(true); setTimeout(() => setBulkCopied(false), 3000)
+  }
 
   const search = useCallback(async (query: string) => {
     if (!query.trim() && query.length < 2) { setAssets([]); return }
@@ -99,7 +123,53 @@ export function CopyGeneratorTab() {
     <div className="space-y-5 max-w-4xl">
       <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-3 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
         <Zap className="w-4 h-4 shrink-0 mt-0.5" />
-        <span>O <strong>Copy Generator</strong> usa apenas dados comerciais (ID Ads Ativos, nome e preço de venda). Nenhum dado de fornecedor é exposto no texto gerado.</span>
+        <span>O <strong>Copy Generator</strong> usa apenas dados comerciais + <strong>Authority Tags</strong> (ex: "Autoridade Real Estate" em vez de "Imobiliária"). Fornecedor nunca exposto.</span>
+      </div>
+
+      {/* ── Catálogo em Massa ───────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-primary-200 bg-primary-50 dark:bg-primary-950/10 p-4 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="font-bold text-sm flex items-center gap-2">🚀 Gerar Catálogo do Dia em Massa</h3>
+            <p className="text-xs text-zinc-500 mt-0.5">Todos os ativos disponíveis com Authority Tags — pronto para Telegram/WhatsApp</p>
+          </div>
+          <button onClick={() => setShowBulk((v) => !v)} className="text-xs text-primary-600 hover:underline font-semibold">
+            {showBulk ? '▲ Ocultar' : '▼ Expandir'}
+          </button>
+        </div>
+
+        {showBulk && (
+          <>
+            <div className="flex flex-wrap gap-2 items-center">
+              <label className="text-xs font-semibold">Template:</label>
+              {(['fire', 'pro', 'minimal', 'vip'] as const).map((t) => (
+                <button key={t} onClick={() => setBulkTemplate(t)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${bulkTemplate === t ? 'bg-primary-600 text-white border-primary-600' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'}`}>
+                  {t === 'fire' ? '🔥 Fire' : t === 'pro' ? '📋 Pro' : t === 'minimal' ? '⚡ Minimal' : '💎 VIP'}
+                </button>
+              ))}
+            </div>
+
+            <button onClick={generateBulkCatalog} disabled={bulkLoading}
+              className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+              {bulkLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Gerando catálogo...</> : '⚡ Gerar Catálogo Agora'}
+            </button>
+
+            {bulkText && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">{bulkCount} ativo(s) no catálogo</span>
+                  <button onClick={copyBulk} className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg font-bold text-xs transition-colors ${bulkCopied ? 'bg-green-600 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
+                    {bulkCopied ? <><CheckCheck className="w-3.5 h-3.5" />Copiado!</> : <><Copy className="w-3.5 h-3.5" />Copiar Tudo</>}
+                  </button>
+                </div>
+                <textarea readOnly value={bulkText}
+                  className="w-full h-56 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-xs font-mono resize-none focus:outline-none" />
+                <p className="text-[10px] text-green-600">✅ Nenhum preço, custo, nicho original ou fornecedor incluído — 100% seguro para distribuição.</p>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
