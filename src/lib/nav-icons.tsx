@@ -59,6 +59,8 @@ import {
   BookOpen,
   Trophy,
   Brain,
+  ClipboardList,
+  FileBarChart2,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -121,6 +123,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   BookOpen,
   Trophy,
   Brain,
+  ClipboardList,
+  FileBarChart2,
 }
 
 export function getNavIcon(name: string): LucideIcon {
