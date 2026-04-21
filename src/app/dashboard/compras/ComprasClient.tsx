@@ -10,22 +10,24 @@ import { PedidosTab } from './PedidosTab'
 import { ConsultaPrecoTab } from './ConsultaPrecoTab'
 import { OrdensComerciais } from './OrdensComerciais'
 import { AssetBiTab } from './AssetBiTab'
+import { AssetIntakeTab } from './AssetIntakeTab'
 
-type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi'
+type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
+  { id: 'intake',       label: '📥 Intake de Ativos', icon: <ClipboardList className="w-4 h-4" />, roles: ['ADMIN','PURCHASING'] },
   { id: 'consulta',     label: 'Consulta de Preço',   icon: <Search className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
-  { id: 'orders',       label: 'Ordens de Serviço',   icon: <ClipboardList className="w-4 h-4" />, roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
+  { id: 'orders',       label: 'Ordens de Serviço',   icon: <ShoppingCart className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
   { id: 'estoque',      label: 'Estoque de Ativos',   icon: <Package className="w-4 h-4" />,       roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
   { id: 'fornecedores', label: 'Fornecedores',         icon: <Store className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING'] },
-  { id: 'pedidos',      label: 'Ordens de Compra',    icon: <ShoppingCart className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING','FINANCE'] },
+  { id: 'pedidos',      label: 'Ordens de Compra',    icon: <Upload className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','FINANCE'] },
   { id: 'bi',           label: 'BI & Margem',         icon: <BarChart2 className="w-4 h-4" />,     roles: ['ADMIN','PURCHASING','FINANCE'] },
-  { id: 'bulk',         label: 'Importação em Lote',  icon: <Upload className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING'] },
+  { id: 'bulk',         label: 'Importação CSV',      icon: <Upload className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING'] },
   { id: 'copy',         label: 'Copy Generator',      icon: <Zap className="w-4 h-4" />,           roles: ['ADMIN','PURCHASING','COMMERCIAL'] },
 ]
 
 export function ComprasClient({ role }: { role: string }) {
-  const defaultTab: Tab = ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'].includes(role) ? 'consulta' : 'estoque'
+  const defaultTab: Tab = (role === 'ADMIN' || role === 'PURCHASING') ? 'intake' : ['COMMERCIAL','DELIVERER'].includes(role) ? 'consulta' : 'estoque'
   const [tab, setTab] = useState<Tab>(defaultTab)
 
   const visibleTabs = TABS.filter((t) => t.roles.includes(role))
@@ -65,6 +67,7 @@ export function ComprasClient({ role }: { role: string }) {
 
       {/* Content */}
       <div>
+        {tab === 'intake'        && <AssetIntakeTab />}
         {tab === 'consulta'     && <ConsultaPrecoTab role={role} />}
         {tab === 'orders'       && <OrdensComerciais role={role} />}
         {tab === 'estoque'      && <EstoqueTab role={role} />}
