@@ -94,7 +94,7 @@ export async function POST(req: Request) {
         operationNiche:        data.operationNiche ?? null,
         leadAcquisitionSource: data.leadAcquisitionSource ?? null,
         commercialNotes:       data.commercialNotes ?? null,
-        segmentationTags:      JSON.stringify(data.segmentationTags ?? []),
+        segmentationTags:      data.segmentationTags ?? [],
         totalAccountsBought:   0,
         refundCount:           0,
         roiCrmStatus:          'LEAD',
