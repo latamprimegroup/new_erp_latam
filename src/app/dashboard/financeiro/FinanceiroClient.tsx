@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { VaultIntelligenceTab } from './VaultIntelligenceTab'
 import { FinanceiroPayoutTab } from './FinanceiroPayoutTab'
 import { FinanceiroContasFiscalTab } from './FinanceiroContasFiscalTab'
+import { FinanceiroCarteirasTab } from './FinanceiroCarteirasTab'
+import { FinanceiroInadimplentesTab } from './FinanceiroInadimplentesTab'
+import { FinanceiroNfeTab } from './FinanceiroNfeTab'
 
 type Entry = {
   id: string
@@ -33,7 +36,7 @@ type ProjecaoData = {
   projection: { month: string; balance: number; income: number; expense: number }[]
 }
 
-type Tab = 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao'
+type Tab = 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe'
 
 export function FinanceiroClient() {
   const [tab, setTab] = useState<Tab>('lancamentos')
@@ -185,6 +188,9 @@ export function FinanceiroClient() {
     { id: 'conciliacao', label: 'Conciliação' },
     { id: 'contas_fiscal', label: 'Contas & Fiscal' },
     { id: 'projecao', label: 'Fluxo Projetado' },
+    { id: 'carteiras', label: '🏦 Carteiras' },
+    { id: 'inadimplentes', label: '⚠️ Inadimplência' },
+    { id: 'nfe', label: '📄 NF-e' },
   ]
 
   return (
@@ -630,6 +636,24 @@ export function FinanceiroClient() {
               </table>
             </div>
           ) : null}
+        </div>
+      )}
+
+      {tab === 'carteiras' && (
+        <div className="card">
+          <FinanceiroCarteirasTab />
+        </div>
+      )}
+
+      {tab === 'inadimplentes' && (
+        <div className="card">
+          <FinanceiroInadimplentesTab />
+        </div>
+      )}
+
+      {tab === 'nfe' && (
+        <div className="card">
+          <FinanceiroNfeTab />
         </div>
       )}
     </div>

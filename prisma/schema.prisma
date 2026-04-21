@@ -1667,6 +1667,81 @@ enum FinancialType {
   EXPENSE
 }
 
+/// Status do lançamento financeiro (contas a pagar/receber)
+enum FinEntryStatus {
+  PENDING   // Pendente — a vencer
+  PAID      // Pago / Recebido
+  CANCELED  // Cancelado
+  OVERDUE   // Em atraso (dueDate < agora e não pago)
+}
+
+/// Método de pagamento
+enum FinPaymentMethod {
+  PIX
+  BOLETO
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  TED
+  DOC
+  CASH
+  CRIPTO
+  OUTRO
+}
+
+/// Carteira / conta bancária da empresa
+model FinWallet {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(120)   // "Banco Inter Corrente", "Stone PJ", "Wise USD"
+  bankName    String?  @map("bank_name") @db.VarChar(100)
+  /// CHECKING | SAVINGS | DIGITAL | CREDIT | CRIPTO
+  accountType String   @default("CHECKING") @map("account_type") @db.VarChar(30)
+  currency    String   @default("BRL") @db.VarChar(10)
+  /// Saldo atual (atualizado manualmente ou via conciliação)
+  balance     Decimal  @default(0) @db.Decimal(16, 4)
+  active      Boolean  @default(true)
+  icon        String?  @db.VarChar(10)    // emoji ex: 🏦 💳 ₿
+  color       String?  @db.VarChar(20)    // ex: #00B8D9
+  notes       String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt        @map("updated_at")
+
+  entries     FinancialEntry[]
+  nfes        FinNfe[]
+
+  @@index([active])
+  @@map("fin_wallets")
+}
+
+/// Nota Fiscal de Serviço (NFS-e) — integração FocusNFe / e-Notas
+model FinNfe {
+  id          String          @id @default(cuid())
+  entryId     String?         @unique @map("entry_id")
+  entry       FinancialEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  walletId    String?         @map("wallet_id")
+  wallet      FinWallet?      @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  nfeNumber   String?         @map("nfe_number") @db.VarChar(50)
+  series      String?         @db.VarChar(5)
+  /// PENDENTE | EMITIDA | CANCELADA | ERRO
+  nfeStatus   String          @default("PENDENTE") @map("nfe_status") @db.VarChar(20)
+  issueDate   DateTime?       @map("issue_date")
+  totalAmount Decimal?        @map("total_amount") @db.Decimal(14, 2)
+  serviceDesc String?         @map("service_desc") @db.VarChar(500)
+  clientCnpj  String?         @map("client_cnpj") @db.VarChar(20)
+  clientName  String?         @map("client_name") @db.VarChar(200)
+  /// ID retornado pelo FocusNFe / e-Notas
+  externalId  String?         @map("external_id") @db.VarChar(100)
+  pdfUrl      String?         @map("pdf_url") @db.VarChar(2000)
+  xmlUrl      String?         @map("xml_url") @db.VarChar(2000)
+  notes       String?         @db.VarChar(500)
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt      @map("updated_at")
+
+  @@index([nfeStatus])
+  @@index([issueDate])
+  @@index([clientCnpj])
+  @@map("fin_nfes")
+}
+
 model FinancialCategory {
   id       String   @id @default(cuid())
   name     String
@@ -1676,25 +1751,41 @@ model FinancialCategory {
 }
 
 model FinancialEntry {
-  id             String       @id @default(cuid())
+  id             String            @id @default(cuid())
   type           FinancialType
   category       String
-  categoryId     String?      @map("category_id")
+  categoryId     String?           @map("category_id")
   financialCategory FinancialCategory? @relation(fields: [categoryId], references: [id])
-  costCenter     String?      @map("cost_center")
-  value          Decimal      @db.Decimal(12, 2)
-  currency       String       @default("BRL")
+  costCenter     String?           @map("cost_center")
+  value          Decimal           @db.Decimal(12, 2)
+  currency       String            @default("BRL")
+  /// Data de competência (quando ocorreu / foi lançado)
   date           DateTime
-  orderId        String?      @map("order_id")
-  order          Order?       @relation(fields: [orderId], references: [id])
-  deliveryGroupId String?     @map("delivery_group_id")
-  deliveryGroup  DeliveryGroup? @relation(fields: [deliveryGroupId], references: [id])
-  netProfit      Decimal?     @map("net_profit") @db.Decimal(12, 2)
-  description    String?      @db.Text
-  reconciled     Boolean      @default(false) @map("reconciled")
-  createdAt      DateTime     @default(now()) @map("created_at")
+  /// Vencimento — para contas a pagar/receber
+  dueDate        DateTime?         @map("due_date")
+  /// Data efetiva do pagamento/recebimento
+  paymentDate    DateTime?         @map("payment_date")
+  /// Status do lançamento — PAID é o default (retrocompatível com lançamentos antigos)
+  entryStatus    FinEntryStatus    @default(PAID) @map("entry_status")
+  /// Forma de pagamento
+  paymentMethod  FinPaymentMethod? @map("payment_method")
+  /// Carteira/banco associado
+  walletId       String?           @map("wallet_id")
+  wallet         FinWallet?        @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  orderId        String?           @map("order_id")
+  order          Order?            @relation(fields: [orderId], references: [id])
+  deliveryGroupId String?          @map("delivery_group_id")
+  deliveryGroup  DeliveryGroup?    @relation(fields: [deliveryGroupId], references: [id])
+  netProfit      Decimal?          @map("net_profit") @db.Decimal(12, 2)
+  description    String?           @db.Text
+  reconciled     Boolean           @default(false) @map("reconciled")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  nfe            FinNfe?
 
   @@index([date])
+  @@index([dueDate])
+  @@index([entryStatus])
+  @@index([walletId])
   @@index([orderId])
   @@index([deliveryGroupId])
 }
