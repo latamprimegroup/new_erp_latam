@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+const SEGMENTATION_TAGS = ['VIP', 'HIGH_TICKET', 'CHURN_RISK', 'BLACK_FRIDAY', 'UPSELL_CANDIDATE', 'INADIMPLENTE', 'NOVO'] as const
+
 const patchSchema = z.object({
   taxId: z.string().max(32).optional().nullable(),
   companyName: z.string().max(200).optional().nullable(),
@@ -22,6 +24,27 @@ const patchSchema = z.object({
   commercialNotes: z.string().max(20000).optional().nullable(),
   riskBlockCheckout: z.boolean().optional(),
   riskBlockReason: z.string().max(500).optional().nullable(),
+  // Melhoria 15/04/2026 — Endereço
+  addressZip: z.string().max(10).optional().nullable(),
+  addressStreet: z.string().max(300).optional().nullable(),
+  addressNumber: z.string().max(20).optional().nullable(),
+  addressComplement: z.string().max(100).optional().nullable(),
+  addressNeighborhood: z.string().max(100).optional().nullable(),
+  addressCity: z.string().max(100).optional().nullable(),
+  addressState: z.string().max(2).optional().nullable(),
+  // Melhoria 15/04/2026 — Redes sociais
+  instagramHandle: z.string().max(64).optional().nullable(),
+  facebookUrl: z.string().max(255).optional().nullable(),
+  linkedinUrl: z.string().max(255).optional().nullable(),
+  // Melhoria 15/04/2026 — Financeiro
+  creditLimit: z.number().min(0).optional().nullable(),
+  preferredDueDay: z.number().int().min(1).max(28).optional().nullable(),
+  // Melhoria 15/04/2026 — Tags de segmentação
+  segmentationTags: z.array(z.string().max(32)).max(10).optional(),
+  // Dados de contato do User (nome, telefone)
+  name: z.string().min(2).max(200).optional(),
+  phone: z.string().max(30).optional().nullable(),
+  whatsapp: z.string().max(30).optional().nullable(),
 })
 
 /** Detalhe + edição estratégica do cliente (War Room / comercial). */
@@ -82,7 +105,7 @@ export async function PATCH(
   }
 
   const { id } = await params
-  const exists = await prisma.clientProfile.findUnique({ where: { id }, select: { id: true } })
+  const exists = await prisma.clientProfile.findUnique({ where: { id }, select: { id: true, userId: true } })
   if (!exists) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
 
   try {
@@ -106,6 +129,17 @@ export async function PATCH(
       }
     }
 
+    // Atualiza dados do User (nome, telefone) se fornecidos
+    if (data.name || data.phone !== undefined) {
+      await prisma.user.update({
+        where: { id: exists.userId },
+        data: {
+          ...(data.name && { name: data.name }),
+          ...(data.phone !== undefined && { phone: data.phone }),
+        },
+      })
+    }
+
     const updated = await prisma.clientProfile.update({
       where: { id },
       data: {
@@ -118,20 +152,29 @@ export async function PATCH(
         ...(data.operationNiche !== undefined && { operationNiche: data.operationNiche }),
         ...(data.trustLevelStars !== undefined && { trustLevelStars: data.trustLevelStars }),
         ...(data.preferredCurrency !== undefined && { preferredCurrency: data.preferredCurrency }),
-        ...(data.preferredPaymentMethod !== undefined && {
-          preferredPaymentMethod: data.preferredPaymentMethod,
-        }),
+        ...(data.preferredPaymentMethod !== undefined && { preferredPaymentMethod: data.preferredPaymentMethod }),
         ...(data.accountManagerId !== undefined && { accountManagerId: data.accountManagerId }),
-        ...(data.technicalSupportNotes !== undefined && {
-          technicalSupportNotes: data.technicalSupportNotes,
-        }),
+        ...(data.technicalSupportNotes !== undefined && { technicalSupportNotes: data.technicalSupportNotes }),
         ...(data.clientStatus !== undefined && { clientStatus: data.clientStatus }),
-        ...(data.leadAcquisitionSource !== undefined && {
-          leadAcquisitionSource: data.leadAcquisitionSource,
-        }),
+        ...(data.leadAcquisitionSource !== undefined && { leadAcquisitionSource: data.leadAcquisitionSource }),
         ...(data.commercialNotes !== undefined && { commercialNotes: data.commercialNotes }),
         ...(data.riskBlockCheckout !== undefined && { riskBlockCheckout: data.riskBlockCheckout }),
         ...(data.riskBlockReason !== undefined && { riskBlockReason: data.riskBlockReason }),
+        // Novos campos
+        ...(data.whatsapp !== undefined && { whatsapp: data.whatsapp }),
+        ...(data.addressZip !== undefined && { addressZip: data.addressZip }),
+        ...(data.addressStreet !== undefined && { addressStreet: data.addressStreet }),
+        ...(data.addressNumber !== undefined && { addressNumber: data.addressNumber }),
+        ...(data.addressComplement !== undefined && { addressComplement: data.addressComplement }),
+        ...(data.addressNeighborhood !== undefined && { addressNeighborhood: data.addressNeighborhood }),
+        ...(data.addressCity !== undefined && { addressCity: data.addressCity }),
+        ...(data.addressState !== undefined && { addressState: data.addressState }),
+        ...(data.instagramHandle !== undefined && { instagramHandle: data.instagramHandle }),
+        ...(data.facebookUrl !== undefined && { facebookUrl: data.facebookUrl }),
+        ...(data.linkedinUrl !== undefined && { linkedinUrl: data.linkedinUrl }),
+        ...(data.creditLimit !== undefined && { creditLimit: data.creditLimit }),
+        ...(data.preferredDueDay !== undefined && { preferredDueDay: data.preferredDueDay }),
+        ...(data.segmentationTags !== undefined && { segmentationTags: data.segmentationTags }),
       },
       include: {
         user: { select: { id: true, email: true, name: true, phone: true } },

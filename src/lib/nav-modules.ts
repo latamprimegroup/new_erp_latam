@@ -105,6 +105,7 @@ export const MODULES_ERP: NavItem[] = [
   { href: '/dashboard/admin/fornecedores', label: 'Fornecedores', roles: ['ADMIN'], icon: 'Store' },
   { href: '/dashboard/admin/fechamento-producao', label: 'Fechamento Produção', roles: ['ADMIN'], icon: 'FileCheck' },
   { href: '/dashboard/admin/usuarios', label: 'Usuários', roles: ['ADMIN'], icon: 'Users' },
+  { href: '/dashboard/admin/clientes', label: 'Cadastro de Clientes (CRM)', roles: ['ADMIN', 'COMMERCIAL'], icon: 'BookUser' },
   { href: '/dashboard/admin/relatorio-diario', label: 'Relatório Diário', roles: ['ADMIN'], icon: 'FileText' },
   { href: '/dashboard/relatorios', label: 'Relatórios & KPIs', roles: ['ADMIN', 'COMMERCIAL', 'FINANCE'], icon: 'BarChart2' },
 ]

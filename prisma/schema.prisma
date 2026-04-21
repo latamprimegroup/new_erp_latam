@@ -248,10 +248,34 @@ model ClientProfile {
   riskBlockCheckout     Boolean  @default(false) @map("risk_block_checkout")
   riskBlockReason       String?  @map("risk_block_reason") @db.VarChar(500)
 
+  // CRM — Endereço completo (melhoria 15/04/2026)
+  addressZip            String?  @map("address_zip") @db.VarChar(10)       // CEP (00000-000)
+  addressStreet         String?  @map("address_street") @db.VarChar(300)   // Logradouro
+  addressNumber         String?  @map("address_number") @db.VarChar(20)    // Número
+  addressComplement     String?  @map("address_complement") @db.VarChar(100) // Complemento
+  addressNeighborhood   String?  @map("address_neighborhood") @db.VarChar(100) // Bairro
+  addressCity           String?  @map("address_city") @db.VarChar(100)     // Cidade
+  addressState          String?  @map("address_state") @db.VarChar(2)      // UF (ex: SP)
+
+  // CRM — Redes sociais adicionais (melhoria 15/04/2026)
+  instagramHandle       String?  @map("instagram_handle") @db.VarChar(64)
+  facebookUrl           String?  @map("facebook_url") @db.VarChar(255)
+  linkedinUrl           String?  @map("linkedin_url") @db.VarChar(255)
+
+  // CRM — Financeiro / faturamento (melhoria 15/04/2026)
+  creditLimit           Decimal? @map("credit_limit") @db.Decimal(12, 2)  // Limite de crédito
+  preferredDueDay       Int?     @map("preferred_due_day")                 // Dia de vencimento 1-28
+
+  // CRM — Tags de segmentação (melhoria 15/04/2026)
+  // Ex: ["VIP","HIGH_TICKET","CHURN_RISK","BLACK_FRIDAY","UPSELL_CANDIDATE"] — armazenado como JSON (MySQL)
+  segmentationTags      Json     @default("[]") @map("segmentation_tags")
+
   @@index([whatsapp])
   @@index([accountManagerId])
   @@index([trustScore])
   @@index([riskBlockCheckout])
+  @@index([addressCity])
+  @@index([addressState])
 }
 
 /// Hall de patentes — pedidos de resgate de recompensas (logística comercial)
