@@ -7,9 +7,11 @@ on:
   push:
     branches: [main]
 
+# Sem cancel-in-progress: aguarda o deploy ativo terminar antes de iniciar o próximo.
+# Isso evita builds concorrentes no servidor que corrompem a pasta .next/
 concurrency:
   group: deploy-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -19,24 +21,6 @@ jobs:
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET != '' && secrets.NEXTAUTH_SECRET || 'ci-placeholder-secret-32chars' }}
       NEXTAUTH_URL: 'http://localhost:3000'
     steps:
-      - name: Cancelar runs anteriores pendentes
-        continue-on-error: true
-        run: |
-          for status in queued in_progress; do
-            gh run list \
-              --repo "${{ github.repository }}" \
-              --workflow "deploy.yml" \
-              --status "$status" \
-              --json databaseId \
-              --jq '.[].databaseId' | while read id; do
-                [ "$id" = "${{ github.run_id }}" ] && continue
-                echo "Cancelando run $id ($status)"
-                gh run cancel "$id" --repo "${{ github.repository }}" || true
-            done
-          done
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -70,12 +54,31 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # request_timeout garante que o SSH aguarda o build completo (~8 min) sem timeout
+          command_timeout: 15m
           script: |
             set -e
             DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
             cd "${DEPLOY_PATH:-/var/www/erp-ads-ativos}"
+
+            echo "==> Baixando código mais recente..."
             git fetch origin main
             git reset --hard origin/main
-            npm ci
-            npm run build
-            pm2 restart erp-ads-ativos
+
+            echo "==> Instalando dependências..."
+            npm ci --prefer-offline
+
+            echo "==> Matando qualquer build anterior que ainda esteja rodando..."
+            pkill -f "next build" || true
+            sleep 2
+
+            echo "==> Limpando build anterior para garantir compilação limpa..."
+            rm -rf .next
+
+            echo "==> Buildando aplicação..."
+            NODE_OPTIONS="--max-old-space-size=3000" npm run build
+
+            echo "==> Reiniciando processo PM2..."
+            pm2 restart erp-ads-ativos --update-env
+
+            echo "==> Deploy concluido com sucesso!"
