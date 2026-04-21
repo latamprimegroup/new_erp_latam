@@ -126,7 +126,10 @@ model User {
 
   // Supply Chain / Compras
   assetMovements           AssetMovement[]
-  purchaseOrdersCreated    PurchaseOrder[] @relation("PurchaseOrderCreator")
+  purchaseOrdersCreated    PurchaseOrder[]       @relation("PurchaseOrderCreator")
+  assetSalesOrdersSold     AssetSalesOrder[]     @relation("AssetSalesOrderSeller")
+  assetSalesOrdersApproved AssetSalesOrder[]     @relation("AssetSalesOrderApprover")
+  assetSalesOrderMovements AssetSalesOrderMovement[]
 
   @@index([phone])
 }
@@ -4442,8 +4445,16 @@ model Asset {
   vendorId    String        @map("vendor_id")
   costPrice   Decimal       @map("cost_price") @db.Decimal(10, 2)
   vendorRef   String?       @map("vendor_ref") @db.VarChar(100)
-  /// Credenciais/tokens brutos — nunca expostos fora de PURCHASING
+  /// Credenciais/tokens brutos — nunca expostos fora de PURCHASING/DELIVERER pós-pagamento
   rawData     Json?         @map("raw_data")
+
+  // ── Motor de Markup e Margem (visíveis apenas PURCHASING/ADMIN) ───────────
+  /// Markup sugerido em %: salePrice = costPrice * (1 + markupPct/100)
+  markupPct    Decimal?     @map("markup_pct") @db.Decimal(5, 2)
+  /// Margem mínima aceitável em % — define o Floor Price
+  minMarginPct Decimal?     @map("min_margin_pct") @db.Decimal(5, 2)
+  /// Floor Price armazenado = costPrice * (1 + minMarginPct/100)
+  floorPrice   Decimal?     @map("floor_price") @db.Decimal(10, 2)
 
   // ── Identidade Ads Ativos (visível comercialmente) ───────────────────────
   salePrice   Decimal       @map("sale_price") @db.Decimal(10, 2)
@@ -4464,9 +4475,10 @@ model Asset {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  vendor        Vendor         @relation(fields: [vendorId], references: [id])
-  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  vendor        Vendor           @relation(fields: [vendorId], references: [id])
+  purchaseOrder PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   movements     AssetMovement[]
+  salesOrders   AssetSalesOrder[]
 
   @@index([status])
   @@index([vendorId])
@@ -4511,4 +4523,86 @@ model PurchaseOrder {
 
   @@index([vendorId, status])
   @@map("purchase_orders")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MOTOR DE VENDAS — Ciclo de Vida de Ordem de Serviço (OS) de Ativo
+// Floor Price → Aprovação CEO → Liberação de Credenciais → Baixa de Estoque
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum AssetSalesOrderStatus {
+  AWAITING_PAYMENT     // Aguardando pagamento do cliente
+  PENDING_APPROVAL     // Preço abaixo do Floor — aguarda aprovação CEO/ADMIN
+  APPROVED             // Aprovação concedida (preço fora do piso)
+  CLIENT_PAID          // Cliente pagou — trigger automático para Financeiro
+  VENDOR_PAYMENT_SENT  // Financeiro enviou pagamento ao fornecedor
+  VENDOR_PAID          // Fornecedor confirmou recebimento — credenciais liberadas
+  DELIVERING           // Em entrega (Setor de Entrega com acesso)
+  DELIVERED            // Entregue — baixa automática no estoque
+  CANCELED
+}
+
+/// Ordem de Serviço de Ativo — ciclo comercial completo com segregação total
+model AssetSalesOrder {
+  id              String                  @id @default(cuid())
+  assetId         String                  @map("asset_id")
+
+  // ── Vendedor (COMMERCIAL vê apenas ID, preço sugerido e piso) ────────────
+  sellerId        String                  @map("seller_id")
+
+  // ── Cliente final ─────────────────────────────────────────────────────────
+  clientName      String?                 @map("client_name") @db.VarChar(200)
+  clientContact   String?                 @map("client_contact") @db.VarChar(200)
+  clientId        String?                 @map("client_id")
+
+  // ── Preços negociados (snapshot imutável) ─────────────────────────────────
+  negotiatedPrice Decimal                 @map("negotiated_price") @db.Decimal(10, 2)
+  /// Snapshot do custo no momento da venda (PURCHASING/ADMIN/FINANCE apenas)
+  costSnapshot    Decimal                 @map("cost_snapshot") @db.Decimal(10, 2)
+  floorSnapshot   Decimal                 @map("floor_snapshot") @db.Decimal(10, 2)
+  /// true se negotiatedPrice < floorSnapshot → exige aprovação
+  belowFloor      Boolean                 @default(false) @map("below_floor")
+  grossMargin     Decimal                 @map("gross_margin") @db.Decimal(10, 2)
+  grossMarginPct  Decimal                 @map("gross_margin_pct") @db.Decimal(6, 2)
+
+  // ── Controle de fluxo ─────────────────────────────────────────────────────
+  status          AssetSalesOrderStatus   @default(AWAITING_PAYMENT)
+  approvedById    String?                 @map("approved_by_id")
+  approvalNotes   String?                 @map("approval_notes") @db.VarChar(500)
+
+  // ── Timestamps de eventos ─────────────────────────────────────────────────
+  clientPaidAt    DateTime?               @map("client_paid_at")
+  vendorPaidAt    DateTime?               @map("vendor_paid_at")
+  deliveredAt     DateTime?               @map("delivered_at")
+
+  notes           String?                 @db.Text
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  asset       Asset                       @relation(fields: [assetId], references: [id])
+  seller      User                        @relation("AssetSalesOrderSeller",   fields: [sellerId],     references: [id])
+  approvedBy  User?                       @relation("AssetSalesOrderApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  movements   AssetSalesOrderMovement[]
+
+  @@index([status])
+  @@index([sellerId, createdAt])
+  @@index([assetId])
+  @@map("asset_sales_orders")
+}
+
+/// Audit trail de cada transição de estado da Ordem de Serviço
+model AssetSalesOrderMovement {
+  id         String                  @id @default(cuid())
+  orderId    String                  @map("order_id")
+  fromStatus AssetSalesOrderStatus?  @map("from_status")
+  toStatus   AssetSalesOrderStatus   @map("to_status")
+  notes      String?                 @db.VarChar(500)
+  userId     String?                 @map("user_id")
+  createdAt  DateTime                @default(now()) @map("created_at")
+
+  order AssetSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("asset_sales_order_movements")
 }

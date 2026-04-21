@@ -1,25 +1,32 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle } from 'lucide-react'
+import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2 } from 'lucide-react'
 import { FornecedoresTab } from './FornecedoresTab'
 import { EstoqueTab } from './EstoqueTab'
 import { CopyGeneratorTab } from './CopyGeneratorTab'
 import { BulkImportTab } from './BulkImportTab'
 import { PedidosTab } from './PedidosTab'
+import { ConsultaPrecoTab } from './ConsultaPrecoTab'
+import { OrdensComerciais } from './OrdensComerciais'
+import { AssetBiTab } from './AssetBiTab'
 
-type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos'
+type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
-  { id: 'estoque',      label: 'Estoque de Ativos',  icon: <Package className="w-4 h-4" />,      roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
-  { id: 'fornecedores', label: 'Fornecedores',        icon: <Store className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING'] },
+  { id: 'consulta',     label: 'Consulta de Preço',   icon: <Search className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
+  { id: 'orders',       label: 'Ordens de Serviço',   icon: <ClipboardList className="w-4 h-4" />, roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
+  { id: 'estoque',      label: 'Estoque de Ativos',   icon: <Package className="w-4 h-4" />,       roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
+  { id: 'fornecedores', label: 'Fornecedores',         icon: <Store className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING'] },
   { id: 'pedidos',      label: 'Ordens de Compra',    icon: <ShoppingCart className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING','FINANCE'] },
+  { id: 'bi',           label: 'BI & Margem',         icon: <BarChart2 className="w-4 h-4" />,     roles: ['ADMIN','PURCHASING','FINANCE'] },
   { id: 'bulk',         label: 'Importação em Lote',  icon: <Upload className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING'] },
   { id: 'copy',         label: 'Copy Generator',      icon: <Zap className="w-4 h-4" />,           roles: ['ADMIN','PURCHASING','COMMERCIAL'] },
 ]
 
 export function ComprasClient({ role }: { role: string }) {
-  const [tab, setTab] = useState<Tab>('estoque')
+  const defaultTab: Tab = ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'].includes(role) ? 'consulta' : 'estoque'
+  const [tab, setTab] = useState<Tab>(defaultTab)
 
   const visibleTabs = TABS.filter((t) => t.roles.includes(role))
 
@@ -30,12 +37,12 @@ export function ComprasClient({ role }: { role: string }) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Supply Chain & White Label</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Gestão de fornecedores, ativos e identidade exclusiva Ads Ativos
+            Motor de vendas, arbitragem de ativos e inteligência de margem
           </p>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/20 text-xs text-blue-700 dark:text-blue-300">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span><strong>Double-Blind:</strong> dados de fornecedor visíveis apenas para Compras/Admin</span>
+          <span><strong>Segregação Total:</strong> Entrega vê credenciais · Comercial vê ID/preço · Compras vê fornecedor · Admin vê tudo</span>
         </div>
       </div>
 
@@ -58,9 +65,12 @@ export function ComprasClient({ role }: { role: string }) {
 
       {/* Content */}
       <div>
+        {tab === 'consulta'     && <ConsultaPrecoTab role={role} />}
+        {tab === 'orders'       && <OrdensComerciais role={role} />}
         {tab === 'estoque'      && <EstoqueTab role={role} />}
         {tab === 'fornecedores' && <FornecedoresTab />}
         {tab === 'pedidos'      && <PedidosTab role={role} />}
+        {tab === 'bi'           && <AssetBiTab />}
         {tab === 'bulk'         && <BulkImportTab />}
         {tab === 'copy'         && <CopyGeneratorTab />}
       </div>
