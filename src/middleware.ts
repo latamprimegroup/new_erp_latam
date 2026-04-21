@@ -7,9 +7,15 @@ const PUBLIC_PATHS = ['/login', '/cadastro', '/recuperar-senha', '/redefinir-sen
 
 // Mapeamento: path pattern → roles permitidas
 const ROUTE_ROLES: Record<string, string[]> = {
+  '/dashboard/gerente-producao': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/ads-core': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/ads-core/gestao-contas': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/ads-core/bi': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/atribuicao': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/nichos': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/demandas': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/relatorios-producao': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/ads-core/rg-abastecimento': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/producao': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/producao/conferencia': ['ADMIN', 'FINANCE', 'PRODUCTION_MANAGER'],
   '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'FINANCE', 'PRODUCTION_MANAGER'],

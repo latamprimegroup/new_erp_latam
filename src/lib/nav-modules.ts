@@ -21,6 +21,11 @@ export function getActiveNavHref(pathname: string, modules: NavItem[]): string |
 
 export const MODULES_ERP: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', roles: ['ADMIN', 'PRODUCER', 'DELIVERER', 'FINANCE', 'COMMERCIAL'], icon: 'LayoutDashboard' },
+
+  // ── Central do Gerente de Produção (hub exclusivo) ──
+  { href: '/dashboard/gerente-producao', label: '⚙️ Central do Gerente', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'ShieldCheck' },
+
+  // ── ADS CORE — módulos do gerente ──
   { href: '/dashboard/ads-core', label: 'ADS CORE', roles: ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'], icon: 'Zap' },
   {
     href: '/dashboard/ads-tracker',
@@ -28,11 +33,13 @@ export const MODULES_ERP: NavItem[] = [
     roles: ['ADMIN', 'MANAGER', 'PRODUCTION_MANAGER', 'FINANCE'],
     icon: 'Gauge',
   },
-  { href: '/dashboard/ads-core/nichos', label: 'ADS CORE — Gestão por nicho', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'FolderOpen' },
-  { href: '/dashboard/ads-core/bi', label: 'ADS CORE — Gestão (BI)', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'BarChart3' },
-  { href: '/dashboard/ads-core/gestao-contas', label: 'ADS CORE — Gestão contas', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'Target' },
-  { href: '/dashboard/ads-core/demandas', label: 'ADS CORE — Painel de demandas', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'LayoutList' },
-  { href: '/dashboard/ads-core/rg-abastecimento', label: 'ADS CORE — Abastecimento RG', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'Package' },
+  { href: '/dashboard/ads-core/bi', label: 'Dashboard de Gestão (BI)', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'BarChart3' },
+  { href: '/dashboard/ads-core/demandas', label: 'Painel de Demandas', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'LayoutList' },
+  { href: '/dashboard/ads-core/atribuicao', label: 'Estoque de Ativos — Atribuição', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'Target' },
+  { href: '/dashboard/ads-core/nichos', label: 'Gestão por Nicho (Células)', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'FolderOpen' },
+  { href: '/dashboard/ads-core/gestao-contas', label: 'Gestão de Contas (MCC)', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'Layers' },
+  { href: '/dashboard/ads-core/relatorios-producao', label: 'Relatórios e Auditoria', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'FileBarChart2' },
+  { href: '/dashboard/ads-core/rg-abastecimento', label: 'Abastecimento de RG', roles: ['ADMIN', 'PRODUCTION_MANAGER'], icon: 'Package' },
   { href: '/dashboard/producao', label: 'Produção', roles: ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'], icon: 'Factory' },
   { href: '/dashboard/producao-g2', label: 'Produção Google G2', roles: ['ADMIN', 'PRODUCER', 'FINANCE'], icon: 'Layers' },
   { href: '/dashboard/producao-g2/agente', label: 'Agente G2 Dashboard', roles: ['ADMIN', 'PRODUCER', 'FINANCE'], icon: 'Bot' },
