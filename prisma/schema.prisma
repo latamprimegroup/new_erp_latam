@@ -663,12 +663,21 @@ enum AccountStatus {
   PENDING
   IN_ANALYSIS
   UNDER_REVIEW
+  QUARANTINE
   APPROVED
   REJECTED
   IN_USE
   AVAILABLE
   CRITICAL
   DELIVERED
+  DEAD
+}
+
+enum WarmupStatus {
+  NORMAL
+  WARM_UP
+  READY_TO_SCALE
+  FLAGGED
 }
 
 model ProductionAccount {
@@ -723,9 +732,19 @@ model ProductionAccount {
   validatedByManager   User?     @relation("ProductionAccountValidatedBy", fields: [validatedByManagerId], references: [id])
   validatedAt          DateTime? @map("validated_at")             // Momento da conferência (conta para pagamento)
 
+  // Melhoria 15/04/2026 — Checkpoint de Auditoria
+  productionCost      Decimal?       @map("production_cost") @db.Decimal(10, 2) // Custo real (chip + proxy + contingência) para ROI
+  warmupStatus        WarmupStatus   @default(NORMAL) @map("warmup_status")     // Ready to Scale / Warm-up / Flagged / Normal
+  quarantineUntil     DateTime?      @map("quarantine_until")                    // Conta liberada ao estoque só após esta data/hora
+  quarantineHours     Int?           @map("quarantine_hours")                    // Horas configuradas de quarentena (ex: 48)
+  deadAt              DateTime?      @map("dead_at")                             // Dead Switch: quando conta foi baixada
+  deadReason          String?        @map("dead_reason") @db.VarChar(500)        // Motivo: Checkpoint Inicial, Ban, etc.
+
   @@index([producerId, status, createdAt])
   @@index([validatedAt])
   @@index([deletedAt])
+  @@index([warmupStatus])
+  @@index([quarantineUntil])
 }
 
 // Checklist para mitigar erros na produção (produtor marca antes de enviar)

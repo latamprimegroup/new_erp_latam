@@ -16,7 +16,17 @@ export async function approveProductionAccount(
     include: { producer: { select: { name: true } } },
   })
   if (!production) return { ok: false, code: 'NOT_FOUND' }
-  if (!['PENDING', 'UNDER_REVIEW'].includes(production.status)) {
+  if (!['PENDING', 'UNDER_REVIEW', 'QUARANTINE'].includes(production.status)) {
+    return { ok: false, code: 'INVALID_STATUS' }
+  }
+
+  // Gate de ID externo: Google Ads exige ID antes de aprovar
+  if (production.platform === 'GOOGLE_ADS' && !production.googleAdsCustomerId?.trim()) {
+    return { ok: false, code: 'INVALID_STATUS' }
+  }
+
+  // Se quarentena ainda ativa, bloqueia aprovação
+  if (production.quarantineUntil && production.quarantineUntil > new Date()) {
     return { ok: false, code: 'INVALID_STATUS' }
   }
 
@@ -27,7 +37,7 @@ export async function approveProductionAccount(
         type: production.type,
         source: 'PRODUCTION',
         status: 'AVAILABLE',
-        purchasePrice: null,
+        purchasePrice: production.productionCost ?? null,
         salePrice: null,
       },
     })

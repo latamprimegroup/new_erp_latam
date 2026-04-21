@@ -4,7 +4,7 @@ import { requireRoles } from '@/lib/api-auth'
 import { approveProductionAccount } from '@/lib/production-approve'
 
 const bodySchema = z.object({
-  ids: z.array(z.string().min(1)).min(1).max(40),
+  ids: z.array(z.string().min(1)).min(1).max(50),
 })
 
 export async function POST(req: Request) {

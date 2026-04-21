@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const PRODUCTION_NICHES = ['NUTRA', 'IGAMING', 'LOCAL', 'ECOM', 'OTHER'] as const
 export const VERIFICATION_GOALS = ['G2_AND_ADVERTISER', 'ADVERTISER_AND_COMMERCIAL_OPS'] as const
+export const WARMUP_STATUSES = ['NORMAL', 'WARM_UP', 'READY_TO_SCALE', 'FLAGGED'] as const
 
 /**
  * Corpo do POST /api/producao — espelhado no cliente (ProducaoClient) para validação antes do envio.
@@ -29,6 +30,8 @@ export const productionAccountCreateSchema = z
     paymentProfileId: z.string().optional(),
     email: z.union([z.string().email(), z.literal('')]).optional(),
     cnpj: z.string().optional(),
+    productionCost: z.number().min(0).optional(), // Custo real (chip + proxy + contingência)
+    warmupStatus: z.enum(WARMUP_STATUSES).optional(), // Ready to Scale / Warm-up / Flagged
   })
   .superRefine((data, ctx) => {
     if (!data.password?.trim()) {

@@ -381,6 +381,8 @@ export async function POST(req: Request) {
         primaryDomain: normDomain,
         proxyNote: data.proxyNote?.trim() || null,
         proxyConfigured: data.proxyConfigured ?? false,
+        productionCost: data.productionCost ? data.productionCost : null,
+        warmupStatus: (data.warmupStatus as 'NORMAL' | 'WARM_UP' | 'READY_TO_SCALE' | 'FLAGGED') ?? 'NORMAL',
       },
       include: { producer: { select: { name: true } } },
     })

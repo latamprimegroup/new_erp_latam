@@ -88,6 +88,13 @@ type Account = {
   proxyNote?: string | null
   proxyConfigured?: boolean
   cnpjPdfUrl?: string | null
+  // Melhoria 15/04/2026 — Checkpoint de Auditoria
+  productionCost?: number | null
+  warmupStatus?: 'NORMAL' | 'WARM_UP' | 'READY_TO_SCALE' | 'FLAGGED' | null
+  quarantineUntil?: string | null
+  quarantineHours?: number | null
+  deadAt?: string | null
+  deadReason?: string | null
 }
 
 /** Identificador que o utilizador opera: código manual; senão ID Google Ads; nunca o cuid interno. */
@@ -128,13 +135,65 @@ function statusLabel(status: string): string {
       return 'Pendente'
     case 'UNDER_REVIEW':
       return 'Em análise (verificação)'
+    case 'IN_ANALYSIS':
+      return 'Em análise'
+    case 'QUARANTINE':
+      return 'Quarentena'
     case 'APPROVED':
       return 'Aprovada (verificada)'
     case 'REJECTED':
       return 'Rejeitada'
+    case 'DEAD':
+      return 'Baixada (Dead)'
+    case 'IN_USE':
+      return 'Em uso'
+    case 'AVAILABLE':
+      return 'Disponível'
+    case 'DELIVERED':
+      return 'Entregue'
     default:
       return status
   }
+}
+
+function warmupLabel(ws: string | null | undefined): string {
+  switch (ws) {
+    case 'WARM_UP': return 'Aquecimento'
+    case 'READY_TO_SCALE': return 'Pronta para Escalar'
+    case 'FLAGGED': return 'Com Aviso'
+    default: return 'Normal'
+  }
+}
+
+function warmupBadge(ws: string | null | undefined) {
+  if (!ws || ws === 'NORMAL') return null
+  const map: Record<string, { label: string; cls: string }> = {
+    WARM_UP: { label: '🔥 Aquecimento', cls: 'bg-orange-500/20 text-orange-800 dark:text-orange-200 border-orange-600/30' },
+    READY_TO_SCALE: { label: '🚀 Pronta', cls: 'bg-green-500/20 text-green-800 dark:text-green-200 border-green-600/30' },
+    FLAGGED: { label: '⚠️ Com Aviso', cls: 'bg-red-500/20 text-red-800 dark:text-red-200 border-red-600/30' },
+  }
+  const cfg = map[ws]
+  if (!cfg) return null
+  return (
+    <span className={`inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function quarantineBadge(quarantineUntil: string | null | undefined) {
+  if (!quarantineUntil) return null
+  const until = new Date(quarantineUntil)
+  const remaining = Math.ceil((until.getTime() - Date.now()) / (1000 * 60 * 60))
+  if (remaining <= 0) return null
+  return (
+    <span
+      className="inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-purple-500/20 text-purple-800 dark:text-purple-200 border border-purple-600/30"
+      title={`Em quarentena até ${until.toLocaleString('pt-BR')}`}
+    >
+      🔒 Quarentena {remaining}h
+    </span>
+  )
 }
 
 /** Alerta visual quando pendente ou em análise há mais de 24 h (SLA da fila). */
@@ -238,6 +297,8 @@ export function ProducaoClient() {
     primaryDomain: '',
     proxyNote: '',
     proxyConfigured: false,
+    productionCost: '' as string,
+    warmupStatus: 'NORMAL' as string,
   })
   const [cnpjPdfFile, setCnpjPdfFile] = useState<File | null>(null)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
@@ -298,6 +359,13 @@ export function ProducaoClient() {
   const [reservingId, setReservingId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkApproving, setBulkApproving] = useState(false)
+  // Dead Switch
+  const [deadSwitchId, setDeadSwitchId] = useState<string | null>(null)
+  const [deadReason, setDeadReason] = useState('')
+  const [deadSwitching, setDeadSwitching] = useState(false)
+  // Quarentena
+  const [quarantineId, setQuarantineId] = useState<string | null>(null)
+  const [quarantineHours, setQuarantineHours] = useState(48)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchQuery(searchInput.trim()), 400)
@@ -479,6 +547,8 @@ export function ProducaoClient() {
     proxyNote: form.proxyNote?.trim() || undefined,
     proxyConfigured: form.proxyConfigured,
     ...(form.password.trim() ? { password: form.password } : {}),
+    ...(form.productionCost ? { productionCost: parseFloat(form.productionCost) } : {}),
+    warmupStatus: form.warmupStatus || 'NORMAL',
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -582,6 +652,8 @@ export function ProducaoClient() {
         primaryDomain: '',
         proxyNote: '',
         proxyConfigured: false,
+        productionCost: '',
+        warmupStatus: 'NORMAL',
       })
       setShowForm(false)
       await load()
@@ -624,8 +696,45 @@ export function ProducaoClient() {
     } else { const e = await res.json(); alert(e.error || 'Erro') }
   }
 
+  async function handleDeadSwitch(id: string, reason: string) {
+    if (!reason.trim()) { alert('Informe o motivo da baixa.'); return }
+    setDeadSwitching(true)
+    try {
+      const res = await fetch(`/api/producao/${id}/aprovar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'dead', deadReason: reason.trim() }),
+      })
+      if (res.ok) {
+        setDeadSwitchId(null)
+        setDeadReason('')
+        load()
+      } else {
+        const e = await res.json()
+        alert(e.error || 'Erro ao aplicar Dead Switch')
+      }
+    } finally {
+      setDeadSwitching(false)
+    }
+  }
+
+  async function handleQuarantine(id: string, hours: number) {
+    const res = await fetch(`/api/producao/${id}/aprovar`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'quarantine', quarantineHours: hours }),
+    })
+    if (res.ok) {
+      setQuarantineId(null)
+      load()
+    } else {
+      const e = await res.json()
+      alert(e.error || 'Erro ao enviar para quarentena')
+    }
+  }
+
   const approvableRows = accounts.filter(
-    (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW'
+    (a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW' || a.status === 'QUARANTINE'
   )
   const approvableIdList = approvableRows.map((a) => a.id)
   const allApprovableSelected =
@@ -1436,6 +1545,39 @@ export function ProducaoClient() {
                   </div>
                 </div>
 
+                {/* Checkpoint de Auditoria — Melhoria 15/04/2026 */}
+                <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-zinc-50 dark:bg-zinc-800/40">
+                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-3 uppercase tracking-wide">Checkpoint de Inventário</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Custo de Produção (R$)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.productionCost}
+                        onChange={(e) => setForm((f) => ({ ...f, productionCost: e.target.value }))}
+                        className="input-field"
+                        placeholder="Ex: 12.50 (chip + proxy)"
+                      />
+                      <p className="text-[10px] text-zinc-500 mt-0.5">Alimenta o BI de ROI da operação</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Status de Qualidade</label>
+                      <select
+                        value={form.warmupStatus}
+                        onChange={(e) => setForm((f) => ({ ...f, warmupStatus: e.target.value }))}
+                        className="input-field"
+                      >
+                        <option value="NORMAL">Normal</option>
+                        <option value="WARM_UP">🔥 Aquecimento (Warm-up)</option>
+                        <option value="READY_TO_SCALE">🚀 Pronta para Escalar</option>
+                        <option value="FLAGGED">⚠️ Com Aviso (Flagged)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium mb-1">
                     ID da Conta Google Ads {form.platform === 'GOOGLE_ADS' ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(opcional)</span>}
@@ -1758,25 +1900,44 @@ export function ProducaoClient() {
                       {nicheLabel(a.productionNiche)}
                     </td>
                     <td className="py-3 pr-4">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs ${
-                          a.status === 'PENDING'
-                            ? 'bg-amber-100 text-amber-800'
-                            : a.status === 'UNDER_REVIEW'
-                              ? 'bg-sky-100 text-sky-800'
-                              : a.status === 'APPROVED'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {statusLabel(a.status)}
-                      </span>
-                      {a.status === 'REJECTED' && a.rejectionReason && (
-                        <span className="block text-xs text-red-600 mt-1" title={a.rejectionReason}>
-                          Motivo: {a.rejectionReason.slice(0, 40)}
-                          {a.rejectionReason.length > 40 ? '...' : ''}
+                      <div className="flex flex-col gap-0.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs w-fit ${
+                            a.status === 'PENDING'
+                              ? 'bg-amber-100 text-amber-800'
+                              : a.status === 'UNDER_REVIEW'
+                                ? 'bg-sky-100 text-sky-800'
+                                : a.status === 'QUARANTINE'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : a.status === 'APPROVED'
+                                    ? 'bg-green-100 text-green-800'
+                                    : a.status === 'DEAD'
+                                      ? 'bg-zinc-200 text-zinc-600 line-through'
+                                      : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {statusLabel(a.status)}
                         </span>
-                      )}
+                        {warmupBadge(a.warmupStatus)}
+                        {quarantineBadge(a.quarantineUntil)}
+                        {a.status === 'REJECTED' && a.rejectionReason && (
+                          <span className="text-xs text-red-600 mt-1" title={a.rejectionReason}>
+                            Motivo: {a.rejectionReason.slice(0, 40)}
+                            {a.rejectionReason.length > 40 ? '...' : ''}
+                          </span>
+                        )}
+                        {a.status === 'DEAD' && a.deadReason && (
+                          <span className="text-xs text-zinc-500 mt-1" title={a.deadReason}>
+                            💀 {a.deadReason.slice(0, 35)}
+                            {a.deadReason.length > 35 ? '...' : ''}
+                          </span>
+                        )}
+                        {a.productionCost && (
+                          <span className="text-[10px] text-zinc-500">
+                            Custo: R$ {Number(a.productionCost).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 pr-4">{a.producer.name || '—'}</td>
                     <td className="py-3 pr-4">
@@ -1927,7 +2088,67 @@ export function ProducaoClient() {
                                 Rejeitar
                               </button>
                             )}
+                            {/* Quarentena */}
+                            {quarantineId === a.id ? (
+                              <div className="flex items-center gap-1 mt-1">
+                                <select
+                                  value={quarantineHours}
+                                  onChange={(e) => setQuarantineHours(Number(e.target.value))}
+                                  className="input-field py-1 px-2 text-xs w-28"
+                                >
+                                  <option value={24}>24h</option>
+                                  <option value={48}>48h</option>
+                                  <option value={72}>72h</option>
+                                  <option value={120}>5 dias</option>
+                                  <option value={168}>7 dias</option>
+                                </select>
+                                <button type="button" onClick={() => handleQuarantine(a.id, quarantineHours)} className="text-purple-600 text-xs">Ok</button>
+                                <button type="button" onClick={() => setQuarantineId(null)} className="text-gray-500 text-xs">✕</button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setQuarantineId(a.id)}
+                                className="text-purple-600 hover:underline text-xs"
+                              >
+                                🔒 Quarentena
+                              </button>
+                            )}
                             </>
+                          )}
+                        </>
+                      )}
+                      {/* Dead Switch — disponível para qualquer status não entregue/morto */}
+                      {canApprove && !['DELIVERED', 'DEAD'].includes(a.status) && (
+                        <>
+                          {deadSwitchId === a.id ? (
+                            <div className="flex items-center gap-1 mt-1">
+                              <input
+                                type="text"
+                                value={deadReason}
+                                onChange={(e) => setDeadReason(e.target.value)}
+                                placeholder="Motivo (ex: Ban pré-estoque)"
+                                className="input-field py-1 px-2 text-xs w-44"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleDeadSwitch(a.id, deadReason)}
+                                disabled={deadSwitching}
+                                className="text-red-700 font-semibold text-xs"
+                              >
+                                {deadSwitching ? '…' : 'Baixar'}
+                              </button>
+                              <button type="button" onClick={() => { setDeadSwitchId(null); setDeadReason('') }} className="text-gray-500 text-xs">✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setDeadSwitchId(a.id)}
+                              className="text-red-800 dark:text-red-400 hover:underline text-xs font-semibold mt-0.5"
+                              title="Baixar conta morta do inventário"
+                            >
+                              💀 Dead Switch
+                            </button>
                           )}
                         </>
                       )}
