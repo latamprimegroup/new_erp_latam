@@ -14,6 +14,11 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      # DATABASE_URL necessário para prisma validate/generate no CI
+      DATABASE_URL: ${{ secrets.DATABASE_URL || 'mysql://ci:ci@localhost:3306/ci' }}
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'ci-secret-placeholder' }}
+      NEXTAUTH_URL: 'http://localhost:3000'
     steps:
       - uses: actions/checkout@v4
 
