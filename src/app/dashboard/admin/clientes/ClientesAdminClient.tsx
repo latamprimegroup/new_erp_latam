@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Search, User, Building2, Phone, Mail, MapPin, Tag,
-  TrendingUp, ShoppingCart, AlertTriangle, CheckCircle,
+  Search, Building2, MapPin, Phone,
+  TrendingUp, ShoppingCart, AlertTriangle,
   ChevronLeft, ChevronRight, Edit3, X, Save, Loader2,
   Instagram, Linkedin, ExternalLink, Star, Shield,
-  Clock, DollarSign, Calendar, Globe
+  Clock, DollarSign, Calendar, Globe, Hash, FileSearch
 } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -138,6 +138,8 @@ export function ClientesAdminClient() {
   const [saving, setSaving] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Client & { name: string; phone: string; email: string }>>({})
   const [cepLoading, setCepLoading] = useState(false)
+  const [cnpjLoading, setCnpjLoading] = useState(false)
+  const [nextClientCode, setNextClientCode] = useState<string | null>(null)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
 
   // Debounce de busca
@@ -167,6 +169,14 @@ export function ClientesAdminClient() {
   }, [page, searchQuery, statusFilter, tagFilter])
 
   useEffect(() => { load() }, [load])
+
+  // Busca o próximo código de cliente ao montar
+  useEffect(() => {
+    fetch('/api/admin/clientes/next-id')
+      .then((r) => r.json())
+      .then((d) => { if (d.nextClientId) setNextClientCode(d.nextClientId) })
+      .catch(() => {})
+  }, [])
 
   function showToast(kind: 'success' | 'error', message: string) {
     setToast({ kind, message })
@@ -233,6 +243,38 @@ export function ClientesAdminClient() {
     }
   }
 
+  async function lookupCnpj(cnpj: string) {
+    const digits = cnpj.replace(/\D/g, '')
+    if (digits.length !== 14) {
+      showToast('error', 'CNPJ deve ter 14 dígitos')
+      return
+    }
+    setCnpjLoading(true)
+    try {
+      const res = await fetch(`/api/receita/consulta-cnpj?cnpj=${digits}`)
+      if (!res.ok) {
+        const e = await res.json()
+        showToast('error', e.error || 'CNPJ não encontrado ou serviço indisponível')
+        return
+      }
+      const d = await res.json()
+      setEditForm((f) => ({
+        ...f,
+        companyName: d.razaoSocial || f.companyName,
+        addressStreet: d.logradouro || f.addressStreet,
+        addressNumber: d.numero || f.addressNumber,
+        addressComplement: d.complemento || f.addressComplement,
+        addressNeighborhood: d.bairro || f.addressNeighborhood,
+        addressCity: d.municipio || f.addressCity,
+        addressState: d.uf || f.addressState,
+        addressZip: d.cep ? d.cep.replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') : f.addressZip,
+      }))
+      showToast('success', `Dados preenchidos: ${d.razaoSocial}`)
+    } finally {
+      setCnpjLoading(false)
+    }
+  }
+
   async function saveEdit() {
     if (!selectedClient) return
     setSaving(true)
@@ -285,6 +327,13 @@ export function ClientesAdminClient() {
           <h1 className="text-xl font-bold">Cadastro de Clientes</h1>
           <p className="text-sm text-zinc-500 mt-0.5">{total} clientes cadastrados</p>
         </div>
+        {nextClientCode && (
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700">
+            <Hash className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+            <span className="text-xs text-zinc-500">Próximo código:</span>
+            <span className="font-bold text-primary-700 dark:text-primary-300 font-mono text-sm">{nextClientCode}</span>
+          </div>
+        )}
       </div>
 
       {/* Filtros */}
@@ -372,7 +421,10 @@ export function ClientesAdminClient() {
                 </div>
                 <p className="text-sm text-zinc-500 mt-0.5">{selectedClient.user.email}</p>
                 {selectedClient.clientCode && (
-                  <p className="text-xs text-zinc-400 font-mono mt-0.5">{selectedClient.clientCode}</p>
+                  <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 border border-primary-200 dark:border-primary-700">
+                    <Hash className="w-3 h-3 text-primary-600" />
+                    <span className="text-xs font-bold text-primary-700 dark:text-primary-300 font-mono">{selectedClient.clientCode}</span>
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -479,10 +531,35 @@ export function ClientesAdminClient() {
                       value={editing ? editForm.companyName ?? '' : (selectedClient.companyName ?? '—')}
                       onChange={(v) => setEditForm((f) => ({ ...f, companyName: v }))}
                     />
-                    <FormField label="CPF / CNPJ" editing={editing}
-                      value={editing ? editForm.taxId ?? '' : (selectedClient.taxId ?? '—')}
-                      onChange={(v) => setEditForm((f) => ({ ...f, taxId: v }))}
-                    />
+                    {/* CPF / CNPJ com botão de consulta */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">CPF / CNPJ</label>
+                      {editing ? (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={editForm.taxId ?? ''}
+                            onChange={(e) => setEditForm((f) => ({ ...f, taxId: e.target.value }))}
+                            className="input-field flex-1 text-sm"
+                            placeholder="00.000.000/0001-00"
+                          />
+                          {(editForm.taxId ?? '').replace(/\D/g, '').length === 14 && (
+                            <button
+                              type="button"
+                              onClick={() => lookupCnpj(editForm.taxId ?? '')}
+                              disabled={cnpjLoading}
+                              className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-60"
+                              title="Buscar dados na Receita Federal (BrasilAPI)"
+                            >
+                              {cnpjLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSearch className="w-3.5 h-3.5" />}
+                              {cnpjLoading ? 'Buscando…' : 'CNPJ'}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-zinc-800 dark:text-zinc-200">{selectedClient.taxId ?? '—'}</p>
+                      )}
+                    </div>
                     <FormField label="Cargo" editing={editing}
                       value={editing ? editForm.jobTitle ?? '' : (selectedClient.jobTitle ?? '—')}
                       onChange={(v) => setEditForm((f) => ({ ...f, jobTitle: v }))}
@@ -769,13 +846,20 @@ function ClientCard({ client, onClick }: { client: Client; onClick: () => void }
         </div>
       </div>
 
-      {/* Empresa + nicho */}
-      {(client.companyName || client.operationNiche) && (
-        <div className="flex items-center gap-1 text-xs text-zinc-500 mb-2">
-          <Building2 className="w-3 h-3 shrink-0" />
-          <span className="truncate">{client.companyName ?? client.operationNiche}</span>
-        </div>
-      )}
+      {/* Código + Empresa + nicho */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        {client.clientCode && (
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 text-[10px] font-bold text-primary-700 dark:text-primary-300 font-mono">
+            <Hash className="w-2.5 h-2.5" />{client.clientCode}
+          </span>
+        )}
+        {(client.companyName || client.operationNiche) && (
+          <div className="flex items-center gap-1 text-xs text-zinc-500">
+            <Building2 className="w-3 h-3 shrink-0" />
+            <span className="truncate">{client.companyName ?? client.operationNiche}</span>
+          </div>
+        )}
+      </div>
 
       {/* Estrelas de confiança */}
       {stars > 0 && (
