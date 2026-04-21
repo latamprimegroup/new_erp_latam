@@ -18,17 +18,17 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/ads-core/rg-abastecimento': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/ads-core/inventario': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/producao': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
-  '/dashboard/producao/conferencia': ['ADMIN', 'FINANCE', 'PRODUCTION_MANAGER'],
-  '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'FINANCE', 'PRODUCTION_MANAGER'],
+  '/dashboard/producao/conferencia': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/producao/metrics': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
   // Apenas quem tem saldo próprio (produtor) ou admin; alinhado a `producao/saldo/page.tsx`
   '/dashboard/producao/saldo': ['ADMIN', 'PRODUCER'],
   '/dashboard/producao/vault-earnings': ['ADMIN', 'PRODUCER'],
   '/dashboard/estoque': ['ADMIN', 'FINANCE'],
   '/dashboard/base': ['ADMIN', 'PRODUCTION_MANAGER'],
-  '/dashboard/vendas': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
+  '/dashboard/vendas': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial': ['ADMIN', 'COMMERCIAL'],
-  '/dashboard/roi-crm': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
+  '/dashboard/roi-crm': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/entregas': ['ADMIN', 'DELIVERER'],
   '/dashboard/entregas-grupos': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/logistica': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
@@ -60,7 +60,6 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/gtm-conversao': [
     'ADMIN',
     'COMMERCIAL',
-    'FINANCE',
     'DELIVERER',
     'PRODUCER',
     'PRODUCTION_MANAGER',
@@ -95,6 +94,8 @@ const dashboardAuth = withAuth(
         if (userRole === 'CLIENT') return NextResponse.redirect(new URL('/dashboard/cliente', req.url))
         if (userRole === 'MANAGER') return NextResponse.redirect(new URL('/dashboard/gestor', req.url))
         if (userRole === 'PLUG_PLAY') return NextResponse.redirect(new URL('/dashboard/plugplay', req.url))
+        // FINANCE: redireciona para o hub financeiro em vez de rota genérica
+        if (userRole === 'FINANCE') return NextResponse.redirect(new URL('/dashboard/financeiro', req.url))
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }
     }

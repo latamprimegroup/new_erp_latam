@@ -8,6 +8,7 @@ import { FinanceiroCarteirasTab } from './FinanceiroCarteirasTab'
 import { FinanceiroInadimplentesTab } from './FinanceiroInadimplentesTab'
 import { FinanceiroNfeTab } from './FinanceiroNfeTab'
 import { FinanceiroConciliacaoVendasTab } from './FinanceiroConciliacaoVendasTab'
+import { FinanceiroOverviewTab } from './FinanceiroOverviewTab'
 
 type Entry = {
   id: string
@@ -37,10 +38,10 @@ type ProjecaoData = {
   projection: { month: string; balance: number; income: number; expense: number }[]
 }
 
-type Tab = 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe' | 'conciliacao_vendas'
+type Tab = 'overview' | 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe' | 'conciliacao_vendas'
 
 export function FinanceiroClient() {
-  const [tab, setTab] = useState<Tab>('lancamentos')
+  const [tab, setTab] = useState<Tab>('overview')
   const [entries, setEntries] = useState<Entry[]>([])
   const [flow, setFlow] = useState({
     income: 0,
@@ -182,6 +183,7 @@ export function FinanceiroClient() {
   }
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: 'overview', label: '🏠 Painel' },
     { id: 'lancamentos', label: 'Lançamentos' },
     { id: 'dre', label: 'DRE' },
     { id: 'vault', label: 'Vault Intelligence' },
@@ -273,6 +275,12 @@ export function FinanceiroClient() {
           </button>
         ))}
       </div>
+
+      {tab === 'overview' && (
+        <div className="card">
+          <FinanceiroOverviewTab />
+        </div>
+      )}
 
       {tab === 'lancamentos' && (
         <div className="card">

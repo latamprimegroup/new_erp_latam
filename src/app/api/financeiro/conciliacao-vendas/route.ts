@@ -12,6 +12,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
 import { audit } from '@/lib/audit'
+import { financeAudit } from '@/lib/finance-audit'
 
 const ALLOWED = ['ADMIN', 'FINANCE']
 
@@ -147,13 +148,22 @@ export async function PATCH(req: Request) {
     },
   })
 
-  await audit({
-    userId:   session.user.id,
-    action:   'sale_reconciled',
-    entity:   'Order',
-    entityId: orderId,
-    details:  { updatedCount: updated.count, paymentDate, by: session.user.email },
-  })
+  await Promise.all([
+    audit({
+      userId:   session.user.id,
+      action:   'sale_reconciled',
+      entity:   'Order',
+      entityId: orderId,
+      details:  { updatedCount: updated.count, paymentDate, by: session.user.email },
+    }),
+    financeAudit(req, {
+      userId:   session.user.id,
+      action:   'reconcile_sale',
+      entity:   'Order',
+      entityId: orderId,
+      details:  { updatedCount: updated.count, paymentDate, notes, by: session.user.email },
+    }),
+  ])
 
   return NextResponse.json({ ok: true, updatedEntries: updated.count })
 }
