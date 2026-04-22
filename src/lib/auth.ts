@@ -119,10 +119,10 @@ export const authOptions: NextAuthOptions = {
           email:        user.email,
           name:         user.name,
           role:         user.role,
-          image:        user.photo,
+          image:        user.photo ?? undefined,
           remember,
-          languageCode: user.languageCode,
-          status:       user.status,   // ← incluído no token para o middleware
+          languageCode: user.languageCode ?? undefined,
+          status:       user.status,
         }
       },
     }),
