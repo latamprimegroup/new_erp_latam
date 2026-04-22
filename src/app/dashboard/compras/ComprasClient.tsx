@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert } from 'lucide-react'
+import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert, Truck } from 'lucide-react'
 import { FornecedoresTab } from './FornecedoresTab'
 import { EstoqueTab } from './EstoqueTab'
 import { CopyGeneratorTab } from './CopyGeneratorTab'
@@ -12,11 +12,13 @@ import { OrdensComerciais } from './OrdensComerciais'
 import { AssetBiTab } from './AssetBiTab'
 import { AssetIntakeTab } from './AssetIntakeTab'
 import { RMATab } from './RMATab'
+import EntradaMercadoriaClient from '../admin/entrada-mercadoria/EntradaMercadoriaClient'
 
-type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma'
+type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
-  { id: 'intake',       label: '📥 Intake de Ativos', icon: <ClipboardList className="w-4 h-4" />, roles: ['ADMIN','PURCHASING'] },
+  { id: 'entrada-merc', label: '🚚 Entrada de Mercadoria', icon: <Truck className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING'] },
+  { id: 'intake',       label: '📥 Intake de Ativos',      icon: <ClipboardList className="w-4 h-4" />, roles: ['ADMIN','PURCHASING'] },
   { id: 'consulta',     label: 'Consulta de Preço',   icon: <Search className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
   { id: 'orders',       label: 'Ordens de Serviço',   icon: <ShoppingCart className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
   { id: 'rma',          label: 'Trocas & Garantia',   icon: <ShieldAlert className="w-4 h-4" />,   roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
@@ -29,7 +31,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[]
 ]
 
 export function ComprasClient({ role }: { role: string }) {
-  const defaultTab: Tab = (role === 'ADMIN' || role === 'PURCHASING') ? 'intake' : ['COMMERCIAL','DELIVERER'].includes(role) ? 'consulta' : 'estoque'
+  const defaultTab: Tab = (role === 'ADMIN' || role === 'PURCHASING') ? 'entrada-merc' : ['COMMERCIAL','DELIVERER'].includes(role) ? 'consulta' : 'estoque'
   const [tab, setTab] = useState<Tab>(defaultTab)
 
   const visibleTabs = TABS.filter((t) => t.roles.includes(role))
@@ -69,6 +71,7 @@ export function ComprasClient({ role }: { role: string }) {
 
       {/* Content */}
       <div>
+        {tab === 'entrada-merc'  && <EntradaMercadoriaClient />}
         {tab === 'intake'        && <AssetIntakeTab />}
         {tab === 'consulta'     && <ConsultaPrecoTab role={role} />}
         {tab === 'orders'       && <OrdensComerciais role={role} />}

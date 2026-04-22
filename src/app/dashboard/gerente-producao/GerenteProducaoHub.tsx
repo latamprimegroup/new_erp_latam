@@ -273,16 +273,16 @@ export function GerenteProducaoHub() {
 
           {/* Entrada de Mercadoria — COMPRAS EXTERNAS */}
           <StockCard
-            href="/dashboard/admin/entrada-mercadoria"
+            href="/dashboard/compras"
             icon={<ShoppingCart className="w-6 h-6 text-white" />}
             gradient="from-emerald-500 to-teal-600"
-            badge="COMPRA EXTERNA"
+            badge="SETOR DE COMPRAS"
             badgeColor="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
             title="Entrada de Mercadoria"
             subtitle="BMs, Perfis, Páginas e mais"
-            description="Comprou BMs, perfis, páginas, proxies ou outros ativos de um fornecedor? Registre aqui com fornecedor, valor pago, forma de pagamento e comprovante anexo."
+            description="Comprou BMs, perfis, páginas, proxies ou outros ativos de um fornecedor? O lançamento é feito pelo setor de compras — acesse o painel de Supply Chain."
             tipIcon={<ShoppingCart className="w-3.5 h-3.5" />}
-            tip="Para: ativos comprados de fornecedores externos"
+            tip="Gerenciado pelo: Setor de Compras"
           />
 
           {/* Auditoria de Estoque — CONFERÊNCIA */}

@@ -3,7 +3,7 @@ import { PurchasedAssetType, PurchasePaymentMethod } from '@prisma/client'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
 
-const ALLOWED_ROLES = ['ADMIN', 'PRODUCTION_MANAGER'] as const
+const ALLOWED_ROLES = ['ADMIN', 'PRODUCTION_MANAGER', 'PURCHASING'] as const
 
 // ─── GET: Listar entradas ─────────────────────────────────────────────────────
 

@@ -47,7 +47,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
   '/dashboard/admin/inventario-express':  ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/admin/rma':                ['ADMIN', 'PRODUCTION_MANAGER'],
-  '/dashboard/admin/entrada-mercadoria': ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/admin/entrada-mercadoria': ['ADMIN', 'PRODUCTION_MANAGER', 'PURCHASING'],
   '/dashboard/admin/delivery-dashboard': ['ADMIN', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/admin': ['ADMIN'],
   '/dashboard/admin/config': ['ADMIN'],
