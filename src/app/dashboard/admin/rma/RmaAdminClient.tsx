@@ -8,13 +8,14 @@ import {
   BarChart3,
   ClipboardList,
   CheckCircle,
-  XCircle,
   Clock,
   AlertTriangle,
   TrendingUp,
   Users,
   ChevronDown,
   ChevronUp,
+  Plus,
+  X,
 } from 'lucide-react'
 import { RMA_ACTION_LABELS, RMA_REASON_LABELS, warrantyStatus } from '@/lib/rma'
 import type { AccountRmaActionTaken, AccountRmaReason, AccountRmaStatus } from '@prisma/client'
@@ -118,6 +119,169 @@ function StatCard({ icon: Icon, label, value, sub, color = 'text-primary-600 dar
   )
 }
 
+// ─── Modal: Novo RMA ───────────────────────────────────────────────────────
+
+type ClientOption = { id: string; name: string | null; email: string | null }
+type AccountOption = { id: string; googleAdsCustomerId: string | null; platform: string }
+
+function NovoRmaModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [clients, setClients] = useState<ClientOption[]>([])
+  const [clientId, setClientId] = useState('')
+  const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [originalAccountId, setOriginalAccountId] = useState('')
+  const [reason, setReason] = useState<AccountRmaReason | ''>('')
+  const [reasonDetail, setReasonDetail] = useState('')
+  const [warrantyHours, setWarrantyHours] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    fetch('/api/admin/rma/form-data')
+      .then((r) => r.json())
+      .then((d) => setClients(Array.isArray(d.clients) ? d.clients : []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!clientId) { setAccounts([]); return }
+    fetch(`/api/admin/rma/form-data?clientId=${clientId}`)
+      .then((r) => r.json())
+      .then((d) => setAccounts(Array.isArray(d.accounts) ? d.accounts : []))
+      .catch(() => setAccounts([]))
+  }, [clientId])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!clientId || !originalAccountId || !reason) {
+      setError('Preencha cliente, conta e motivo.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/rma', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, originalAccountId, reason, reasonDetail, warrantyHours: warrantyHours || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Erro ao criar RMA'); return }
+      onCreated()
+      onClose()
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg">
+        <div className="flex items-center justify-between p-5 border-b border-zinc-200 dark:border-zinc-700">
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-violet-500" /> Abrir Ticket de Reposição
+          </h2>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <X className="w-5 h-5 text-zinc-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {error && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Cliente</label>
+            <select
+              value={clientId}
+              onChange={(e) => { setClientId(e.target.value); setOriginalAccountId('') }}
+              className="input-field text-sm py-2 w-full"
+              required
+            >
+              <option value="">— Selecione o cliente —</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>{c.name || c.email}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Conta Original</label>
+            <select
+              value={originalAccountId}
+              onChange={(e) => setOriginalAccountId(e.target.value)}
+              className="input-field text-sm py-2 w-full"
+              required
+              disabled={!clientId}
+            >
+              <option value="">— Selecione a conta —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.googleAdsCustomerId || a.id.slice(0, 10)} — {a.platform}
+                </option>
+              ))}
+            </select>
+            {clientId && accounts.length === 0 && (
+              <p className="text-xs text-zinc-400 mt-1">Nenhuma conta entregue encontrada para este cliente.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Motivo da Queda</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value as AccountRmaReason)}
+              className="input-field text-sm py-2 w-full"
+              required
+            >
+              <option value="">— Selecione o motivo —</option>
+              {(Object.entries(RMA_REASON_LABELS) as [AccountRmaReason, string][]).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Detalhes (opcional)</label>
+            <textarea
+              value={reasonDetail}
+              onChange={(e) => setReasonDetail(e.target.value)}
+              className="input-field text-sm py-2 w-full resize-none"
+              rows={2}
+              placeholder="Descreva o problema..."
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Prazo de Garantia (horas)</label>
+            <input
+              type="number"
+              value={warrantyHours}
+              onChange={(e) => setWarrantyHours(e.target.value)}
+              className="input-field text-sm py-2 w-32"
+              min={1}
+              placeholder="Ex: 72"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary text-sm py-2 px-4">
+              Cancelar
+            </button>
+            <button type="submit" disabled={saving} className="btn-primary text-sm py-2 px-5 flex items-center gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Abrir Ticket
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ─── Aba 1: Fila de RMA ────────────────────────────────────────────────────
 
 function QueueTab() {
@@ -127,6 +291,7 @@ function QueueTab() {
   const [filterStatus, setFilterStatus] = useState('')
   const [patching, setPatching] = useState(false)
   const [availableAccounts, setAvailableAccounts] = useState<{ id: string; googleAdsCustomerId: string | null }[]>([])
+  const [showNovoRma, setShowNovoRma] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -171,8 +336,20 @@ function QueueTab() {
 
   return (
     <div className="space-y-4">
+      {showNovoRma && (
+        <NovoRmaModal
+          onClose={() => setShowNovoRma(false)}
+          onCreated={() => { load(); setShowNovoRma(false) }}
+        />
+      )}
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => setShowNovoRma(true)}
+          className="btn-primary flex items-center gap-2 text-sm py-1.5 px-4"
+        >
+          <Plus className="w-4 h-4" /> Novo Ticket RMA
+        </button>
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
