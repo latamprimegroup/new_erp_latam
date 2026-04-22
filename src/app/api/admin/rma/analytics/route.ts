@@ -1,15 +1,23 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
 import { RMA_REASON_LABELS, RMA_ACTION_LABELS } from '@/lib/rma'
 
 const ROLES = ['ADMIN', 'PRODUCTION_MANAGER'] as const
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requireRoles([...ROLES])
   if (!auth.ok) return auth.response
 
-  const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  const { searchParams } = new URL(req.url)
+  const periodDays = Number(searchParams.get('days') || '90')
+  const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000)
+
+  // ── Mês atual e anterior ──────────────────────────────────────────────────
+  const now = new Date()
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
 
   const [
     totalRmas,
@@ -19,40 +27,41 @@ export async function GET() {
     byStatus,
     recentRmas,
     avgResolutionRaw,
+    thisMonthRmas,
+    lastMonthRmas,
+    thisMonthResolved,
+    lastMonthResolved,
+    monthlyBreakdown,
   ] = await Promise.all([
-    prisma.accountReplacementRequest.count({
-      where: { createdAt: { gte: since90d } },
-    }),
-    prisma.order.count({
-      where: { createdAt: { gte: since90d }, status: { not: 'CANCELLED' } },
-    }),
+    prisma.accountReplacementRequest.count({ where: { createdAt: { gte: since } } }),
+    prisma.order.count({ where: { createdAt: { gte: since }, status: { not: 'CANCELLED' } } }),
     prisma.accountReplacementRequest.groupBy({
       by: ['reason'],
       _count: { _all: true },
-      where: { createdAt: { gte: since90d } },
+      where: { createdAt: { gte: since } },
     }),
     prisma.accountReplacementRequest.groupBy({
       by: ['actionTaken'],
       _count: { _all: true },
-      where: { createdAt: { gte: since90d } },
+      where: { createdAt: { gte: since } },
     }),
     prisma.accountReplacementRequest.groupBy({
       by: ['status'],
       _count: { _all: true },
     }),
     prisma.accountReplacementRequest.findMany({
-      where: { createdAt: { gte: since90d } },
+      where: { createdAt: { gte: since } },
       select: {
         id: true,
         abuseFlag: true,
         clientId: true,
+        actionTaken: true,
         originalAccount: {
           select: {
+            platform: true,
+            type: true,
             productionG2: {
-              select: {
-                creatorId: true,
-                creator: { select: { id: true, name: true, email: true } },
-              },
+              select: { creator: { select: { id: true, name: true, email: true } } },
             },
           },
         },
@@ -61,8 +70,40 @@ export async function GET() {
     }),
     prisma.accountReplacementRequest.aggregate({
       _avg: { resolutionMinutes: true },
-      where: { createdAt: { gte: since90d }, resolutionMinutes: { not: null } },
+      where: { createdAt: { gte: since }, resolutionMinutes: { not: null } },
     }),
+    // Este mês
+    prisma.accountReplacementRequest.count({ where: { createdAt: { gte: startOfMonth } } }),
+    // Mês passado
+    prisma.accountReplacementRequest.count({
+      where: { createdAt: { gte: startOfLastMonth, lte: endOfLastMonth } },
+    }),
+    // Resolvidas este mês
+    prisma.accountReplacementRequest.count({
+      where: {
+        resolvedAt: { gte: startOfMonth },
+        status: { in: ['CONCLUIDO', 'NEGADO_TERMO'] },
+      },
+    }),
+    // Resolvidas mês passado
+    prisma.accountReplacementRequest.count({
+      where: {
+        resolvedAt: { gte: startOfLastMonth, lte: endOfLastMonth },
+        status: { in: ['CONCLUIDO', 'NEGADO_TERMO'] },
+      },
+    }),
+    // Últimos 6 meses com breakdown por ação
+    prisma.$queryRaw<{ month: string; total: number; reposicoes: number; negados: number }[]>`
+      SELECT
+        DATE_FORMAT(opened_at, '%Y-%m') AS month,
+        COUNT(*) AS total,
+        SUM(CASE WHEN action_taken = 'REPOSICAO_EFETUADA' THEN 1 ELSE 0 END) AS reposicoes,
+        SUM(CASE WHEN action_taken = 'GARANTIA_NEGADA' THEN 1 ELSE 0 END) AS negados
+      FROM tb_reposicoes
+      WHERE opened_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+      GROUP BY DATE_FORMAT(opened_at, '%Y-%m')
+      ORDER BY month ASC
+    `,
   ])
 
   // ── Taxa geral ───────────────────────────────────────────────────────────
@@ -92,6 +133,23 @@ export async function GET() {
     status: s.status,
     count: s._count._all,
   }))
+
+  // ── Por plataforma / tipo de ativo ────────────────────────────────────────
+  const platformMap = new Map<string, number>()
+  const typeMap = new Map<string, number>()
+  for (const rma of recentRmas) {
+    const plat = rma.originalAccount?.platform ?? 'UNKNOWN'
+    const type = rma.originalAccount?.type ?? 'OUTRO'
+    platformMap.set(plat, (platformMap.get(plat) ?? 0) + 1)
+    typeMap.set(type, (typeMap.get(type) ?? 0) + 1)
+  }
+  const byPlatform = [...platformMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([platform, count]) => ({ platform, count }))
+
+  const byType = [...typeMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => ({ type, count }))
 
   // ── Por produtor (G2 creator) ─────────────────────────────────────────────
   const producerMap = new Map<
@@ -128,12 +186,9 @@ export async function GET() {
     select: {
       id: true,
       user: { select: { name: true, email: true } },
-      orders: {
-        where: { status: { not: 'CANCELLED' } },
-        select: { value: true },
-      },
+      orders: { where: { status: { not: 'CANCELLED' } }, select: { value: true } },
       accountReplacementRequests: {
-        where: { createdAt: { gte: since90d } },
+        where: { createdAt: { gte: since } },
         select: { id: true },
       },
     },
@@ -156,14 +211,29 @@ export async function GET() {
   }).sort((a, b) => b.rmaCount - a.rmaCount)
 
   return NextResponse.json({
-    period: '90d',
+    period: `${periodDays}d`,
     totalRmas,
     totalOrders,
     replacementRate,
     avgResolutionMinutes: Math.round(avgResolutionRaw._avg.resolutionMinutes ?? 0),
+    // Mês atual vs anterior
+    thisMonth: { total: thisMonthRmas, resolved: thisMonthResolved },
+    lastMonth: { total: lastMonthRmas, resolved: lastMonthResolved },
+    monthlyChange: lastMonthRmas > 0
+      ? Math.round(((thisMonthRmas - lastMonthRmas) / lastMonthRmas) * 100)
+      : null,
+    // Séries mensais (últimos 6 meses)
+    monthlyBreakdown: monthlyBreakdown.map((row) => ({
+      month: String(row.month),
+      total: Number(row.total),
+      reposicoes: Number(row.reposicoes),
+      negados: Number(row.negados),
+    })),
     topReasons,
     actionStats,
     statusStats,
+    byPlatform,
+    byType,
     byProducer,
     ltvData,
     abuseFlagCount,

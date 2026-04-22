@@ -9,11 +9,11 @@ const ROLES = ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'DELIVERER', 'COMMERCI
 
 const patchSchema = z
   .object({
-    status: z.nativeEnum(AccountRmaStatus).optional(),
-    actionTaken: z.nativeEnum(AccountRmaActionTaken).optional(),
-    assignedToId: z.string().nullable().optional(),
+    status:               z.nativeEnum(AccountRmaStatus).optional(),
+    actionTaken:          z.nativeEnum(AccountRmaActionTaken).optional(),
+    assignedToId:         z.string().nullable().optional(),
     replacementAccountId: z.string().nullable().optional(),
-    warrantyHours: z.number().int().min(1).max(8760).nullable().optional(),
+    warrantyHours:        z.number().int().min(1).max(8760).nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'Nada para atualizar' })
 
@@ -30,13 +30,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         select: {
           id: true,
           platform: true,
+          type: true,
           googleAdsCustomerId: true,
           status: true,
           deliveredAt: true,
+          salePrice: true,
         },
       },
       replacementAccount: {
-        select: { id: true, googleAdsCustomerId: true, status: true },
+        select: { id: true, googleAdsCustomerId: true, platform: true, type: true, status: true },
       },
       assignedTo: { select: { id: true, name: true, email: true } },
     },
@@ -54,7 +56,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!auth.ok) return auth.response
 
   const { id } = await params
-  const existing = await prisma.accountReplacementRequest.findUnique({ where: { id } })
+  const existing = await prisma.accountReplacementRequest.findUnique({
+    where: { id },
+    include: {
+      originalAccount: { select: { id: true, platform: true, type: true, googleAdsCustomerId: true, clientId: true } },
+    },
+  })
   if (!existing) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
 
   let body: z.infer<typeof patchSchema>
@@ -89,16 +96,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (body.replacementAccountId !== undefined) {
     if (body.replacementAccountId) {
+      // A conta substituta deve vir do estoque DISPONÍVEL (AVAILABLE)
       const acc = await prisma.stockAccount.findFirst({
         where: {
           id: body.replacementAccountId,
-          clientId: existing.clientId,
+          status: 'AVAILABLE',
           deletedAt: null,
+          archivedAt: null,
         },
       })
       if (!acc) {
         return NextResponse.json(
-          { error: 'Conta substituta deve pertencer ao mesmo cliente.' },
+          { error: 'Conta substituta não encontrada ou não está disponível no estoque.' },
           { status: 400 }
         )
       }
@@ -136,16 +145,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: {
       client: { include: { user: { select: { name: true, email: true } } } },
       originalAccount: {
-        select: { id: true, platform: true, googleAdsCustomerId: true, status: true },
+        select: { id: true, platform: true, type: true, googleAdsCustomerId: true, status: true, salePrice: true },
       },
       replacementAccount: {
-        select: { id: true, googleAdsCustomerId: true, status: true },
+        select: { id: true, googleAdsCustomerId: true, platform: true, type: true, status: true },
       },
       assignedTo: { select: { id: true, name: true, email: true } },
     },
   })
 
-  // Auto-mensagem ao concluir com reposição efetuada
+  // ── DAR SAÍDA NO ESTOQUE ao concluir reposição ────────────────────────────
+  // Quando: CONCLUIDO + REPOSICAO_EFETUADA + tem conta substituta
+  const isReplacement =
+    (body.status === 'CONCLUIDO' || updated.status === 'CONCLUIDO') &&
+    (body.actionTaken === 'REPOSICAO_EFETUADA' || updated.actionTaken === 'REPOSICAO_EFETUADA') &&
+    updated.replacementAccountId
+
+  if (isReplacement && updated.replacementAccountId) {
+    await Promise.all([
+      // 1. Marca conta ORIGINAL como DEAD (baixa do estoque)
+      prisma.stockAccount.update({
+        where: { id: existing.originalAccountId },
+        data: { status: 'DEAD' },
+      }).catch(() => null),
+
+      // 2. Vincula conta SUBSTITUTA ao cliente e marca como DELIVERED
+      prisma.stockAccount.update({
+        where: { id: updated.replacementAccountId },
+        data: {
+          status: 'DELIVERED',
+          clientId: existing.clientId,
+          deliveredAt: new Date(),
+        },
+      }).catch(() => null),
+    ])
+  }
+
+  // ── Mensagem automática ao concluir ──────────────────────────────────────
   if (
     body.status === 'CONCLUIDO' &&
     (body.actionTaken === 'REPOSICAO_EFETUADA' || updated.actionTaken === 'REPOSICAO_EFETUADA') &&
@@ -153,21 +189,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   ) {
     const oldId = updated.originalAccount.googleAdsCustomerId || updated.originalAccountId.slice(0, 8)
     const newId = updated.replacementAccount?.googleAdsCustomerId || '—'
-    const warrantyMsg = updated.warrantyHours
-      ? ` Garantia renovada por mais ${updated.warrantyHours}h.`
-      : ''
+    const warrantyMsg = updated.warrantyHours ? ` Garantia renovada por mais ${updated.warrantyHours}h.` : ''
     const autoBody =
-      `✅ Sua reposição da conta ${oldId} foi concluída. ` +
-      `Novo ID: ${newId}.${warrantyMsg}`
+      `✅ Reposição da conta ${oldId} concluída. Novo ID: ${newId}.${warrantyMsg}`
 
-    await prisma.rmaMessage.create({
-      data: {
-        rmaId: id,
-        userId: updated.assignedToId || (await prisma.user.findFirst({ where: { role: 'ADMIN' }, select: { id: true } }))!.id,
-        body: autoBody,
-        internalOnly: false,
-      },
-    }).catch(() => null)
+    const adminUser = await prisma.user.findFirst({ where: { role: 'ADMIN' }, select: { id: true } })
+    if (adminUser) {
+      await prisma.rmaMessage.create({
+        data: {
+          rmaId: id,
+          userId: updated.assignedToId || adminUser.id,
+          body: autoBody,
+          internalOnly: false,
+        },
+      }).catch(() => null)
+    }
 
     await prisma.accountReplacementRequest.update({
       where: { id },
