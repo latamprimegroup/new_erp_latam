@@ -20,6 +20,9 @@ import { prisma } from '@/lib/prisma'
 import { COMPRAS_WRITE_ROLES } from '@/lib/asset-privacy'
 import type { AssetStatus } from '@prisma/client'
 
+// COMMERCIAL pode marcar como SOLD; demais transições exigem WRITE_ROLES
+const COMMERCIAL_SELL_ROLES = [...COMPRAS_WRITE_ROLES, 'COMMERCIAL']
+
 const TRANSITIONS: Record<AssetStatus, AssetStatus[]> = {
   AVAILABLE:       ['QUARANTINE', 'SOLD', 'DEAD'],
   QUARANTINE:      ['AVAILABLE', 'DEAD'],
@@ -39,7 +42,8 @@ const patchSchema = z.object({
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
-  if (!session?.user?.role || !COMPRAS_WRITE_ROLES.includes(session.user.role))
+  const role = session?.user?.role ?? ''
+  if (!role || !COMMERCIAL_SELL_ROLES.includes(role))
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   const asset = await prisma.asset.findUnique({ where: { id: params.id } })
@@ -53,6 +57,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const { status: newStatus, reason, buyerName } = parsed.data
   const allowed = TRANSITIONS[asset.status] ?? []
+
+  // COMMERCIAL só pode fazer AVAILABLE → SOLD
+  if (role === 'COMMERCIAL' && newStatus !== 'SOLD')
+    return NextResponse.json({ error: 'Comercial só pode registrar vendas (SOLD).' }, { status: 403 })
 
   if (!allowed.includes(newStatus))
     return NextResponse.json({
