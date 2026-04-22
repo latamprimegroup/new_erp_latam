@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { AlfredoIA } from './AlfredoIA'
 import { BriefingCard } from './BriefingCard'
+import { ScaleBillionDashboard } from './ScaleBillionDashboard'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -255,6 +256,7 @@ export function CeoCommandCenter() {
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [alfredoTask, setAlfredoTask] = useState<{ id: string; title: string } | null>(null)
   const [showAlfredo, setShowAlfredo] = useState(false)
+  const [activeView, setActiveView]   = useState<'tasks' | 'scale'>('tasks')
   const [filterCat, setFilterCat] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<string>('TODO,DOING')
   const quickRef = useRef<HTMLInputElement>(null)
@@ -346,6 +348,10 @@ export function CeoCommandCenter() {
           <button onClick={load} className="p-2 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 transition-colors">
             <RefreshCw className="w-4 h-4 text-zinc-400" />
           </button>
+          <button onClick={() => setActiveView((v) => v === 'scale' ? 'tasks' : 'scale')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${activeView === 'scale' ? 'bg-gradient-to-r from-violet-600 to-primary-600 text-white border-violet-600 shadow-md' : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 hover:bg-zinc-50'}`}>
+            <Sparkles className="w-4 h-4" />Scale to Billion
+          </button>
           <button onClick={() => setShowAlfredo((v) => !v)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${showAlfredo ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white border-primary-600 shadow-md' : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 hover:bg-zinc-50'}`}>
             <Bot className="w-4 h-4" />ALFREDO IA
@@ -364,8 +370,11 @@ export function CeoCommandCenter() {
         </div>
       )}
 
+      {/* ── Scale to Billion ─────────────────────────────────────────────── */}
+      {activeView === 'scale' && <ScaleBillionDashboard />}
+
       {/* ── ALFREDO IA Panel ────────────────────────────────────────────── */}
-      {showAlfredo && (
+      {showAlfredo && activeView === 'tasks' && (
         <AlfredoIA
           taskToAnalyze={alfredoTask}
           onAnalysisDone={() => setAlfredoTask(null)}
@@ -373,7 +382,10 @@ export function CeoCommandCenter() {
       )}
 
       {/* ── Briefing Matinal ─────────────────────────────────────────────── */}
-      {!showAlfredo && <BriefingCard />}
+      {!showAlfredo && activeView === 'tasks' && <BriefingCard />}
+
+      {/* ── Conteúdo restante só aparece no modo tasks ────────────────────── */}
+      {activeView === 'tasks' && <>
 
       {/* ── Alerta de Escala ─────────────────────────────────────────────── */}
       {stats?.escalaAlert && (
@@ -572,6 +584,8 @@ export function CeoCommandCenter() {
           </div>
         </div>
       )}
+
+      </> /* fim do bloco activeView === 'tasks' */}
     </div>
   )
 }
