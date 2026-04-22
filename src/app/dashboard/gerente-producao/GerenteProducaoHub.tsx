@@ -10,6 +10,7 @@ import {
   ArrowRight, Layers, Zap, ShieldCheck, Upload,
   RefreshCw, Trophy, Ban, Image as ImageIcon,
   Database, Mail, Building2, CreditCard,
+  Rocket, ShieldAlert,
 } from 'lucide-react'
 import { AdsCoreGerenteInventoryBar } from '../ads-core/AdsCoreGerenteInventoryBar'
 
@@ -53,6 +54,11 @@ const MODULES_PRODUCAO = [
   { href: '/dashboard/producao',             icon: Factory,       label: 'Fila de Produção',      sublabel: 'Aprovação e acompanhamento',          color: 'from-yellow-500 to-amber-600',   priority: true  },
   { href: '/dashboard/producao/conferencia', icon: ClipboardCheck,label: 'Conferência Diária',    sublabel: 'Validação do time',                   color: 'from-lime-500 to-green-600',     priority: true  },
   { href: '/dashboard/producao/metrics',     icon: TrendingUp,    label: 'Métricas de Produção',  sublabel: 'Aprovações, metas e reprovações',     color: 'from-teal-500 to-cyan-600',      priority: true  },
+]
+
+const MODULES_OPERACIONAL = [
+  { href: '/dashboard/admin/inventario-express', icon: Rocket,      label: 'Inventário Express',  sublabel: 'Lançamento em massa de contas no estoque', color: 'from-primary-500 to-blue-600',   priority: true  },
+  { href: '/dashboard/admin/rma',                icon: ShieldAlert,  label: 'Suporte & RMA',        sublabel: 'Reposições, garantia e analytics de perdas', color: 'from-violet-500 to-purple-600',  priority: true  },
 ]
 
 const MODULES_CORE = [
@@ -178,6 +184,22 @@ export function GerenteProducaoHub() {
         <SectionTitle>Ações Rápidas</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <QuickActionCard
+            href="/dashboard/admin/inventario-express"
+            icon={<Rocket className="w-5 h-5 text-blue-600" />}
+            iconBg="bg-blue-100 dark:bg-blue-900/40"
+            title="Inventário Express"
+            desc="Lançar contas em massa no estoque"
+            color="blue"
+          />
+          <QuickActionCard
+            href="/dashboard/admin/rma"
+            icon={<ShieldAlert className="w-5 h-5 text-violet-600" />}
+            iconBg="bg-violet-100 dark:bg-violet-900/40"
+            title="Suporte & RMA"
+            desc="Reposições, garantia e alertas de abuso"
+            color="violet"
+          />
+          <QuickActionCard
             href="/dashboard/ads-core/rg-abastecimento"
             icon={<Upload className="w-5 h-5 text-teal-600" />}
             iconBg="bg-teal-100 dark:bg-teal-900/40"
@@ -203,12 +225,20 @@ export function GerenteProducaoHub() {
           />
           <QuickActionCard
             href="/dashboard/base"
-            icon={<Database className="w-5 h-5 text-violet-600" />}
-            iconBg="bg-violet-100 dark:bg-violet-900/40"
+            icon={<Database className="w-5 h-5 text-zinc-600" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             title="Base de E-mails / CNPJs"
             desc="Gerenciar e-mails, CNPJs e perfis"
-            color="violet"
+            color="zinc"
           />
+        </div>
+      </section>
+
+      {/* ── Estoque & Reposição ────────────────────────────────────────────── */}
+      <section>
+        <SectionTitle>Estoque &amp; Suporte</SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {MODULES_OPERACIONAL.map((mod) => <ModuleCard key={mod.href} mod={mod} />)}
         </div>
       </section>
 
@@ -378,10 +408,12 @@ function QuickActionCard({
   href, icon, iconBg, title, desc, color,
 }: { href: string; icon: React.ReactNode; iconBg: string; title: string; desc: string; color: string }) {
   const border = {
-    teal: 'border-teal-200 dark:border-teal-800 hover:border-teal-400',
+    teal:    'border-teal-200 dark:border-teal-800 hover:border-teal-400',
     primary: 'border-primary-200 dark:border-primary-800 hover:border-primary-400',
-    amber: 'border-amber-200 dark:border-amber-800 hover:border-amber-400',
-    violet: 'border-violet-200 dark:border-violet-800 hover:border-violet-400',
+    amber:   'border-amber-200 dark:border-amber-800 hover:border-amber-400',
+    violet:  'border-violet-200 dark:border-violet-800 hover:border-violet-400',
+    blue:    'border-blue-200 dark:border-blue-800 hover:border-blue-400',
+    zinc:    'border-zinc-200 dark:border-zinc-700 hover:border-zinc-400',
   }[color] ?? 'border-zinc-200 hover:border-zinc-400'
 
   return (
