@@ -135,6 +135,7 @@ model User {
   rmaOpened                RMATicket[]               @relation("RMAOpened")
   rmaApproved              RMATicket[]               @relation("RMAApproved")
   rmaClosed                RMATicket[]               @relation("RMAClosed")
+  fastEntries              FastEntryDraft[]          @relation("FastEntryUser")
 
   @@index([phone])
 }
@@ -4803,4 +4804,66 @@ model RMATicket {
   @@index([originalAssetId])
   @@index([status, openedAt(sort: Desc)])
   @@map("rma_tickets")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ALFREDO IA Fast-Entry — Zero Entry Policy
+// OCR + NLP para entrada de comprovantes via texto ou imagem
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum FastEntryType {
+  ENTRADA  // Comprovante de recebimento → OS draft + Contas a Receber
+  SAIDA    // Comprovante de pagamento → Lançamento de despesa
+}
+
+enum FastEntryStatus {
+  PENDING    // Aguardando confirmação do usuário
+  CONFIRMED  // Confirmado e persistido no DB
+  REJECTED   // Descartado pelo usuário
+  DUPLICATE  // ID de transação já existe — bloqueado
+}
+
+/// Rascunho de Fast-Entry: armazena o OCR/NLP result antes da confirmação
+model FastEntryDraft {
+  id     String          @id @default(cuid())
+  type   FastEntryType
+  status FastEntryStatus @default(PENDING)
+
+  /// Texto colado pelo usuário (mensagem WhatsApp, descrição manual)
+  rawText       String?  @map("raw_text") @db.Text
+  /// Indica se foi enviado como imagem (base64 foi processado pela Vision API)
+  hadImage      Boolean  @default(false) @map("had_image")
+
+  // ── Dados extraídos pela ALFREDO IA ──────────────────────────────────────
+  extractedAmount      Decimal? @map("extracted_amount")      @db.Decimal(12, 2)
+  extractedCurrency    String?  @map("extracted_currency")    @db.VarChar(3)   @default("BRL")
+  extractedDate        DateTime? @map("extracted_date")
+  extractedName        String?  @map("extracted_name")        @db.VarChar(300)
+  extractedTransactionId String? @map("extracted_transaction_id") @db.VarChar(300)
+  extractedCategory    String?  @map("extracted_category")   @db.VarChar(100)
+  extractedPaymentMethod String? @map("extracted_payment_method") @db.VarChar(50)
+  extractedDescription String?  @map("extracted_description") @db.Text
+  aiConfidence         Int      @default(0) @map("ai_confidence") // 0-100
+
+  // ── Dados corrigidos pelo usuário na tela de confirmação ─────────────────
+  confirmedAmount   Decimal? @map("confirmed_amount")   @db.Decimal(12, 2)
+  confirmedDate     DateTime? @map("confirmed_date")
+  confirmedName     String?  @map("confirmed_name")     @db.VarChar(300)
+  confirmedCategory String?  @map("confirmed_category") @db.VarChar(100)
+  confirmedNotes    String?  @map("confirmed_notes")    @db.Text
+
+  // ── Resultado da confirmação ─────────────────────────────────────────────
+  createdEntryId  String? @map("created_entry_id")  @db.VarChar(100)
+  createdOrderId  String? @map("created_order_id")  @db.VarChar(100)
+  duplicateOf     String? @map("duplicate_of")      @db.VarChar(100)
+
+  createdById String   @map("created_by_id")
+  createdBy   User     @relation("FastEntryUser", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now()) @map("created_at")
+  confirmedAt DateTime? @map("confirmed_at")
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([extractedTransactionId])
+  @@index([createdById])
+  @@map("fast_entry_drafts")
 }

@@ -9,6 +9,17 @@ import { FinanceiroInadimplentesTab } from './FinanceiroInadimplentesTab'
 import { FinanceiroNfeTab } from './FinanceiroNfeTab'
 import { FinanceiroConciliacaoVendasTab } from './FinanceiroConciliacaoVendasTab'
 import { FinanceiroOverviewTab } from './FinanceiroOverviewTab'
+import { AlfredoFastEntry } from '@/app/dashboard/ceo/AlfredoFastEntry'
+
+function FinanceiroFastEntrySection() {
+  return (
+    <div className="max-w-2xl mx-auto py-4">
+      <div className="card p-4">
+        <AlfredoFastEntry compact={false} />
+      </div>
+    </div>
+  )
+}
 
 type Entry = {
   id: string
@@ -38,7 +49,7 @@ type ProjecaoData = {
   projection: { month: string; balance: number; income: number; expense: number }[]
 }
 
-type Tab = 'overview' | 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe' | 'conciliacao_vendas'
+type Tab = 'overview' | 'lancamentos' | 'dre' | 'vault' | 'folha' | 'conciliacao' | 'contas_fiscal' | 'projecao' | 'carteiras' | 'inadimplentes' | 'nfe' | 'conciliacao_vendas' | 'fast_entry'
 
 export function FinanceiroClient() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -194,6 +205,7 @@ export function FinanceiroClient() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: '🏠 Painel' },
+    { id: 'fast_entry', label: '⚡ Fast-Entry IA' },
     { id: 'lancamentos', label: 'Lançamentos' },
     { id: 'dre', label: 'DRE' },
     { id: 'vault', label: 'Vault Intelligence' },
@@ -289,6 +301,7 @@ export function FinanceiroClient() {
       {tab === 'overview' && (
         <FinanceiroOverviewTab onTabChange={(t) => setTab(t as Tab)} />
       )}
+      {tab === 'fast_entry' && <FinanceiroFastEntrySection />}
 
       {tab === 'lancamentos' && (
         <div className="card">

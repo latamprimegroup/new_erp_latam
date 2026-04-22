@@ -6,6 +6,11 @@ import {
   Pin, AlertTriangle, CheckCircle2, BarChart2, Brain, Star,
   ChevronDown, ChevronUp, Sparkles, X, Copy, Volume2,
 } from 'lucide-react'
+import { AlfredoFastEntry } from './AlfredoFastEntry'
+
+function AlfredoFastEntryInline() {
+  return <AlfredoFastEntry compact={false} />
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -488,7 +493,7 @@ function AlfredoChat() {
 // Componente exportado — composição das abas
 // ─────────────────────────────────────────────────────────────────────────────
 
-type AlfredoTab = 'chat' | 'scanner' | 'memory'
+type AlfredoTab = 'chat' | 'scanner' | 'memory' | 'fast-entry'
 
 export function AlfredoIA({ taskToAnalyze, onAnalysisDone }: {
   taskToAnalyze?: { id: string; title: string } | null
@@ -517,9 +522,10 @@ export function AlfredoIA({ taskToAnalyze, onAnalysisDone }: {
   useEffect(() => { if (taskToAnalyze) { setTab('chat'); runAnalysis() } }, [taskToAnalyze, runAnalysis])
 
   const TABS: { id: AlfredoTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'chat',    label: 'Chat',    icon: <Bot className="w-3.5 h-3.5" />    },
-    { id: 'scanner', label: 'Scanner', icon: <BarChart2 className="w-3.5 h-3.5" /> },
-    { id: 'memory',  label: 'Memória', icon: <Brain className="w-3.5 h-3.5" />  },
+    { id: 'chat',        label: 'Chat',       icon: <Bot className="w-3.5 h-3.5" />      },
+    { id: 'fast-entry',  label: '⚡ Fast-Entry', icon: <Zap className="w-3.5 h-3.5" />  },
+    { id: 'scanner',     label: 'Scanner',    icon: <BarChart2 className="w-3.5 h-3.5" /> },
+    { id: 'memory',      label: 'Memória',    icon: <Brain className="w-3.5 h-3.5" />    },
   ]
 
   return (
@@ -572,9 +578,10 @@ export function AlfredoIA({ taskToAnalyze, onAnalysisDone }: {
 
       {/* Conteúdo das abas */}
       <div className="p-4">
-        {tab === 'chat'    && <AlfredoChat />}
-        {tab === 'scanner' && <EfficiencyScanner />}
-        {tab === 'memory'  && <MemoryPanel />}
+        {tab === 'chat'        && <AlfredoChat />}
+        {tab === 'fast-entry'  && <AlfredoFastEntryInline />}
+        {tab === 'scanner'     && <EfficiencyScanner />}
+        {tab === 'memory'      && <MemoryPanel />}
       </div>
     </div>
   )
