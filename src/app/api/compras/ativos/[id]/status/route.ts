@@ -32,8 +32,9 @@ const TRANSITIONS: Record<AssetStatus, AssetStatus[]> = {
 }
 
 const patchSchema = z.object({
-  status: z.enum(['AVAILABLE','QUARANTINE','SOLD','AWAITING_VENDOR','RECEIVED','TRIAGEM','DELIVERED','DEAD']),
-  reason: z.string().max(500).optional(),
+  status:    z.enum(['AVAILABLE','QUARANTINE','SOLD','AWAITING_VENDOR','RECEIVED','TRIAGEM','DELIVERED','DEAD']),
+  reason:    z.string().max(500).optional(),
+  buyerName: z.string().max(200).optional(),
 })
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -50,7 +51,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const parsed = patchSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 422 })
 
-  const { status: newStatus, reason } = parsed.data
+  const { status: newStatus, reason, buyerName } = parsed.data
   const allowed = TRANSITIONS[asset.status] ?? []
 
   if (!allowed.includes(newStatus))
@@ -64,6 +65,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (newStatus === 'RECEIVED')  dateFields.receivedAt  = now
   if (newStatus === 'DELIVERED') dateFields.deliveredAt = now
 
+  const movementReason = newStatus === 'SOLD' && buyerName
+    ? `Vendido para: ${buyerName}${reason ? ` — ${reason}` : ''}`
+    : reason ?? `Mudança de status por ${session.user.email}`
+
   const [updated] = await Promise.all([
     prisma.asset.update({
       where: { id: params.id },
@@ -74,7 +79,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         assetId:    params.id,
         fromStatus: asset.status,
         toStatus:   newStatus,
-        reason:     reason ?? `Mudança de status por ${session.user.email}`,
+        reason:     movementReason,
         userId:     session.user.id,
       },
     }),
