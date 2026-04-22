@@ -10,7 +10,7 @@ import {
   ArrowRight, Layers, Zap, ShieldCheck, Upload,
   RefreshCw, Trophy, Ban, Image as ImageIcon,
   Database, Mail, Building2, CreditCard,
-  Rocket, ShieldAlert,
+  Rocket, ShieldAlert, ClipboardList, Search,
 } from 'lucide-react'
 import { AdsCoreGerenteInventoryBar } from '../ads-core/AdsCoreGerenteInventoryBar'
 
@@ -56,10 +56,6 @@ const MODULES_PRODUCAO = [
   { href: '/dashboard/producao/metrics',     icon: TrendingUp,    label: 'Métricas de Produção',  sublabel: 'Aprovações, metas e reprovações',     color: 'from-teal-500 to-cyan-600',      priority: true  },
 ]
 
-const MODULES_OPERACIONAL = [
-  { href: '/dashboard/admin/inventario-express', icon: Rocket,      label: 'Inventário Express',  sublabel: 'Lançamento em massa de contas no estoque', color: 'from-primary-500 to-blue-600',   priority: true  },
-  { href: '/dashboard/admin/rma',                icon: ShieldAlert,  label: 'Suporte & RMA',        sublabel: 'Reposições, garantia e analytics de perdas', color: 'from-violet-500 to-purple-600',  priority: true  },
-]
 
 const MODULES_CORE = [
   { href: '/dashboard/ads-core/bi',                  icon: BarChart3,    label: 'Dashboard BI',           sublabel: 'Pipeline, ranking e reprovações',     color: 'from-blue-500 to-indigo-600',    priority: true  },
@@ -184,22 +180,6 @@ export function GerenteProducaoHub() {
         <SectionTitle>Ações Rápidas</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <QuickActionCard
-            href="/dashboard/admin/inventario-express"
-            icon={<Rocket className="w-5 h-5 text-blue-600" />}
-            iconBg="bg-blue-100 dark:bg-blue-900/40"
-            title="Inventário Express"
-            desc="Lançar contas em massa no estoque"
-            color="blue"
-          />
-          <QuickActionCard
-            href="/dashboard/admin/rma"
-            icon={<ShieldAlert className="w-5 h-5 text-violet-600" />}
-            iconBg="bg-violet-100 dark:bg-violet-900/40"
-            title="Suporte & RMA"
-            desc="Reposições, garantia e alertas de abuso"
-            color="violet"
-          />
-          <QuickActionCard
             href="/dashboard/ads-core/rg-abastecimento"
             icon={<Upload className="w-5 h-5 text-teal-600" />}
             iconBg="bg-teal-100 dark:bg-teal-900/40"
@@ -234,11 +214,98 @@ export function GerenteProducaoHub() {
         </div>
       </section>
 
-      {/* ── Estoque & Reposição ────────────────────────────────────────────── */}
+      {/* ── Controle de Estoque ────────────────────────────────────────────── */}
       <section>
-        <SectionTitle>Estoque &amp; Suporte</SectionTitle>
+        <SectionTitle>Controle de Estoque de Contas</SectionTitle>
+
+        {/* Fluxo visual */}
+        <div className="mb-4 rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-3">
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">Entenda o fluxo</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold shrink-0">1</span>
+              Produtor cria a conta
+            </span>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold shrink-0">2</span>
+              Inventário Express <span className="font-normal text-zinc-500">(registra no sistema)</span>
+            </span>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold shrink-0">3</span>
+              Conta entra no estoque
+            </span>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold shrink-0">4</span>
+              Auditoria <span className="font-normal text-zinc-500">(confere divergências)</span>
+            </span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {MODULES_OPERACIONAL.map((mod) => <ModuleCard key={mod.href} mod={mod} />)}
+          {/* Inventário Express — ENTRADA */}
+          <StockCard
+            href="/dashboard/admin/inventario-express"
+            icon={<Rocket className="w-6 h-6 text-white" />}
+            gradient="from-blue-500 to-blue-700"
+            badge="ENTRADA"
+            badgeColor="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+            title="Inventário Express"
+            subtitle="Registrar contas produzidas"
+            description="Use aqui quando o produtor terminar de criar contas e precisar jogá-las no sistema. Interface tipo planilha — cadastro em massa com ID, tipo, configuração e produtor responsável."
+            tipIcon={<Rocket className="w-3.5 h-3.5" />}
+            tip="Para: dar entrada em contas novas vindas da produção"
+          />
+
+          {/* Auditoria de Estoque — CONFERÊNCIA */}
+          <StockCard
+            href="/dashboard/ads-core/inventario"
+            icon={<Search className="w-6 h-6 text-white" />}
+            gradient="from-purple-500 to-purple-700"
+            badge="AUDITORIA"
+            badgeColor="bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
+            title="Auditoria de Estoque"
+            subtitle="Conferir e corrigir divergências"
+            description="Use aqui para comparar o que o sistema registra com o que realmente existe. Detecta perdas, extravios e erros de lançamento. Gera alertas automáticos para o CEO quando há divergência crítica."
+            tipIcon={<ClipboardList className="w-3.5 h-3.5" />}
+            tip="Para: verificar se o estoque físico bate com o sistema"
+          />
+        </div>
+      </section>
+
+      {/* ── Suporte & Reposição ────────────────────────────────────────────── */}
+      <section>
+        <SectionTitle>Suporte &amp; Reposição de Contas</SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <ModuleCard mod={{
+            href: '/dashboard/admin/rma',
+            icon: ShieldAlert,
+            label: 'Módulo RMA — Reposição de Contas',
+            sublabel: 'Abrir tickets, controlar garantias e detectar abusos de clientes',
+            color: 'from-violet-500 to-purple-600',
+            priority: true,
+          }} />
+          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 p-5 space-y-3">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">O que é RMA?</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              <strong className="text-zinc-800 dark:text-zinc-200">RMA (Return Merchandise Authorization)</strong> é o processo de reposição de contas que falharam após a entrega.
+            </p>
+            <div className="space-y-2">
+              {[
+                { icon: '🔴', label: 'Conta suspensa / banida após entrega' },
+                { icon: '🔄', label: 'Substituição por conta nova (dentro da garantia)' },
+                { icon: '📊', label: 'Analytics de perdas por motivo e produtor' },
+                { icon: '🚨', label: 'Detecção automática de abuso de garantia' },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -441,6 +508,38 @@ function ResourceCard({
         <p className="text-xs text-zinc-500 leading-relaxed">{desc}</p>
       </div>
       <ArrowRight className="w-4 h-4 text-zinc-300 shrink-0 self-center ml-auto group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
+    </Link>
+  )
+}
+
+function StockCard({
+  href, icon, gradient, badge, badgeColor, title, subtitle, description, tipIcon, tip,
+}: {
+  href: string; icon: React.ReactNode; gradient: string; badge: string; badgeColor: string
+  title: string; subtitle: string; description: string; tipIcon: React.ReactNode; tip: string
+}) {
+  return (
+    <Link href={href} className="group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-ads-dark-card hover:shadow-lg hover:-translate-y-0.5 transition-all p-5 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0`}>
+          {icon}
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${badgeColor}`}>
+          {badge}
+        </span>
+      </div>
+      <div>
+        <p className="font-bold text-zinc-900 dark:text-zinc-100 mb-0.5">{title}</p>
+        <p className="text-xs text-zinc-500 font-medium mb-2">{subtitle}</p>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{description}</p>
+      </div>
+      <div className="mt-auto flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+          {tipIcon}
+          <span>{tip}</span>
+        </div>
+        <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-primary-500 group-hover:translate-x-1 transition-all" />
+      </div>
     </Link>
   )
 }
