@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2 } from 'lucide-react'
+import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert } from 'lucide-react'
 import { FornecedoresTab } from './FornecedoresTab'
 import { EstoqueTab } from './EstoqueTab'
 import { CopyGeneratorTab } from './CopyGeneratorTab'
@@ -11,13 +11,15 @@ import { ConsultaPrecoTab } from './ConsultaPrecoTab'
 import { OrdensComerciais } from './OrdensComerciais'
 import { AssetBiTab } from './AssetBiTab'
 import { AssetIntakeTab } from './AssetIntakeTab'
+import { RMATab } from './RMATab'
 
-type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake'
+type Tab = 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
   { id: 'intake',       label: '📥 Intake de Ativos', icon: <ClipboardList className="w-4 h-4" />, roles: ['ADMIN','PURCHASING'] },
   { id: 'consulta',     label: 'Consulta de Preço',   icon: <Search className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
   { id: 'orders',       label: 'Ordens de Serviço',   icon: <ShoppingCart className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
+  { id: 'rma',          label: 'Trocas & Garantia',   icon: <ShieldAlert className="w-4 h-4" />,   roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
   { id: 'estoque',      label: 'Estoque de Ativos',   icon: <Package className="w-4 h-4" />,       roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
   { id: 'fornecedores', label: 'Fornecedores',         icon: <Store className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING'] },
   { id: 'pedidos',      label: 'Ordens de Compra',    icon: <Upload className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','FINANCE'] },
@@ -70,6 +72,7 @@ export function ComprasClient({ role }: { role: string }) {
         {tab === 'intake'        && <AssetIntakeTab />}
         {tab === 'consulta'     && <ConsultaPrecoTab role={role} />}
         {tab === 'orders'       && <OrdensComerciais role={role} />}
+        {tab === 'rma'          && <RMATab userRole={role} />}
         {tab === 'estoque'      && <EstoqueTab role={role} />}
         {tab === 'fornecedores' && <FornecedoresTab />}
         {tab === 'pedidos'      && <PedidosTab role={role} />}

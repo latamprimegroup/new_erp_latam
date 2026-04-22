@@ -132,6 +132,9 @@ model User {
   assetSalesOrderMovements AssetSalesOrderMovement[]
   ceoTasksCreated          CeoTask[]                 @relation("CeoTaskCreator")
   alfredoMemories          AlfredoMemory[]           @relation("AlfredoMemoryUser")
+  rmaOpened                RMATicket[]               @relation("RMAOpened")
+  rmaApproved              RMATicket[]               @relation("RMAApproved")
+  rmaClosed                RMATicket[]               @relation("RMAClosed")
 
   @@index([phone])
 }
@@ -4415,12 +4418,17 @@ model Vendor {
   paymentTerms String?  @map("payment_terms") @db.VarChar(200)
   category     String   @db.VarChar(50)         // CONTAS | INFRA | SOFTWARE | PROXIES
   active       Boolean  @default(true)
+  /// Suspensão automática pela ALFREDO IA (RMA rate > 30%)
+  suspended       Boolean  @default(false)
+  suspendedReason String?  @map("suspended_reason") @db.VarChar(500)
+  suspendedAt     DateTime? @map("suspended_at")
   notes        String?  @db.Text
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   assets         Asset[]
   purchaseOrders PurchaseOrder[]
+  rmaTickets     RMATicket[]     @relation("RMAVendor")
 
   @@index([category, active])
   @@map("vendors")
@@ -4481,6 +4489,8 @@ model Asset {
   purchaseOrder PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   movements     AssetMovement[]
   salesOrders   AssetSalesOrder[]
+  rmaAsOriginal RMATicket[]      @relation("RMAOriginalAsset")
+  rmaAsReplacement RMATicket[]   @relation("RMAReplacementAsset")
 
   @@index([status])
   @@index([vendorId])
@@ -4709,4 +4719,88 @@ model CeoTask {
   @@index([status, priorityScore(sort: Desc)])
   @@index([category, status])
   @@map("ceo_tasks")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RMA — Return Merchandise Authorization (Trocas e Reposições)
+// Sistema de Garantia Inteligente com QA de Fornecedor e Impacto no DRE
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum RMAStatus {
+  OPEN              // Ticket aberto pelo comercial/suporte
+  UNDER_REVIEW      // Em análise pelo ADMIN/Compras
+  APPROVED          // Aprovado — reserva de ativo em andamento
+  REJECTED          // Rejeitado (fora da garantia ou uso indevido)
+  REPLACEMENT_SENT  // Reposição entregue ao cliente
+  CLOSED            // Concluído e contabilizado
+  CREDITED          // Crédito gerado contra o fornecedor
+}
+
+enum RMAReason {
+  CHECKPOINT        // Conta caiu em checkpoint (verificação de segurança)
+  BAN               // Conta banida — pode ser culpa do cliente
+  WRONG_PASSWORD    // Senha incorreta entregue — culpa do fornecedor/compras
+  ACCOUNT_SUSPENDED // Conta suspensa pela plataforma
+  QUALITY_ISSUE     // Problema de qualidade geral (spend baixo, nicho errado)
+  METRICS_ISSUE     // Métricas inconsistentes com o anunciado
+  OTHER             // Outro — requer descrição manual
+}
+
+/// Ticket de RMA — contabiliza perdas, responsabiliza fornecedores e protege o cliente
+model RMATicket {
+  id              String      @id @default(cuid())
+  /// Número sequencial legível: RMA-2026-0001
+  ticketNumber    String      @unique @map("ticket_number") @db.VarChar(30)
+  status          RMAStatus   @default(OPEN)
+  reason          RMAReason
+  reasonDetail    String?     @map("reason_detail") @db.VarChar(1000)
+
+  /// Ativo que falhou
+  originalAssetId String      @map("original_asset_id")
+  /// Ativo reservado para reposição
+  replacementAssetId String?  @map("replacement_asset_id")
+  /// Ordem de venda original (para buscar dados do cliente)
+  originalOrderId String?     @map("original_order_id")
+  /// Fornecedor do ativo que falhou
+  vendorId        String      @map("vendor_id")
+
+  /// Garantia: calculado automaticamente na abertura do ticket
+  withinWarranty  Boolean     @map("within_warranty")
+  warrantyDays    Int         @default(7) @map("warranty_days")
+  /// Tempo decorrido desde a entrega até o report (em horas)
+  hoursAfterDelivery Int?     @map("hours_after_delivery")
+
+  /// Custo financeiro da reposição (custo do novo ativo)
+  replacementCost Decimal?    @map("replacement_cost") @db.Decimal(12, 2)
+  /// É culpa do fornecedor? Define se gera crédito contra o vendor
+  isVendorFault   Boolean     @default(true) @map("is_vendor_fault")
+  /// Crédito gerado contra o fornecedor (para descontar no próximo PO)
+  vendorCreditAmount Decimal? @map("vendor_credit_amount") @db.Decimal(12, 2)
+
+  /// Garantia estendida foi contratada pelo cliente?
+  extendedWarranty Boolean    @default(false) @map("extended_warranty")
+
+  openedById   String    @map("opened_by_id")
+  approvedById String?   @map("approved_by_id")
+  closedById   String?   @map("closed_by_id")
+
+  openedAt     DateTime  @default(now()) @map("opened_at")
+  approvedAt   DateTime? @map("approved_at")
+  resolvedAt   DateTime? @map("resolved_at")
+  notes        String?   @db.Text
+
+  /// Flag: ALFREDO IA criou alerta de blacklist para este ticket
+  aiAlertSent  Boolean   @default(false) @map("ai_alert_sent")
+
+  originalAsset    Asset     @relation("RMAOriginalAsset",     fields: [originalAssetId],    references: [id])
+  replacementAsset Asset?    @relation("RMAReplacementAsset",  fields: [replacementAssetId], references: [id])
+  vendor           Vendor    @relation("RMAVendor",            fields: [vendorId],           references: [id])
+  openedBy         User      @relation("RMAOpened",            fields: [openedById],         references: [id])
+  approvedBy       User?     @relation("RMAApproved",          fields: [approvedById],       references: [id])
+  closedBy         User?     @relation("RMAClosed",            fields: [closedById],         references: [id])
+
+  @@index([vendorId, status])
+  @@index([originalAssetId])
+  @@index([status, openedAt(sort: Desc)])
+  @@map("rma_tickets")
 }
