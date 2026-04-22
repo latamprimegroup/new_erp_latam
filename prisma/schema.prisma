@@ -156,6 +156,7 @@ model User {
   /// Flag de sócio: libera /dashboard/socio e recursos de Wealth Management
   isPartner                Boolean                   @default(false) @map("is_partner")
   loginAuditLogs           LoginAuditLog[]
+  purchaseEntriesCreated   PurchaseEntry[]           @relation("PurchaseEntryCreator")
 
   @@index([phone])
   @@index([status])
@@ -1367,9 +1368,10 @@ model Supplier {
   pixKeyEncrypted   String?  @map("pix_key_encrypted") @db.Text
   notes             String?  @db.Text
   createdAt         DateTime @default(now()) @map("created_at")
-  accounts    StockAccount[]
-  emailBatches EmailBatch[]
-  emails     Email[]
+  accounts        StockAccount[]
+  emailBatches    EmailBatch[]
+  emails          Email[]
+  purchaseEntries PurchaseEntry[]
 }
 
 // ============ BASE EMAILS / CNPJs / PERFIS (Estoque com Atribuição Exclusiva) ============
@@ -5093,4 +5095,76 @@ model CompanyConfig {
   updatedBy String?  @map("updated_by") @db.VarChar(100)
 
   @@map("company_config")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENTRADA DE MERCADORIA — Compras externas de ativos (BM, Perfis, Páginas, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PurchasedAssetType {
+  BUSINESS_MANAGER   // Business Manager do Meta
+  PERFIL_SOCIAL      // Perfil pessoal Facebook/Instagram
+  PAGINA_SOCIAL      // Página Facebook/Instagram
+  CONTA_ADS          // Conta de anúncio já criada (Google, Meta, etc.)
+  PROXY              // Proxy / IP residencial
+  DOMINIO            // Domínio web
+  HARDWARE           // Celular, chip, dispositivo físico
+  OUTRO              // Outros ativos
+}
+
+enum PurchasePaymentMethod {
+  PIX
+  USDT
+  DINHEIRO
+  CARTAO
+  TRANSFERENCIA
+  OUTRO
+}
+
+enum PurchaseEntryStatus {
+  PENDENTE     // Registrada mas aguardando confirmação
+  CONFIRMADA   // Confirmada e estoque atualizado
+  CANCELADA    // Cancelada / devolvida
+}
+
+/// Cabeçalho de uma compra de mercadoria externa
+model PurchaseEntry {
+  id               String              @id @default(cuid())
+  supplierId       String?             @map("supplier_id")
+  supplier         Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  supplierName     String?             @map("supplier_name") @db.VarChar(200) // fallback quando não cadastrado
+  assetType        PurchasedAssetType
+  platform         String?             @db.VarChar(32)  // META, GOOGLE, TIKTOK, etc.
+  quantity         Int
+  unitCost         Decimal?            @map("unit_cost")  @db.Decimal(12, 2)
+  totalCost        Decimal             @map("total_cost") @db.Decimal(12, 2)
+  paymentMethod    PurchasePaymentMethod @map("payment_method")
+  paymentProofUrl  String?             @map("payment_proof_url") @db.Text
+  notes            String?             @db.Text
+  status           PurchaseEntryStatus @default(PENDENTE)
+  confirmedAt      DateTime?           @map("confirmed_at")
+  createdById      String              @map("created_by_id")
+  createdBy        User                @relation("PurchaseEntryCreator", fields: [createdById], references: [id])
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  items            PurchaseEntryItem[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([supplierId])
+  @@map("purchase_entries")
+}
+
+/// Cada ativo individual dentro de uma entrada de mercadoria
+model PurchaseEntryItem {
+  id              String        @id @default(cuid())
+  purchaseEntryId String        @map("purchase_entry_id")
+  purchaseEntry   PurchaseEntry @relation(fields: [purchaseEntryId], references: [id], onDelete: Cascade)
+  assetIdentifier String        @map("asset_identifier") @db.VarChar(500) // ID do BM, URL do perfil, ID da página, etc.
+  assetLabel      String?       @map("asset_label")      @db.VarChar(200) // Nome amigável (opcional)
+  notes           String?       @db.VarChar(500)
+  stockAccountId  String?       @unique @map("stock_account_id")           // Vínculo com StockAccount (quando aplicável)
+
+  @@index([purchaseEntryId])
+  @@map("purchase_entry_items")
 }

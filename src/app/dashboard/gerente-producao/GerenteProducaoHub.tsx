@@ -10,7 +10,7 @@ import {
   ArrowRight, Layers, Zap, ShieldCheck, Upload,
   RefreshCw, Trophy, Ban, Image as ImageIcon,
   Database, Mail, Building2, CreditCard,
-  Rocket, ShieldAlert, ClipboardList, Search,
+  Rocket, ShieldAlert, ClipboardList, Search, ShoppingCart,
 } from 'lucide-react'
 import { AdsCoreGerenteInventoryBar } from '../ads-core/AdsCoreGerenteInventoryBar'
 
@@ -222,19 +222,31 @@ export function GerenteProducaoHub() {
         <div className="mb-4 rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-3">
           <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">Entenda o fluxo</p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
-              <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold shrink-0">1</span>
-              Produtor cria a conta
-            </span>
+            <div className="flex flex-col gap-1 shrink-0">
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold shrink-0">A</span>
+                Time produziu contas
+              </span>
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold shrink-0">B</span>
+                Compra de fornecedor
+              </span>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <div className="flex flex-col gap-1 shrink-0">
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-[10px] shrink-0">1</span>
+                Inventário Express
+              </span>
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[10px] shrink-0">2</span>
+                Entrada de Mercadoria
+              </span>
+            </div>
             <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
             <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
-              <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold shrink-0">2</span>
-              Inventário Express <span className="font-normal text-zinc-500">(registra no sistema)</span>
-            </span>
-            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
-              <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold shrink-0">3</span>
-              Conta entra no estoque
+              <span className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold shrink-0">3</span>
+              Entra no estoque
             </span>
             <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
             <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
@@ -244,19 +256,33 @@ export function GerenteProducaoHub() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Inventário Express — ENTRADA */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Inventário Express — PRODUÇÃO INTERNA */}
           <StockCard
             href="/dashboard/admin/inventario-express"
             icon={<Rocket className="w-6 h-6 text-white" />}
             gradient="from-blue-500 to-blue-700"
-            badge="ENTRADA"
+            badge="PRODUÇÃO INTERNA"
             badgeColor="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
             title="Inventário Express"
-            subtitle="Registrar contas produzidas"
-            description="Use aqui quando o produtor terminar de criar contas e precisar jogá-las no sistema. Interface tipo planilha — cadastro em massa com ID, tipo, configuração e produtor responsável."
+            subtitle="Contas criadas pelo time"
+            description="O produtor terminou de criar contas Google/Meta? Use aqui para registrar em massa no sistema com ID, tipo, configuração e nome do produtor responsável."
             tipIcon={<Rocket className="w-3.5 h-3.5" />}
-            tip="Para: dar entrada em contas novas vindas da produção"
+            tip="Para: contas que o time criou internamente"
+          />
+
+          {/* Entrada de Mercadoria — COMPRAS EXTERNAS */}
+          <StockCard
+            href="/dashboard/admin/entrada-mercadoria"
+            icon={<ShoppingCart className="w-6 h-6 text-white" />}
+            gradient="from-emerald-500 to-teal-600"
+            badge="COMPRA EXTERNA"
+            badgeColor="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+            title="Entrada de Mercadoria"
+            subtitle="BMs, Perfis, Páginas e mais"
+            description="Comprou BMs, perfis, páginas, proxies ou outros ativos de um fornecedor? Registre aqui com fornecedor, valor pago, forma de pagamento e comprovante anexo."
+            tipIcon={<ShoppingCart className="w-3.5 h-3.5" />}
+            tip="Para: ativos comprados de fornecedores externos"
           />
 
           {/* Auditoria de Estoque — CONFERÊNCIA */}
@@ -268,7 +294,7 @@ export function GerenteProducaoHub() {
             badgeColor="bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
             title="Auditoria de Estoque"
             subtitle="Conferir e corrigir divergências"
-            description="Use aqui para comparar o que o sistema registra com o que realmente existe. Detecta perdas, extravios e erros de lançamento. Gera alertas automáticos para o CEO quando há divergência crítica."
+            description="Compare o que o sistema registra com o que realmente existe. Detecta perdas, extravios e erros de lançamento. Gera alertas ao CEO quando há divergência crítica."
             tipIcon={<ClipboardList className="w-3.5 h-3.5" />}
             tip="Para: verificar se o estoque físico bate com o sistema"
           />
