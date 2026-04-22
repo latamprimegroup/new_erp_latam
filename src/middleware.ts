@@ -34,6 +34,8 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/logistica': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/suporte': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/ceo':     ['ADMIN'],
+  '/dashboard/socio':   ['ADMIN'],          // Véu corporativo — FINANCE bloqueado
+  '/api/socio':         ['ADMIN'],
   '/api/rma':           ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER'],
   '/dashboard/compras': ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER'],
   '/dashboard/financeiro': ['ADMIN', 'FINANCE'],

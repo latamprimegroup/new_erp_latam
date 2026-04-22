@@ -286,6 +286,15 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Estratégia',
   },
 
+  // ── Wealth Dashboard (Sócios) — Acesso 100% privado ─────────────────────
+  {
+    href:  '/dashboard/socio',
+    label: '🛡 Wealth Dashboard',
+    roles: ['ADMIN'],
+    icon:  'Shield',
+    group: 'Estratégia',
+  },
+
   // ── Supply Chain ──────────────────────────────────────────────────────────
   {
     href: '/dashboard/compras',

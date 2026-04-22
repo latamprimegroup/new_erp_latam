@@ -136,6 +136,8 @@ model User {
   rmaApproved              RMATicket[]               @relation("RMAApproved")
   rmaClosed                RMATicket[]               @relation("RMAClosed")
   fastEntries              FastEntryDraft[]          @relation("FastEntryUser")
+  socioProfile             SocioProfile?             @relation("SocioProfile")
+  socioTransfersApproved   SocioTransfer[]           @relation("SocioTransferApprover")
 
   @@index([phone])
 }
@@ -4866,4 +4868,140 @@ model FastEntryDraft {
   @@index([extractedTransactionId])
   @@index([createdById])
   @@map("fast_entry_drafts")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SÓCIO WEALTH — Finanças Pessoais dos Sócios (Family Office)
+// Dados 100% privados: FINANCE role não tem acesso, apenas o próprio sócio
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum SocioAssetType {
+  IMOVEL
+  VEICULO
+  CRIPTO
+  ACOES
+  FUNDO_INVESTIMENTO
+  CONTA_BANCARIA
+  PREVIDENCIA
+  OUTRO
+}
+
+enum SocioEntryType {
+  RECEITA
+  DESPESA
+}
+
+enum SocioCategory {
+  MORADIA
+  ALIMENTACAO
+  LAZER
+  SAUDE
+  EDUCACAO
+  TRANSPORTE
+  INVESTIMENTO_EXTERNO
+  IMPOSTO_PESSOAL
+  PRO_LABORE
+  DISTRIBUICAO_LUCRO
+  ADIANTAMENTO
+  REEMBOLSO_EMPRESA
+  OUTRO
+}
+
+enum SocioTransferType {
+  PRO_LABORE
+  DISTRIBUICAO_LUCRO
+  ADIANTAMENTO
+  REEMBOLSO
+}
+
+/// Perfil patrimonial do sócio — criado automaticamente no primeiro acesso
+model SocioProfile {
+  id     String @id @default(cuid())
+  userId String @unique @map("user_id")
+  user   User   @relation("SocioProfile", fields: [userId], references: [id])
+
+  /// Meta de patrimônio pessoal (ex: R$ 10.000.000)
+  targetWealth       Decimal? @map("target_wealth")       @db.Decimal(15, 2)
+  /// Gasto mensal esperado (para cálculo do Runway)
+  monthlyExpenseGoal Decimal? @map("monthly_expense_goal") @db.Decimal(12, 2)
+  /// Notas / objetivos pessoais
+  notes              String?  @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  assets    SocioAsset[]
+  entries   SocioEntry[]
+  transfers SocioTransfer[]
+
+  @@map("socio_profiles")
+}
+
+/// Patrimônio consolidado: imóveis, veículos, cripto, ações, etc.
+model SocioAsset {
+  id         String         @id @default(cuid())
+  profileId  String         @map("profile_id")
+  profile    SocioProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type       SocioAssetType
+  name       String         @db.VarChar(200)
+  /// Valor atual de mercado
+  currentValue  Decimal     @map("current_value")  @db.Decimal(15, 2)
+  currency      String      @default("BRL")        @db.VarChar(3)
+  /// Valor pago na aquisição (para cálculo de ganho de capital)
+  acquiredValue Decimal?    @map("acquired_value") @db.Decimal(15, 2)
+  acquiredAt    DateTime?   @map("acquired_at")
+  notes         String?     @db.VarChar(500)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt      @map("updated_at")
+
+  @@index([profileId, type])
+  @@map("socio_assets")
+}
+
+/// Lançamentos financeiros pessoais do sócio
+model SocioEntry {
+  id        String         @id @default(cuid())
+  profileId String         @map("profile_id")
+  profile   SocioProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type      SocioEntryType
+  category  SocioCategory
+  amount    Decimal        @db.Decimal(12, 2)
+  currency  String         @default("BRL") @db.VarChar(3)
+  date      DateTime
+  description String?      @db.Text
+  paymentMethod String?    @map("payment_method") @db.VarChar(50)
+  /// ID da transação PIX/bancária para anti-duplicata
+  externalTxId   String?   @map("external_tx_id") @db.VarChar(300)
+  /// Veio de transferência interna da empresa
+  isCompanyTransfer Boolean @default(false) @map("is_company_transfer")
+  companyTransferId String? @map("company_transfer_id") @db.VarChar(100)
+  /// Lançado via comprovante pela ALFREDO IA
+  aiExtracted Boolean      @default(false) @map("ai_extracted")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@index([profileId, date(sort: Desc)])
+  @@index([profileId, category])
+  @@index([externalTxId])
+  @@map("socio_entries")
+}
+
+/// Transferências internas: Ads Ativos → Sócio (Pró-labore, Lucros, etc.)
+model SocioTransfer {
+  id               String            @id @default(cuid())
+  profileId        String            @map("profile_id")
+  profile          SocioProfile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  type             SocioTransferType
+  amount           Decimal           @db.Decimal(12, 2)
+  date             DateTime
+  /// ID do FinancialEntry gerado no caixa da empresa
+  companyEntryId   String?           @map("company_entry_id") @db.VarChar(100)
+  /// ID do SocioEntry gerado no perfil pessoal
+  socioEntryId     String?           @map("socio_entry_id")   @db.VarChar(100)
+  approvedById     String?           @map("approved_by_id")
+  approvedBy       User?             @relation("SocioTransferApprover", fields: [approvedById], references: [id])
+  notes            String?           @db.VarChar(500)
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@index([profileId, date(sort: Desc)])
+  @@map("socio_transfers")
 }
