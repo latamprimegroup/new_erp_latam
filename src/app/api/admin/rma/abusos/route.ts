@@ -36,9 +36,9 @@ export async function GET(req: NextRequest) {
       user: { select: { name: true, email: true, phone: true } },
       orders: {
         where: { status: { not: 'CANCELLED' } },
-        select: { id: true, totalAmount: true, createdAt: true },
+        select: { id: true, value: true, createdAt: true },
       },
-      replacementRequests: {
+      accountReplacementRequests: {
         where: { createdAt: { gte: since } },
         select: {
           id: true,
@@ -54,11 +54,11 @@ export async function GET(req: NextRequest) {
   })
 
   const suspects = clients.map((c) => {
-    const rmaCount = c.replacementRequests.length
+    const rmaCount = c.accountReplacementRequests.length
     const orderCount = c.orders.length
     const rmaRate = orderCount > 0 ? (rmaCount / orderCount) * 100 : 100
-    const grossLtv = c.orders.reduce((s, o) => s + Number(o.totalAmount ?? 0), 0)
-    const alreadyFlagged = c.replacementRequests.some((r) => r.abuseFlag)
+    const grossLtv = c.orders.reduce((s, o) => s + Number(o.value ?? 0), 0)
+    const alreadyFlagged = c.accountReplacementRequests.some((r) => r.abuseFlag)
 
     return {
       clientId: c.id,
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
       grossLtv,
       isAbuse: rmaRate > ABUSE_THRESHOLD_PCT,
       alreadyFlagged,
-      recentRmas: c.replacementRequests.slice(0, 5),
+      recentRmas: c.accountReplacementRequests.slice(0, 5),
     }
   })
     .filter((s) => s.rmaRate > ABUSE_THRESHOLD_PCT)
