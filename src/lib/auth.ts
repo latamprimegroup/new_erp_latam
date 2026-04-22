@@ -6,15 +6,52 @@ import { verifyTurnstileToken } from './turnstile'
 
 const VERBOSE_LOGIN = process.env.LOGIN_VERBOSE_ERRORS === 'true'
 
+// Helper para gravar auditoria de login sem bloquear o fluxo
+async function auditLogin(opts: {
+  email: string; userId?: string; success: boolean
+  ip: string; userAgent?: string; reason?: string
+}) {
+  try {
+    await prisma.loginAuditLog.create({
+      data: {
+        email:     opts.email,
+        userId:    opts.userId,
+        success:   opts.success,
+        ip:        opts.ip,
+        userAgent: opts.userAgent,
+        reason:    opts.reason,
+      },
+    })
+    // Alerta no painel: 5+ falhas em 10 min do mesmo IP → grava memória ALFREDO IA
+    if (!opts.success) {
+      const since = new Date(Date.now() - 10 * 60 * 1000)
+      const fails = await prisma.loginAuditLog.count({
+        where: { ip: opts.ip, success: false, createdAt: { gte: since } },
+      })
+      if (fails >= 5) {
+        await prisma.alfredoMemory.create({
+          data: {
+            type:    'INSIGHT',
+            title:   '🚨 Tentativas suspeitas de login',
+            content: `IP ${opts.ip} teve ${fails} falhas de login nos últimos 10 minutos. E-mail: ${opts.email}. Verifique imediatamente.`,
+          },
+        }).catch(() => null)
+      }
+    }
+  } catch { /* auditoria não deve travar login */ }
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        email: { label: 'E-mail', type: 'email' },
-        password: { label: 'Senha', type: 'password' },
+        email:          { label: 'E-mail',    type: 'email' },
+        password:       { label: 'Senha',     type: 'password' },
         turnstileToken: { label: 'Turnstile', type: 'text' },
-        remember: { label: 'Remember', type: 'text' },
+        remember:       { label: 'Remember',  type: 'text' },
+        ip:             { label: 'IP',        type: 'text' },
+        userAgent:      { label: 'UserAgent', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
@@ -28,48 +65,64 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
+        const ip        = credentials.ip        || 'unknown'
+        const userAgent = credentials.userAgent || undefined
         const emailNorm = credentials.email.trim().toLowerCase()
-        const user = await prisma.user.findUnique({
-          where: { email: emailNorm },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            photo: true,
-            passwordHash: true,
-            languageCode: true,
-          },
-        })
+
+        let user: {
+          id: string; email: string; name: string | null; role: string;
+          photo: string | null; passwordHash: string | null; languageCode: string | null;
+          status: string;
+        } | null
+
+        try {
+          user = await prisma.user.findUnique({
+            where:  { email: emailNorm },
+            select: {
+              id: true, email: true, name: true, role: true,
+              photo: true, passwordHash: true, languageCode: true,
+              status: true,
+            },
+          })
+        } catch (dbErr) {
+          console.error('[auth] Erro de conexão com o banco de dados:', dbErr)
+          throw new Error('Serviço temporariamente indisponível. Tente novamente em alguns instantes.')
+        }
 
         if (!user || !user.passwordHash) {
-          if (VERBOSE_LOGIN) {
-            throw new Error(
-              'Não encontramos cadastro com este e-mail. Verifique ou cadastre-se.'
-            )
-          }
+          await auditLogin({ email: emailNorm, success: false, ip, userAgent, reason: 'USER_NOT_FOUND' })
+          if (VERBOSE_LOGIN) throw new Error('Não encontramos cadastro com este e-mail. Verifique ou cadastre-se.')
           return null
+        }
+
+        // ── Bloquear usuários banidos ────────────────────────────────────────
+        if (user.status === 'BANNED') {
+          await auditLogin({ email: emailNorm, userId: user.id, success: false, ip, userAgent, reason: 'BANNED' })
+          throw new Error('Seu acesso foi revogado pelo administrador. Entre em contato com o suporte.')
         }
 
         const valid = await compare(credentials.password, user.passwordHash)
         if (!valid) {
-          if (VERBOSE_LOGIN) {
-            throw new Error('Senha incorreta. Tente novamente ou use “Esqueceu a senha?”.')
-          }
+          await auditLogin({ email: emailNorm, userId: user.id, success: false, ip, userAgent, reason: 'WRONG_PASSWORD' })
+          if (VERBOSE_LOGIN) throw new Error('Senha incorreta. Tente novamente ou use "Esqueceu a senha?".')
           return null
         }
+
+        // Login bem-sucedido — gravar auditoria
+        await auditLogin({ email: emailNorm, userId: user.id, success: true, ip, userAgent })
 
         const remember =
           credentials.remember === 'true' || credentials.remember === 'on' || credentials.remember === '1'
 
         return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          image: user.photo,
+          id:           user.id,
+          email:        user.email,
+          name:         user.name,
+          role:         user.role,
+          image:        user.photo,
           remember,
           languageCode: user.languageCode,
+          status:       user.status,   // ← incluído no token para o middleware
         }
       },
     }),
@@ -80,49 +133,48 @@ export const authOptions: NextAuthOptions = {
         token.languageCode = session.languageCode as string
       }
       if (user) {
-        token.id = user.id
-        token.role = user.role
+        token.id           = user.id
+        token.role         = user.role
+        token.status       = (user as { status?: string }).status ?? 'ACTIVE'
         token.languageCode = (user as { languageCode?: string }).languageCode ?? 'pt-BR'
-        const remember = !!(user as { remember?: boolean }).remember
-        /** Sessão curta sem “manter conectado”; longa com checkbox (dias). */
+        const remember     = !!(user as { remember?: boolean }).remember
         const shortSec = parseInt(process.env.SESSION_SHORT_MAX_AGE_SEC || `${14 * 60 * 60}`, 10)
-        const longSec = parseInt(process.env.SESSION_LONG_MAX_AGE_SEC || `${30 * 24 * 60 * 60}`, 10)
-        const durationSec = remember ? longSec : shortSec
-        token.exp = Math.floor(Date.now() / 1000) + durationSec
+        const longSec  = parseInt(process.env.SESSION_LONG_MAX_AGE_SEC  || `${30 * 24 * 60 * 60}`, 10)
+        token.exp      = Math.floor(Date.now() / 1000) + (remember ? longSec : shortSec)
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string
-        session.user.role = token.role as string
+        session.user.id           = token.id as string
+        session.user.role         = token.role as string
+        session.user.status       = token.status as string
         session.user.languageCode = (token.languageCode as string) ?? 'pt-BR'
       }
       return session
     },
   },
-  pages: {
-    signIn: '/login',
-  },
+  pages: { signIn: '/login' },
   session: {
     strategy: 'jwt',
-    /** Teto máximo; a duração efetiva vem de `token.exp` no callback jwt (remember). */
-    maxAge: 30 * 24 * 60 * 60,
+    maxAge:   30 * 24 * 60 * 60,
   },
   events: {
     async signIn({ user }) {
       if (!user?.id) return
-      const row = await prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-        select: { role: true },
-      })
-      if (row.role === 'CLIENT') {
-        await prisma.clientProfile.updateMany({
-          where: { userId: user.id },
-          data: { tintimFollowupPending: false },
+      try {
+        const row = await prisma.user.update({
+          where:  { id: user.id },
+          data:   { lastLoginAt: new Date() },
+          select: { role: true },
         })
-      }
+        if (row.role === 'CLIENT') {
+          await prisma.clientProfile.updateMany({
+            where: { userId: user.id },
+            data:  { tintimFollowupPending: false },
+          })
+        }
+      } catch { /* eventos não devem bloquear a sessão */ }
     },
   },
 }

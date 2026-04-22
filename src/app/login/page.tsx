@@ -80,6 +80,10 @@ function LoginForm() {
         setError('Verificação de segurança falhou. Atualize a página e tente de novo.')
         return
       }
+      if (low.includes('indisponível') || low.includes('tente novamente em alguns')) {
+        setError('Serviço temporariamente indisponível. Tente novamente em alguns instantes.')
+        return
+      }
       if (low.includes('não encontramos cadastro') || low.includes('e-mail')) {
         setError(err.length < 200 ? err : 'Não encontramos cadastro com este e-mail.')
         return
