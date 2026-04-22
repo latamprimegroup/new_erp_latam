@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "typecheck": "tsc --noEmit",
-    "start": "next start",
+    "start": "node server.js",
     "lint": "next lint",
     "test": "vitest",
     "test:run": "vitest run",
