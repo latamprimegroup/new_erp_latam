@@ -138,6 +138,8 @@ model User {
   fastEntries              FastEntryDraft[]          @relation("FastEntryUser")
   socioProfile             SocioProfile?             @relation("SocioProfile")
   socioTransfersApproved   SocioTransfer[]           @relation("SocioTransferApprover")
+  /// Flag de sócio: libera /dashboard/socio e recursos de Wealth Management
+  isPartner                Boolean                   @default(false) @map("is_partner")
 
   @@index([phone])
 }
@@ -5004,4 +5006,35 @@ model SocioTransfer {
 
   @@index([profileId, date(sort: Desc)])
   @@map("socio_transfers")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// COMPANY CONFIG — Configurações Estratégicas da Empresa
+// Buffer de Segurança, Provisão de Impostos, Fundo de Guerra, Múltiplo EBITDA
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Configurações financeiras globais da empresa (singleton — um único registro)
+model CompanyConfig {
+  id   String @id @default("singleton")
+
+  // ── Caixa de Segurança ──────────────────────────────────────────────────
+  /// Reserva de Operação: meses de despesas fixas mantidos em caixa (default 3)
+  safetyBufferMonths    Int     @default(3)   @map("safety_buffer_months")
+  /// Fundo de Guerra: valor fixo reservado para oportunidades de aquisição
+  warFundAmount         Decimal @default(0)   @map("war_fund_amount")   @db.Decimal(15, 2)
+  /// Provisão de impostos sobre receita bruta em % (ex: 6 para Simples Nacional)
+  taxProvisionPct       Decimal @default(6.0) @map("tax_provision_pct") @db.Decimal(5, 2)
+  /// Reinvestimento mínimo em % do lucro antes de distribuir (ex: 20%)
+  reinvestPct           Decimal @default(20)  @map("reinvest_pct")      @db.Decimal(5, 2)
+
+  // ── Valuation da Empresa ────────────────────────────────────────────────
+  /// Múltiplo de lucro para estimativa de equity (ex: 12x = 1 ano de EBITDA)
+  ebitdaMultiple        Int     @default(12)  @map("ebitda_multiple")
+  /// Meta de faturamento mensal (para projeção de bilhão)
+  revenueTarget         Decimal @default(1000000) @map("revenue_target") @db.Decimal(15, 2)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  @@map("company_config")
 }

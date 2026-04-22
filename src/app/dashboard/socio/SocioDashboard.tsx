@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CaixaForteWidget, ProjecaoBilhaoWidget, CostAuditorWidget } from './WealthWidgets'
 import {
   Shield, TrendingUp, TrendingDown, Home, Car, Bitcoin, BarChart2,
   Plus, X, Edit3, Loader2, Zap, DollarSign, Target, Clock,
@@ -383,7 +384,7 @@ function PatrimonioTab({ assets, onRefresh }: { assets: Asset[]; onRefresh: () =
 // Componente Principal
 // ─────────────────────────────────────────────────────────────────────────────
 
-type SocioTab = 'overview' | 'lancamentos' | 'patrimonio' | 'transferencias' | 'fast-entry'
+type SocioTab = 'overview' | 'lancamentos' | 'patrimonio' | 'transferencias' | 'fast-entry' | 'caixa-forte' | 'projecao' | 'auditor'
 
 export function SocioDashboard({ userName }: { userName: string }) {
   const [tab,      setTab]      = useState<SocioTab>('overview')
@@ -428,6 +429,9 @@ export function SocioDashboard({ userName }: { userName: string }) {
 
   const TABS: { id: SocioTab; label: string }[] = [
     { id: 'overview',       label: '🏛 Visão Geral'     },
+    { id: 'caixa-forte',    label: '🔐 Caixa Forte'     },
+    { id: 'projecao',       label: '🚀 Rota ao Bilhão'  },
+    { id: 'auditor',        label: '🔍 Auditor IA'       },
     { id: 'lancamentos',    label: '📋 Lançamentos'     },
     { id: 'patrimonio',     label: '🏆 Patrimônio'      },
     { id: 'transferencias', label: '💸 Transferências'  },
@@ -540,6 +544,21 @@ export function SocioDashboard({ userName }: { userName: string }) {
           )}
         </div>
       )}
+
+      {/* ── CAIXA FORTE ──────────────────────────────────────────────────── */}
+      {tab === 'caixa-forte' && (
+        <CaixaForteWidget onRequestTransfer={(amount) => {
+          setXferForm((f) => ({ ...f, type: 'DISTRIBUICAO_LUCRO', amount: String(amount) }))
+          setShowXfer(true)
+          setTab('transferencias')
+        }} />
+      )}
+
+      {/* ── PROJEÇÃO BILHÃO ───────────────────────────────────────────────── */}
+      {tab === 'projecao' && <ProjecaoBilhaoWidget />}
+
+      {/* ── AUDITOR DE CUSTOS ─────────────────────────────────────────────── */}
+      {tab === 'auditor' && <CostAuditorWidget />}
 
       {/* ── LANÇAMENTOS ──────────────────────────────────────────────────── */}
       {tab === 'lancamentos' && (
