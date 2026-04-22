@@ -297,7 +297,7 @@ export default function InventarioExpressClient() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   // Colunas: Tipo/Moeda | Config G2 | Doc | Produtor | Total | IDs | Lixo
-  const COLS = 'grid-cols-[140px_160px_140px_180px_72px_1fr_36px]'
+  const COLS = 'grid-cols-[140px_160px_140px_240px_72px_1fr_36px]'
 
   return (
     <div className="space-y-6">
