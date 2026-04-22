@@ -38,7 +38,10 @@ export async function POST(req: Request) {
           name,
           passwordHash,
           phone: whatsapp,
-          role: 'CLIENT',
+          role:   'CLIENT',
+          // Clientes que se auto-cadastram ficam ACTIVE (acesso apenas ao /catalog/cliente)
+          // Qualquer outro papel nasce PENDING e precisa aprovação do CEO
+          status: 'ACTIVE',
         },
       })
       await tx.clientProfile.create({

@@ -140,13 +140,15 @@ body {
            hover:border-primary-500/40 dark:hover:border-primary-500/30
            transition-all duration-200 hover:shadow-ads-sm;
   }
-  /* Style Guide ADS - Inputs */
+  /* Style Guide ADS - Inputs (override do fix global) */
   .input-field {
-    @apply w-full border border-gray-200 dark:border-white/20 dark:bg-white/5
+    @apply w-full border border-gray-200 dark:border-white/20
+           bg-white dark:bg-white/[0.06]
            rounded-lg px-4 py-2.5
            focus:ring-2 focus:ring-primary-500/25 focus:border-primary-500 outline-none
            transition-all duration-200 placeholder:text-gray-400 dark:placeholder:text-gray-500
            text-gray-900 dark:text-white;
+    box-shadow: none;
   }
   .production-form-area input,
   .production-form-area select,
@@ -239,7 +241,71 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
-/* Style Guide ADS - Checkbox, Radio e Seletores */
+/* ─── Fix Global: todos os campos de formulário devem ser legíveis ──────────
+   Garante texto, fundo e borda visíveis em QUALQUER input/select/textarea
+   do sistema, mesmo que não usem a classe .input-field.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Light mode — fundo branco, texto escuro */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+select,
+textarea {
+  background-color: #ffffff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):focus,
+select:focus,
+textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+}
+
+/* Dark mode — fundo escuro translúcido, texto claro */
+.dark input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+.dark select,
+.dark textarea {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #f3f4f6;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.dark input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280;
+}
+
+/* Opções do select no dark mode */
+.dark select option,
+.dark select optgroup {
+  background-color: #1a2540;
+  color: #f3f4f6;
+}
+
+/* Garante que select com aparência customizada (dropdown nativo) fique legível */
+.dark select {
+  color-scheme: dark;
+}
+
+/* ─── Checkbox, Radio e Range (não afetados pelo fix acima) ───────────────── */
 input[type='checkbox'],
 input[type='radio'] {
   width: 1rem;

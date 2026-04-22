@@ -2,8 +2,12 @@ import { withAuth } from 'next-auth/middleware'
 import { NextFetchEvent, NextResponse } from 'next/server'
 import { checkLoginRateLimit } from '@/lib/rate-limit-login'
 
-// Rotas públicas
-const PUBLIC_PATHS = ['/login', '/cadastro', '/recuperar-senha', '/redefinir-senha', '/']
+// Rotas públicas — acessíveis sem autenticação
+const PUBLIC_PATHS = [
+  '/login', '/cadastro', '/recuperar-senha', '/redefinir-senha', '/',
+  '/aguardando-aprovacao',  // página de espera para PENDING
+  '/catalog',               // catálogo público para CLIENT
+]
 
 // Mapeamento: path pattern → roles permitidas
 const ROUTE_ROLES: Record<string, string[]> = {
@@ -21,7 +25,6 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/producao/conferencia': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/producao-g2': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/producao/metrics': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
-  // Apenas quem tem saldo próprio (produtor) ou admin; alinhado a `producao/saldo/page.tsx`
   '/dashboard/producao/saldo': ['ADMIN', 'PRODUCER'],
   '/dashboard/producao/vault-earnings': ['ADMIN', 'PRODUCER'],
   '/dashboard/estoque': ['ADMIN', 'FINANCE'],
@@ -34,7 +37,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/logistica': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/suporte': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/ceo':     ['ADMIN'],
-  '/dashboard/socio':   ['ADMIN'],          // Véu corporativo — FINANCE bloqueado
+  '/dashboard/socio':   ['ADMIN'],
   '/api/socio':         ['ADMIN'],
   '/api/rma':           ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER'],
   '/dashboard/compras': ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER'],
@@ -42,7 +45,6 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/saques': ['ADMIN', 'FINANCE'],
   '/dashboard/metas': ['ADMIN', 'PRODUCER'],
   '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
-  // Mais permissivo que /dashboard/admin genérico: API e nav já incluem DELIVERER/COMMERCIAL
   '/dashboard/admin/delivery-dashboard': ['ADMIN', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/admin': ['ADMIN'],
   '/dashboard/admin/config': ['ADMIN'],
@@ -59,17 +61,13 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/cliente': ['CLIENT'],
   '/dashboard/gestor': ['MANAGER'],
   '/dashboard/plugplay': ['PLUG_PLAY'],
-  '/dashboard/treinamento': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL', 'MANAGER'],
+  '/dashboard/treinamento': [
+    'ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL', 'MANAGER',
+  ],
   '/dashboard/area-cliente': ['CLIENT'],
   '/dashboard/ecosystem': ['CLIENT'],
   '/dashboard/gtm-conversao': [
-    'ADMIN',
-    'COMMERCIAL',
-    'DELIVERER',
-    'PRODUCER',
-    'PRODUCTION_MANAGER',
-    'MANAGER',
-    'PLUG_PLAY',
+    'ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'MANAGER', 'PLUG_PLAY',
   ],
 }
 
@@ -91,16 +89,28 @@ const dashboardAuth = withAuth(
       return NextResponse.next()
     }
 
+    const userRole   = (req.nextauth.token?.role   as string) || ''
+    const userStatus = (req.nextauth.token?.status as string) || 'PENDING'
+
+    // ── Protocolo Bunker: bloquear usuários PENDING ────────────────────────
+    // CLIENT PENDING é ativado automaticamente — só bloqueia outros roles
+    if (userStatus === 'PENDING' && userRole !== 'CLIENT') {
+      return NextResponse.redirect(new URL('/aguardando-aprovacao', req.url))
+    }
+
+    // Usuário BANNED: força logout redirecionando para /login com flag
+    if (userStatus === 'BANNED') {
+      return NextResponse.redirect(new URL('/login?banido=1', req.url))
+    }
+
     if (pathname.startsWith('/dashboard')) {
       const roles = getRolesForPath(pathname)
-      const userRole = (req.nextauth.token?.role as string) || ''
 
       if (roles && !roles.includes(userRole)) {
-        if (userRole === 'CLIENT') return NextResponse.redirect(new URL('/dashboard/cliente', req.url))
-        if (userRole === 'MANAGER') return NextResponse.redirect(new URL('/dashboard/gestor', req.url))
-        if (userRole === 'PLUG_PLAY') return NextResponse.redirect(new URL('/dashboard/plugplay', req.url))
-        // FINANCE: redireciona para o hub financeiro em vez de rota genérica
-        if (userRole === 'FINANCE') return NextResponse.redirect(new URL('/dashboard/financeiro', req.url))
+        if (userRole === 'CLIENT')         return NextResponse.redirect(new URL('/dashboard/cliente', req.url))
+        if (userRole === 'MANAGER')        return NextResponse.redirect(new URL('/dashboard/gestor', req.url))
+        if (userRole === 'PLUG_PLAY')      return NextResponse.redirect(new URL('/dashboard/plugplay', req.url))
+        if (userRole === 'FINANCE')        return NextResponse.redirect(new URL('/dashboard/financeiro', req.url))
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }
     }
@@ -111,10 +121,10 @@ const dashboardAuth = withAuth(
 )
 
 export default function middleware(req: Request, event: NextFetchEvent) {
-  const url = new URL(req.url)
+  const url      = new URL(req.url)
   const pathname = url.pathname
 
-  // 1. Bloquear /setup em produção (ALLOW_SETUP=1 para liberar em emergência)
+  // 1. Bloquear /setup em produção
   if (pathname === '/setup') {
     if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SETUP !== '1') {
       return NextResponse.redirect(new URL('/login', req.url))
@@ -122,7 +132,7 @@ export default function middleware(req: Request, event: NextFetchEvent) {
     return NextResponse.next()
   }
 
-  // 2. Rate limit no login (anti brute force) — por IP na rota de credenciais
+  // 2. Rate limit no login (anti brute force)
   if (pathname === '/api/auth/callback/credentials' && req.method === 'POST') {
     const ip =
       req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -132,23 +142,13 @@ export default function middleware(req: Request, event: NextFetchEvent) {
     if (!rl.success) {
       const sec = rl.retryAfterSeconds ?? 60
       return new NextResponse(
-        JSON.stringify({
-          error: `Muitas tentativas de login neste IP. Aguarde ${sec} segundos e tente novamente.`,
-          code: 'RATE_LIMIT',
-          retryAfterSeconds: sec,
-        }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': String(sec),
-          },
-        }
+        JSON.stringify({ error: `Muitas tentativas de login neste IP. Aguarde ${sec} segundos.`, code: 'RATE_LIMIT', retryAfterSeconds: sec }),
+        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(sec) } }
       )
     }
   }
 
-  // 3. Dashboard: exigir autenticação
+  // 3. Dashboard: exigir autenticação + verificar status
   if (pathname.startsWith('/dashboard')) {
     return dashboardAuth(req as Parameters<typeof dashboardAuth>[0], event)
   }

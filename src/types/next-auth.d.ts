@@ -4,6 +4,8 @@ declare module 'next-auth' {
   interface User {
     id: string
     role: string
+    /** Status de aprovação: PENDING | ACTIVE | BANNED */
+    status?: string
     /** pt-BR | en-US | es — preferência de idioma (área cliente) */
     languageCode?: string
     /** Só no fluxo de login (JWT); não exposto na sessão */
@@ -14,7 +16,7 @@ declare module 'next-auth' {
     user: User & {
       id: string
       role: string
-      /** Preferência i18n; pode faltar em sessões antigas até novo login */
+      status: string
       languageCode?: string
     }
   }
@@ -24,6 +26,7 @@ declare module 'next-auth/jwt' {
   interface JWT {
     id: string
     role: string
+    status: string
     languageCode?: string
   }
 }

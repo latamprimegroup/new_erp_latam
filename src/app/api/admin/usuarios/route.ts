@@ -39,13 +39,16 @@ export async function GET() {
       name: true,
       phone: true,
       role: true,
+      status: true,
+      banReason: true,
+      approvedAt: true,
       createdAt: true,
       clientProfile: { select: { id: true, clientCode: true } },
       producerProfile: { select: { id: true } },
       delivererProfile: { select: { id: true } },
       managerProfile: { select: { id: true } },
     },
-    orderBy: [{ role: 'asc' }, { name: 'asc' }],
+    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
   })
 
   return NextResponse.json(
@@ -55,6 +58,9 @@ export async function GET() {
       name: u.name,
       phone: u.phone,
       role: u.role,
+      status: u.status,
+      banReason: u.banReason,
+      approvedAt: u.approvedAt,
       createdAt: u.createdAt,
       hasClientProfile: !!u.clientProfile,
       clientCode: u.clientProfile?.clientCode ?? null,
@@ -91,8 +97,10 @@ export async function POST(req: Request) {
           passwordHash,
           role: data.role,
           phone: data.phone || null,
+          // Usuários criados pelo CEO já nascem ACTIVE; auto-ativa CLIENT
+          status: 'ACTIVE',
         },
-        select: { id: true, email: true, name: true, role: true, createdAt: true },
+        select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
       })
 
       let code: string | null = null

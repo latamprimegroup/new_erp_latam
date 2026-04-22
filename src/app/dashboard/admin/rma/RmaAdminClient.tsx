@@ -221,7 +221,7 @@ function QueueTab() {
                         {r.client.user?.name || r.client.user?.email}
                       </p>
                       <p className="text-xs text-zinc-400 font-mono">
-                        {r.originalAccount.googleAdsCustomerId || r.originalAccountId?.slice(0, 10)}
+                        {r.originalAccount?.googleAdsCustomerId || r.originalAccount?.id?.slice(0, 10)}
                       </p>
                       {r.abuseFlag && (
                         <span className="text-[10px] text-red-500 font-semibold">⚠ Abuso</span>
