@@ -401,6 +401,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Administração',
   },
   {
+    href: '/dashboard/admin/inventario-express',
+    label: 'Inventário Express',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'Rocket',
+    group: 'Administração',
+  },
+  {
     href: '/dashboard/admin/fechamento-producao',
     label: 'Fechamento de Produção',
     roles: ['ADMIN'],
