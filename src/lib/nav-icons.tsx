@@ -61,6 +61,7 @@ import {
   Brain,
   ClipboardList,
   FileBarChart2,
+  ShieldAlert,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -125,6 +126,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Brain,
   ClipboardList,
   FileBarChart2,
+  ShieldAlert,
 }
 
 export function getNavIcon(name: string): LucideIcon {

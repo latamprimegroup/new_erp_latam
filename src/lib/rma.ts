@@ -1,4 +1,4 @@
-import type { AccountRmaReason, AccountRmaStatus } from '@prisma/client'
+import type { AccountRmaActionTaken, AccountRmaReason, AccountRmaStatus } from '@prisma/client'
 
 export const RMA_REASON_LABELS: Record<AccountRmaReason, string> = {
   ERRO_CONFIGURACAO: 'Erro de configuração',
@@ -8,7 +8,29 @@ export const RMA_REASON_LABELS: Record<AccountRmaReason, string> = {
   CHECKPOINT_BLOCK: 'Bloqueio checkpoint',
   BAN_IMMEDIATE: 'Ban imediato',
   PROXY_ERROR: 'Erro de proxy',
+  PAGAMENTO_SUSPEITO: 'Pagamento suspeito',
+  PRATICAS_COMERCIAIS: 'Práticas comerciais inaceitáveis',
+  VERIFICACAO_IDENTIDADE: 'Verificação de identidade',
+  G2_FALHOU: 'G2 falhou',
   OUTRO: 'Outro',
+}
+
+export const RMA_ACTION_LABELS: Record<AccountRmaActionTaken, string> = {
+  REPOSICAO_EFETUADA: 'Reposição efetuada',
+  REEMBOLSO: 'Reembolso',
+  GARANTIA_NEGADA: 'Garantia negada',
+  AGUARDANDO: 'Aguardando decisão',
+}
+
+/** Calcula status de garantia dado o prazo em horas e a data da entrega/compra */
+export function warrantyStatus(
+  warrantyHours: number | null | undefined,
+  referenceDate: Date | string | null | undefined
+): 'VALID' | 'EXPIRED' | 'NO_WARRANTY' {
+  if (!warrantyHours || !referenceDate) return 'NO_WARRANTY'
+  const ref = new Date(referenceDate)
+  const expiresAt = new Date(ref.getTime() + warrantyHours * 60 * 60 * 1000)
+  return expiresAt > new Date() ? 'VALID' : 'EXPIRED'
 }
 
 export const RMA_STATUS_LABELS: Record<AccountRmaStatus, string> = {

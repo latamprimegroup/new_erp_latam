@@ -38,6 +38,13 @@ enum Role {
   PURCHASING  // Setor de Compras — vê dados de fornecedor (Double-Blind)
 }
 
+/// Status de aprovação do usuário. PENDING = aguardando aprovação do CEO.
+enum UserStatus {
+  PENDING   // Recém-cadastrado — bloqueado até aprovação manual
+  ACTIVE    // Aprovado pelo CEO — acesso liberado
+  BANNED    // Banido — login bloqueado permanentemente
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -47,12 +54,20 @@ model User {
   photo         String?
   /// Preferência de idioma (UI): pt-BR | en-US | es — i18n área cliente
   languageCode  String    @default("pt-BR") @map("language_code") @db.VarChar(12)
-  role          Role      @default(CLIENT)
-  emailVerified DateTime? @map("email_verified")
+  role          Role       @default(CLIENT)
+  /// Status de aprovação: novos usuários nascem PENDING (exceto CLIENT que nasce ACTIVE)
+  status        UserStatus @default(PENDING) @map("status")
+  /// Motivo do banimento (preenchido quando status = BANNED)
+  banReason     String?    @map("ban_reason") @db.VarChar(500)
+  /// Quem aprovou ou baniu este usuário
+  approvedById  String?    @map("approved_by_id") @db.VarChar(100)
+  /// Quando foi aprovado ou banido
+  approvedAt    DateTime?  @map("approved_at")
+  emailVerified DateTime?  @map("email_verified")
   /// Último login (credenciais) — follow-up comercial pós-compra Tintim
-  lastLoginAt   DateTime? @map("last_login_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  lastLoginAt   DateTime?  @map("last_login_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
   producerProfile  ProducerProfile?
   delivererProfile DelivererProfile?
@@ -140,8 +155,28 @@ model User {
   socioTransfersApproved   SocioTransfer[]           @relation("SocioTransferApprover")
   /// Flag de sócio: libera /dashboard/socio e recursos de Wealth Management
   isPartner                Boolean                   @default(false) @map("is_partner")
+  loginAuditLogs           LoginAuditLog[]
 
   @@index([phone])
+  @@index([status])
+}
+
+/// Auditoria de tentativas de login — registra IP, user-agent e resultado
+model LoginAuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")           // null = e-mail não encontrado
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email      String   @db.VarChar(255)           // e-mail tentado
+  success    Boolean                              // true = login bem-sucedido
+  ip         String   @db.VarChar(64)
+  userAgent  String?  @map("user_agent") @db.VarChar(512)
+  reason     String?  @db.VarChar(200)           // motivo da falha (WRONG_PASS, PENDING, BANNED…)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([email, createdAt(sort: Desc)])
+  @@index([ip,    createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("login_audit_logs")
 }
 
 model ProducerProfile {
@@ -1040,7 +1075,19 @@ enum AccountRmaReason {
   CHECKPOINT_BLOCK
   BAN_IMMEDIATE
   PROXY_ERROR
+  // Diagnóstico avançado de queda (taxonomia expandida)
+  PAGAMENTO_SUSPEITO
+  PRATICAS_COMERCIAIS
+  VERIFICACAO_IDENTIDADE
+  G2_FALHOU
   OUTRO
+}
+
+enum AccountRmaActionTaken {
+  REPOSICAO_EFETUADA
+  REEMBOLSO
+  GARANTIA_NEGADA
+  AGUARDANDO
 }
 
 model AccountReplacementRequest {
@@ -1059,6 +1106,15 @@ model AccountReplacementRequest {
   evidenceUrls         Json?            @map("evidencia_url")
   additionalComments   String?          @map("comentarios") @db.Text
   status               AccountRmaStatus   @default(EM_ANALISE)
+  actionTaken          AccountRmaActionTaken @default(AGUARDANDO) @map("action_taken")
+  /// Prazo de garantia em horas (ex: 24, 168). Null = sem prazo definido.
+  warrantyHours        Int?             @map("warranty_hours")
+  /// Data/hora em que a garantia expira (openedAt + warrantyHours)
+  warrantyExpiresAt    DateTime?        @map("warranty_expires_at")
+  /// Flag de abuso: cliente com taxa de reposição acima de 30%
+  abuseFlag            Boolean          @default(false) @map("abuse_flag")
+  /// Timestamp da mensagem automática enviada ao concluir
+  autoMessageSentAt    DateTime?        @map("auto_message_sent_at")
   openedAt             DateTime         @default(now()) @map("opened_at")
   resolvedAt           DateTime?        @map("resolved_at")
   resolutionMinutes    Int?             @map("tempo_resolucao")

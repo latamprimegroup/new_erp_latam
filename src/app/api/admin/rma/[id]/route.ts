@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AccountRmaStatus } from '@prisma/client'
+import { AccountRmaActionTaken, AccountRmaStatus } from '@prisma/client'
 import { z } from 'zod'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
@@ -10,8 +10,10 @@ const ROLES = ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'DELIVERER', 'COMMERCI
 const patchSchema = z
   .object({
     status: z.nativeEnum(AccountRmaStatus).optional(),
+    actionTaken: z.nativeEnum(AccountRmaActionTaken).optional(),
     assignedToId: z.string().nullable().optional(),
     replacementAccountId: z.string().nullable().optional(),
+    warrantyHours: z.number().int().min(1).max(8760).nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'Nada para atualizar' })
 
@@ -67,10 +69,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const data: {
     status?: AccountRmaStatus
+    actionTaken?: AccountRmaActionTaken
     assignedToId?: string | null
     replacementAccountId?: string | null
     resolvedAt?: Date | null
     resolutionMinutes?: number | null
+    warrantyHours?: number | null
+    warrantyExpiresAt?: Date | null
+    autoMessageSentAt?: Date | null
   } = {}
 
   if (body.assignedToId !== undefined) {
@@ -100,6 +106,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data.replacementAccountId = body.replacementAccountId
   }
 
+  if (body.actionTaken !== undefined) {
+    data.actionTaken = body.actionTaken
+  }
+
+  if (body.warrantyHours !== undefined) {
+    data.warrantyHours = body.warrantyHours
+    data.warrantyExpiresAt = body.warrantyHours
+      ? new Date(existing.openedAt.getTime() + body.warrantyHours * 60 * 60 * 1000)
+      : null
+  }
+
   if (body.status !== undefined) {
     data.status = body.status
     const terminal = body.status === 'CONCLUIDO' || body.status === 'NEGADO_TERMO'
@@ -127,6 +144,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       assignedTo: { select: { id: true, name: true, email: true } },
     },
   })
+
+  // Auto-mensagem ao concluir com reposição efetuada
+  if (
+    body.status === 'CONCLUIDO' &&
+    (body.actionTaken === 'REPOSICAO_EFETUADA' || updated.actionTaken === 'REPOSICAO_EFETUADA') &&
+    !updated.autoMessageSentAt
+  ) {
+    const oldId = updated.originalAccount.googleAdsCustomerId || updated.originalAccountId.slice(0, 8)
+    const newId = updated.replacementAccount?.googleAdsCustomerId || '—'
+    const warrantyMsg = updated.warrantyHours
+      ? ` Garantia renovada por mais ${updated.warrantyHours}h.`
+      : ''
+    const autoBody =
+      `✅ Sua reposição da conta ${oldId} foi concluída. ` +
+      `Novo ID: ${newId}.${warrantyMsg}`
+
+    await prisma.rmaMessage.create({
+      data: {
+        rmaId: id,
+        userId: updated.assignedToId || (await prisma.user.findFirst({ where: { role: 'ADMIN' }, select: { id: true } }))!.id,
+        body: autoBody,
+        internalOnly: false,
+      },
+    }).catch(() => null)
+
+    await prisma.accountReplacementRequest.update({
+      where: { id },
+      data: { autoMessageSentAt: new Date() },
+    }).catch(() => null)
+  }
 
   return NextResponse.json({
     ...updated,

@@ -408,6 +408,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Administração',
   },
   {
+    href: '/dashboard/admin/rma',
+    label: 'Suporte & RMA',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER', 'COMMERCIAL', 'DELIVERER'],
+    icon: 'ShieldAlert',
+    group: 'Administração',
+  },
+  {
     href: '/dashboard/admin/fechamento-producao',
     label: 'Fechamento de Produção',
     roles: ['ADMIN'],
