@@ -301,37 +301,86 @@ export function GerenteProducaoHub() {
         </div>
       </section>
 
-      {/* ── Suporte & Reposição ────────────────────────────────────────────── */}
+      {/* ── Trocas & Reposição ────────────────────────────────────────────── */}
       <section>
-        <SectionTitle>Suporte &amp; Reposição de Contas</SectionTitle>
+        <SectionTitle>Trocas &amp; Reposição de Contas</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ModuleCard mod={{
-            href: '/dashboard/admin/rma',
-            icon: ShieldAlert,
-            label: 'Módulo RMA — Reposição de Contas',
-            sublabel: 'Abrir tickets, controlar garantias e detectar abusos de clientes',
-            color: 'from-violet-500 to-purple-600',
-            priority: true,
-          }} />
-          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 p-5 space-y-3">
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">O que é RMA?</p>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              <strong className="text-zinc-800 dark:text-zinc-200">RMA (Return Merchandise Authorization)</strong> é o processo de reposição de contas que falharam após a entrega.
-            </p>
-            <div className="space-y-2">
+
+          {/* Card principal — acesso direto */}
+          <Link
+            href="/dashboard/admin/rma"
+            className="group relative overflow-hidden rounded-xl border-2 border-violet-200 dark:border-violet-800 bg-white dark:bg-ads-dark-card hover:shadow-lg hover:-translate-y-0.5 transition-all p-5 flex flex-col gap-4"
+          >
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center">
+                <ShieldAlert className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
+                OPERACIONAL
+              </span>
+            </div>
+            <div>
+              <p className="font-bold text-zinc-900 dark:text-zinc-100 mb-0.5">Trocas &amp; Reposição de Contas</p>
+              <p className="text-xs text-zinc-500 font-medium mb-3">Fluxo completo de troca quando conta falha após entrega</p>
+              <div className="space-y-1.5">
+                {[
+                  { step: '1', label: 'Abrir ticket com o cliente e a conta com problema' },
+                  { step: '2', label: 'Selecionar conta substituta do estoque disponível' },
+                  { step: '3', label: 'Confirmar — saída automática do estoque' },
+                  { step: '4', label: 'Ver resumo do mês: quantas trocas, quais motivos' },
+                ].map((s) => (
+                  <div key={s.step} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                    <span className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 flex items-center justify-center font-bold text-[10px] shrink-0">{s.step}</span>
+                    <span>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-auto flex items-center justify-between">
+              <span className="text-[11px] text-zinc-400 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+                Estoque sai automaticamente ao resolver
+              </span>
+              <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-violet-500 group-hover:translate-x-1 transition-all" />
+            </div>
+          </Link>
+
+          {/* Painel lateral — o que o gerente vê */}
+          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 p-5 space-y-4">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">O que você vê neste módulo</p>
+            <div className="space-y-3">
               {[
-                { icon: '🔴', label: 'Conta suspensa / banida após entrega' },
-                { icon: '🔄', label: 'Substituição por conta nova (dentro da garantia)' },
-                { icon: '📊', label: 'Analytics de perdas por motivo e produtor' },
-                { icon: '🚨', label: 'Detecção automática de abuso de garantia' },
+                {
+                  icon: <ClipboardList className="w-4 h-4 text-violet-500" />,
+                  title: 'Fila de Tickets',
+                  desc: 'Todos os tickets abertos, filtrados por status. Clique em um para agir.',
+                },
+                {
+                  icon: <RefreshCw className="w-4 h-4 text-emerald-500" />,
+                  title: 'Selecionar Conta Substituta',
+                  desc: 'Escolhe do estoque disponível. Ao resolver, o sistema dá a saída sozinho.',
+                },
+                {
+                  icon: <BarChart3 className="w-4 h-4 text-blue-500" />,
+                  title: 'Resumo do Mês',
+                  desc: 'Quantas trocas, resolvidas, pendentes e motivos mais comuns.',
+                },
               ].map((item) => (
-                <div key={item.label} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
+                <div key={item.title} className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0">
+                    {item.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{item.title}</p>
+                    <p className="text-xs text-zinc-500 leading-relaxed">{item.desc}</p>
+                  </div>
                 </div>
               ))}
             </div>
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              ⚡ Analytics de perdas e detecção de abusos são visíveis apenas pelo Admin/CEO.
+            </div>
           </div>
+
         </div>
       </section>
 

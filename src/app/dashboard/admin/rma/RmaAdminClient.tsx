@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import {
   RefreshCw, Loader2, ShieldAlert, BarChart3, ClipboardList,
   CheckCircle, XCircle, Clock, AlertTriangle, TrendingUp,
@@ -999,15 +1000,21 @@ function AbusosTab() {
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
-const TABS = [
-  { id: 'queue',     label: 'Fila de RMA',    icon: ClipboardList },
-  { id: 'mensal',    label: 'Por Mês',         icon: BarChart3 },
-  { id: 'analytics', label: 'Analytics CEO',   icon: TrendingDown },
-  { id: 'abusos',    label: 'Alertas de Abuso',icon: AlertTriangle },
+const ALL_TABS = [
+  { id: 'queue',     label: 'Trocas & Reposições', icon: ClipboardList, roles: ['ADMIN', 'PRODUCTION_MANAGER', 'COMMERCIAL', 'DELIVERER', 'PURCHASING'] },
+  { id: 'mensal',    label: 'Resumo do Mês',        icon: BarChart3,     roles: ['ADMIN', 'PRODUCTION_MANAGER', 'PURCHASING'] },
+  { id: 'analytics', label: 'Analytics CEO',        icon: TrendingDown,  roles: ['ADMIN'] },
+  { id: 'abusos',    label: 'Alertas de Abuso',     icon: AlertTriangle, roles: ['ADMIN'] },
 ]
 
 export default function RmaAdminClient() {
+  const { data: session } = useSession()
+  const role = session?.user?.role ?? ''
   const [tab, setTab] = useState<'queue' | 'mensal' | 'analytics' | 'abusos'>('queue')
+
+  const visibleTabs = ALL_TABS.filter((t) => t.roles.includes(role))
+
+  const isProductionManager = role === 'PRODUCTION_MANAGER'
 
   return (
     <div className="space-y-6">
@@ -1016,16 +1023,20 @@ export default function RmaAdminClient() {
           <ShieldAlert className="w-6 h-6 text-violet-600 dark:text-violet-400" />
         </div>
         <div>
-          <h1 className="heading-1 text-lg">Suporte &amp; RMA — Reposições e Trocas</h1>
+          <h1 className="heading-1 text-lg">
+            {isProductionManager ? 'Trocas & Reposição de Contas' : 'Suporte & RMA — Reposições e Trocas'}
+          </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Controle completo · Saída automática do estoque · Métricas mensais
+            {isProductionManager
+              ? 'Abrir tickets · Selecionar conta substituta · Resolver e fechar'
+              : 'Controle completo · Saída automática do estoque · Métricas mensais'}
           </p>
         </div>
       </div>
 
       <div className="border-b border-zinc-200 dark:border-zinc-700">
         <nav className="flex gap-1 -mb-px overflow-x-auto">
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setTab(id as typeof tab)}
