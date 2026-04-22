@@ -131,6 +131,7 @@ model User {
   assetSalesOrdersApproved AssetSalesOrder[]     @relation("AssetSalesOrderApprover")
   assetSalesOrderMovements AssetSalesOrderMovement[]
   ceoTasksCreated          CeoTask[]                 @relation("CeoTaskCreator")
+  alfredoMemories          AlfredoMemory[]           @relation("AlfredoMemoryUser")
 
   @@index([phone])
 }
@@ -4606,6 +4607,51 @@ model AssetSalesOrderMovement {
 
   @@index([orderId, createdAt])
   @@map("asset_sales_order_movements")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ALFREDO IA — Motor de Decisão CEO
+// Memory Layer: guarda insights, análises de tarefas, briefings e notas de voz
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum AlfredoMemoryType {
+  NOTE          // Nota livre do CEO
+  TASK_ANALYSIS // Análise de uma CeoTask
+  INSIGHT       // Insight gerado pela IA
+  BRIEFING      // Resumo matinal
+  CHAT_SUMMARY  // Resumo de conversa com a IA
+}
+
+/// Camada de memória da ALFREDO IA — persiste contexto entre sessões
+model AlfredoMemory {
+  id        String             @id @default(cuid())
+  type      AlfredoMemoryType  @default(NOTE)
+  title     String?            @db.VarChar(300)
+  content   String             @db.Text
+  metadata  Json?              // { taskId, verdict, revenueImpact, source }
+  pinned    Boolean            @default(false)
+  userId    String?            @map("user_id")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt      @map("updated_at")
+
+  user      User?              @relation("AlfredoMemoryUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt(sort: Desc)])
+  @@map("alfredo_memory")
+}
+
+/// Cache de briefing diário — gerado uma vez por dia às 06h ou on-demand
+model AlfredoBriefing {
+  id          String   @id @default(cuid())
+  date        DateTime @unique // Um por dia (truncado ao dia)
+  summary     String   @db.Text
+  alerts      Json?    // [ { type, message, urgency } ]
+  revenue     Decimal? @db.Decimal(12,2)
+  marginPct   Int?     @map("margin_pct")
+  topTask     String?  @db.VarChar(300) @map("top_task")
+  generatedAt DateTime @default(now()) @map("generated_at")
+
+  @@map("alfredo_briefings")
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

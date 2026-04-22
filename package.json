@@ -54,6 +54,7 @@
     "monaco-editor": "^0.55.1",
     "next": "14.2.35",
     "next-auth": "^4.24.13",
+    "openai": "^6.34.0",
     "playwright-core": "^1.49.1",
     "postcss": "^8.4.38",
     "prisma": "^5.14.0",

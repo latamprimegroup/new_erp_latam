@@ -5,7 +5,10 @@ import {
   Target, Zap, TrendingUp, Users, Cpu, AlertTriangle, CheckCircle2,
   Circle, Loader2, Plus, X, Pencil, ChevronDown, ChevronUp,
   Flame, Star, RefreshCw, Eye, EyeOff, Trophy, ArrowUp, ArrowDown,
+  Sparkles, Bot,
 } from 'lucide-react'
+import { AlfredoIA } from './AlfredoIA'
+import { BriefingCard } from './BriefingCard'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -90,9 +93,9 @@ function KpiCard({ label, value, sub, pct, pctColor, alert }: {
 // Card de Tarefa
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TaskCard({ task, onStatusChange, onEdit, compact = false }: {
+function TaskCard({ task, onStatusChange, onEdit, onAnalyze, compact = false }: {
   task: Task; onStatusChange: (id: string, status: string) => void
-  onEdit?: (t: Task) => void; compact?: boolean
+  onEdit?: (t: Task) => void; onAnalyze?: (t: Task) => void; compact?: boolean
 }) {
   const cat  = CATEGORY_CONFIG[task.category]
   const pri  = PRIORITY_CONFIG[task.priority]
@@ -146,8 +149,13 @@ function TaskCard({ task, onStatusChange, onEdit, compact = false }: {
             </button>
           )}
           {onEdit && task.status !== 'DONE' && (
-            <button onClick={() => onEdit(task)} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <button onClick={() => onEdit(task)} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="Editar">
               <Pencil className="w-3.5 h-3.5 text-zinc-400" />
+            </button>
+          )}
+          {onAnalyze && task.status !== 'DONE' && (
+            <button onClick={() => onAnalyze(task)} className="p-1 rounded hover:bg-primary-50 dark:hover:bg-primary-950/20 transition-colors" title="Pedir Orientação à ALFREDO IA">
+              <Sparkles className="w-3.5 h-3.5 text-primary-400" />
             </button>
           )}
         </div>
@@ -245,6 +253,8 @@ export function CeoCommandCenter() {
   const [focusMode, setFocusMode] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editTask, setEditTask] = useState<Task | null>(null)
+  const [alfredoTask, setAlfredoTask] = useState<{ id: string; title: string } | null>(null)
+  const [showAlfredo, setShowAlfredo] = useState(false)
   const [filterCat, setFilterCat] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<string>('TODO,DOING')
   const quickRef = useRef<HTMLInputElement>(null)
@@ -336,6 +346,10 @@ export function CeoCommandCenter() {
           <button onClick={load} className="p-2 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 transition-colors">
             <RefreshCw className="w-4 h-4 text-zinc-400" />
           </button>
+          <button onClick={() => setShowAlfredo((v) => !v)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${showAlfredo ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white border-primary-600 shadow-md' : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 hover:bg-zinc-50'}`}>
+            <Bot className="w-4 h-4" />ALFREDO IA
+          </button>
         </div>
       </div>
 
@@ -349,6 +363,17 @@ export function CeoCommandCenter() {
           ))}
         </div>
       )}
+
+      {/* ── ALFREDO IA Panel ────────────────────────────────────────────── */}
+      {showAlfredo && (
+        <AlfredoIA
+          taskToAnalyze={alfredoTask}
+          onAnalysisDone={() => setAlfredoTask(null)}
+        />
+      )}
+
+      {/* ── Briefing Matinal ─────────────────────────────────────────────── */}
+      {!showAlfredo && <BriefingCard />}
 
       {/* ── Alerta de Escala ─────────────────────────────────────────────── */}
       {stats?.escalaAlert && (
@@ -463,7 +488,7 @@ export function CeoCommandCenter() {
               : topTasks.map((t, i) => (
                 <div key={t.id} className="flex gap-3 items-start">
                   <div className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center font-black text-sm shrink-0">{i + 1}</div>
-                  <TaskCard task={t} onStatusChange={statusChange} compact />
+                  <TaskCard task={t} onStatusChange={statusChange} onAnalyze={(task) => { setAlfredoTask({ id: task.id, title: task.title }); setShowAlfredo(true) }} compact />
                 </div>
               ))
             }
@@ -535,7 +560,10 @@ export function CeoCommandCenter() {
                         {status === 'TODO' ? 'Adicione tarefas com "+ Nova Tarefa"' : status === 'DOING' ? 'Mova tarefas para cá' : 'Tarefas concluídas aparecem aqui'}
                       </div>
                     : statusItems.map((t) => (
-                        <TaskCard key={t.id} task={t} onStatusChange={statusChange} onEdit={(task) => { setEditTask(task); setShowForm(false) }} />
+                        <TaskCard key={t.id} task={t} onStatusChange={statusChange}
+                          onEdit={(task) => { setEditTask(task); setShowForm(false) }}
+                          onAnalyze={(task) => { setAlfredoTask({ id: task.id, title: task.title }); setShowAlfredo(true); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                        />
                       ))
                   }
                 </div>
