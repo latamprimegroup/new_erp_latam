@@ -2,48 +2,32 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 const SITE_URL = process.env.NEXTAUTH_URL || 'https://adsativos.com'
+const WHATSAPP_PHONE = process.env.WHATSAPP_ALERT_PHONE || ''
+const WHATSAPP_APIKEY = process.env.WHATSAPP_ALERT_APIKEY || ''
 const WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL || ''
-const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL || ''
+
+async function sendWhatsApp(message: string) {
+  if (!WHATSAPP_PHONE || !WHATSAPP_APIKEY) return
+  const encoded = encodeURIComponent(message)
+  const url = `https://api.callmebot.com/whatsapp.php?phone=${WHATSAPP_PHONE}&text=${encoded}&apikey=${WHATSAPP_APIKEY}`
+  await fetch(url).catch(console.error)
+}
 
 async function sendAlert(message: string, isRecovery = false) {
   const emoji = isRecovery ? '✅' : '🚨'
-  const color = isRecovery ? 0x00ff00 : 0xff0000
   const title = isRecovery ? 'SITE RECUPERADO' : 'SITE FORA DO AR'
+  const whatsappMsg = `${emoji} *ERP ADS Ativos — ${title}*\n\n${message}\n\n🌐 ${SITE_URL}\n🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
 
-  const promises: Promise<unknown>[] = []
+  const promises: Promise<unknown>[] = [
+    sendWhatsApp(whatsappMsg),
+  ]
 
-  // Discord webhook
-  if (DISCORD_WEBHOOK) {
-    promises.push(
-      fetch(DISCORD_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          embeds: [{
-            title: `${emoji} ${title} — adsativos.com`,
-            description: message,
-            color,
-            timestamp: new Date().toISOString(),
-            footer: { text: 'ERP ADS Ativos — Monitor Automático' },
-          }],
-        }),
-      }).catch(console.error)
-    )
-  }
-
-  // Webhook genérico (Slack, Make, Zapier, etc.)
   if (WEBHOOK_URL) {
     promises.push(
       fetch(WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          message,
-          site: SITE_URL,
-          timestamp: new Date().toISOString(),
-          isRecovery,
-        }),
+        body: JSON.stringify({ title, message, site: SITE_URL, timestamp: new Date().toISOString(), isRecovery }),
       }).catch(console.error)
     )
   }
