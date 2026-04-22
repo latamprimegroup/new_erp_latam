@@ -6,7 +6,6 @@ import { prisma } from '@/lib/prisma'
 
 const ROLES = ['ADMIN', 'PRODUCTION_MANAGER']
 
-// Extrai código de moeda do label do tipo de conta
 function currencyFromTipo(tipoConta: string): string {
   const t = tipoConta.toUpperCase()
   if (t.includes('USD')) return 'USD'
@@ -17,16 +16,16 @@ function currencyFromTipo(tipoConta: string): string {
   return 'BRL'
 }
 
-// Normaliza um ID: remove hífenes, espaços e caracteres não-numéricos
 function normalizeId(raw: string): string {
   return raw.replace(/[\s\-\.]/g, '').replace(/[^\w]/g, '').trim()
 }
 
 const rowSchema = z.object({
-  tipoConta: z.string().min(1),
+  tipoConta:    z.string().min(1),
   configuracao: z.string().min(1),
   documentacao: z.string().min(1),
-  ids: z.array(z.string().min(1)).min(1).max(500),
+  producerName: z.string().min(1, 'Selecione o produtor da conta'),
+  ids:          z.array(z.string().min(1)).min(1).max(500),
 })
 
 const bodySchema = z.object({
@@ -50,19 +49,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
   }
 
-  // Normaliza todos os IDs e verifica duplicatas no próprio lote
+  // Normaliza IDs e detecta duplicatas internas
   const allIds: string[] = []
   const normalizedRows = body.rows.map((row, rowIdx) => {
     const cleaned = row.ids.map(normalizeId).filter(Boolean)
     const unique = [...new Set(cleaned)]
-    if (unique.length !== cleaned.length) {
-      const dupes = cleaned.filter((id, i) => cleaned.indexOf(id) !== i)
-      return { ...row, ids: unique, dupes, rowIdx }
-    }
-    return { ...row, ids: unique, dupes: [] as string[], rowIdx }
+    const dupes = cleaned.filter((id, i) => cleaned.indexOf(id) !== i)
+    return { ...row, ids: unique, dupes, rowIdx }
   })
 
-  // IDs duplicados entre linhas diferentes
+  // Duplicatas entre linhas
   const crossDupes: string[] = []
   for (const row of normalizedRows) {
     for (const id of row.ids) {
@@ -70,7 +66,6 @@ export async function POST(req: NextRequest) {
       else allIds.push(id)
     }
   }
-
   if (crossDupes.length > 0) {
     return NextResponse.json(
       { error: `IDs duplicados entre linhas: ${crossDupes.slice(0, 5).join(', ')}` },
@@ -78,15 +73,11 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Verifica duplicatas no banco de dados (googleAdsCustomerId)
+  // Duplicatas no banco de dados
   const existing = await prisma.stockAccount.findMany({
-    where: {
-      googleAdsCustomerId: { in: allIds },
-      deletedAt: null,
-    },
+    where: { googleAdsCustomerId: { in: allIds }, deletedAt: null },
     select: { googleAdsCustomerId: true },
   })
-
   if (existing.length > 0) {
     const existingIds = existing.map((e) => e.googleAdsCustomerId).filter(Boolean)
     return NextResponse.json(
@@ -98,12 +89,11 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Grava tudo em transação atômica
   const launchedBy = session.user.name || session.user.email || session.user.id
-  const launchedAt = new Date().toISOString()
+  const launchedAt = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
   let totalCriadas = 0
-  const detalhes: { row: number; tipoConta: string; criadas: number }[] = []
+  const detalhes: { row: number; tipoConta: string; produtor: string; criadas: number }[] = []
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -112,28 +102,38 @@ export async function POST(req: NextRequest) {
         const isPlugPlay =
           row.configuracao === 'G2 Manual' || row.configuracao === 'Com Op. Comercial'
 
+        // niche armazena o produtor — visível para o Comercial no estoque
+        const nicheTag = `Produtor: ${row.producerName}`
+
         const desc =
-          `[Inventário Express] Tipo: ${row.tipoConta} | Config: ${row.configuracao} | ` +
-          `Doc: ${row.documentacao} | Lançado por: ${launchedBy} em ${launchedAt}`
+          `[Inventário Express] ` +
+          `Tipo: ${row.tipoConta} | Config: ${row.configuracao} | Doc: ${row.documentacao} | ` +
+          `Produtor: ${row.producerName} | Lançado por: ${launchedBy} em ${launchedAt}`
 
         for (const accountId of row.ids) {
           await tx.stockAccount.create({
             data: {
-              platform: 'GOOGLE_ADS',
-              type: row.tipoConta,
-              source: 'MANUAL',
-              status: 'AVAILABLE',
+              platform:            'GOOGLE_ADS',
+              type:                row.tipoConta,
+              source:              'MANUAL',
+              status:              'AVAILABLE',
               googleAdsCustomerId: accountId,
               spentDisplayCurrency: currency,
               isPlugPlay,
-              adsAtivosVerified: true,
-              description: desc,
+              adsAtivosVerified:   true,
+              niche:               nicheTag,
+              description:         desc,
             },
           })
           totalCriadas++
         }
 
-        detalhes.push({ row: row.rowIdx, tipoConta: row.tipoConta, criadas: row.ids.length })
+        detalhes.push({
+          row:      row.rowIdx,
+          tipoConta: row.tipoConta,
+          produtor: row.producerName,
+          criadas:  row.ids.length,
+        })
       }
     })
   } catch (err) {
