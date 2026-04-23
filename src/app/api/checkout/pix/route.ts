@@ -17,6 +17,7 @@ import { z }            from 'zod'
 import { randomUUID }   from 'crypto'
 import { prisma }       from '@/lib/prisma'
 import { generatePixCharge } from '@/lib/inter/client'
+import { sendUtmifyPixGerado } from '@/lib/utmify'
 
 // ─── Validação ────────────────────────────────────────────────────────────────
 
@@ -138,7 +139,24 @@ export async function POST(req: globalThis.Request) {
     },
   })
 
-  // 5. Resposta ao frontend
+  // 5. Dispara evento PIX_GERADO para Utmify (fire-and-forget)
+  sendUtmifyPixGerado({
+    checkoutId:  checkout.id,
+    adsId,
+    displayName: asset.displayName ?? adsId,
+    amountBrl:   amount,
+    createdAt:   checkout.createdAt,
+    buyer: { name, email: email ?? '', whatsapp: whatsappE164, cpf: cpfClean },
+    utms: {
+      utm_source:   utm_source,
+      utm_medium:   utm_medium,
+      utm_campaign: utm_campaign,
+      utm_content:  utm_content,
+      utm_term:     utm_term,
+    },
+  }).catch((e) => console.error('[Utmify PIX_GERADO]', e))
+
+  // 6. Resposta ao frontend
   return NextResponse.json({
     checkoutId:   checkout.id,
     txid:         pixData.txid,

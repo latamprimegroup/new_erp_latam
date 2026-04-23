@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import {
   ShieldCheck, Loader2, CheckCircle2, Copy, CheckCheck,
@@ -18,9 +18,48 @@ interface AssetInfo {
   specs:       Record<string, unknown>
 }
 
+type UtmMap = Record<string, string | undefined>
+
 interface CheckoutClientProps {
   asset: AssetInfo
-  utms:  Record<string, string | undefined>
+  utms:  UtmMap
+}
+
+// ─── UTM localStorage ─────────────────────────────────────────────────────────
+
+const UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','src'] as const
+const LS_KEY   = 'ads_utms'
+
+/** Persiste UTMs no localStorage para sobreviver a redirecionamentos */
+function persistUtms(utms: UtmMap) {
+  try {
+    const toSave: UtmMap = {}
+    for (const k of UTM_KEYS) if (utms[k]) toSave[k] = utms[k]
+    if (Object.keys(toSave).length > 0)
+      localStorage.setItem(LS_KEY, JSON.stringify({ ...toSave, _savedAt: Date.now() }))
+  } catch { /* SSR / privado */ }
+}
+
+/** Restaura UTMs do localStorage (válidos por 24h) */
+function restoreUtms(): UtmMap {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return {}
+    const data = JSON.parse(raw) as UtmMap & { _savedAt?: number }
+    if (data._savedAt && Date.now() - (data._savedAt as number) > 86_400_000) {
+      localStorage.removeItem(LS_KEY)
+      return {}
+    }
+    return data
+  } catch { return {} }
+}
+
+/** Mescla UTMs da URL (prioridade) com os do localStorage */
+function mergeUtms(fromUrl: UtmMap): UtmMap {
+  const saved = restoreUtms()
+  const merged: UtmMap = { ...saved }
+  for (const k of UTM_KEYS) if (fromUrl[k]) merged[k] = fromUrl[k]
+  return merged
 }
 
 type Step = 'form' | 'pix' | 'success'
@@ -70,13 +109,24 @@ function useCountdown(expiresAt: string | null) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function CheckoutClient({ asset, utms }: CheckoutClientProps) {
-  const [step, setStep]     = useState<Step>('form')
+export default function CheckoutClient({ asset, utms: utmsFromUrl }: CheckoutClientProps) {
+  const [step, setStep]       = useState<Step>('form')
   const [pixData, setPixData] = useState<PixData | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied]   = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError]   = useState<string | null>(null)
+  const [error, setError]     = useState<string | null>(null)
   const [polling, setPolling] = useState(false)
+
+  // UTMs mesclados (URL tem prioridade; localStorage como fallback)
+  const utmsRef = useRef<UtmMap>({})
+
+  useEffect(() => {
+    const merged = mergeUtms(utmsFromUrl)
+    utmsRef.current = merged
+    if (Object.keys(utmsFromUrl).some((k) => utmsFromUrl[k])) {
+      persistUtms(merged)
+    }
+  }, [utmsFromUrl])
 
   // Campos do formulário
   const [name, setName]         = useState('')
@@ -92,18 +142,19 @@ export default function CheckoutClient({ asset, utms }: CheckoutClientProps) {
     setError(null)
     setLoading(true)
 
-    const waRaw = whatsapp.replace(/\D/g, '')
+    const waRaw  = whatsapp.replace(/\D/g, '')
     const waE164 = waRaw.startsWith('55') ? `+${waRaw}` : `+55${waRaw}`
+    const utms   = utmsRef.current
 
     const res = await fetch('/api/checkout/pix', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        adsId: asset.adsId,
-        name:  name.trim(),
-        cpf:   cpf.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'),
+        adsId:    asset.adsId,
+        name:     name.trim(),
+        cpf:      cpf.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'),
         whatsapp: waE164,
-        email: email || undefined,
+        email:    email || undefined,
         ...utms,
       }),
     })
