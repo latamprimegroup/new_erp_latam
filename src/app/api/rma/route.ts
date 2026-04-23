@@ -2,9 +2,10 @@
  * GET  /api/rma — Lista tickets com filtros
  * POST /api/rma — Abre novo ticket de RMA
  *
- * Roles com acesso: ADMIN, PURCHASING, COMMERCIAL, FINANCE, DELIVERER
+ * Roles com acesso: ADMIN, PURCHASING, COMMERCIAL, FINANCE, DELIVERER, PRODUCER, PRODUCTION_MANAGER
  * Abertura de ticket: qualquer role acima
  * Aprovação: ADMIN, PURCHASING
+ * PRODUCER/PRODUCTION_MANAGER: só vêem seus próprios tickets (filtro por openedById)
  */
 import { NextResponse }    from 'next/server'
 import { getServerSession } from 'next-auth/next'
@@ -13,7 +14,8 @@ import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
 import type { RMAStatus, RMAReason } from '@prisma/client'
 
-const ALLOWED = ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER']
+const ALLOWED = ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER']
+const PRODUCER_ROLES = ['PRODUCER', 'PRODUCTION_MANAGER']
 
 // Garantia padrão por categoria (dias)
 const WARRANTY_DAYS: Record<string, number> = {
@@ -50,6 +52,11 @@ export async function GET(req: globalThis.Request) {
   const where: Record<string, unknown> = {}
   if (status)   where.status   = status
   if (vendorId) where.vendorId = vendorId
+
+  // Produtores só vêem os tickets que eles mesmos abriram
+  if (PRODUCER_ROLES.includes(session.user.role)) {
+    where.openedById = session.user.id
+  }
 
   const [tickets, total] = await Promise.all([
     prisma.rMATicket.findMany({

@@ -188,7 +188,7 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
 // Card de Ticket
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TicketCard({ ticket, onAction }: { ticket: Ticket; onAction: () => void }) {
+function TicketCard({ ticket, onAction, producerView = false }: { ticket: Ticket; onAction: () => void; producerView?: boolean }) {
   const [open, setOpen] = useState(false)
   const [acting, setAct] = useState(false)
   const sc = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.OPEN
@@ -225,53 +225,71 @@ function TicketCard({ ticket, onAction }: { ticket: Ticket; onAction: () => void
         <div className="px-4 pb-4 space-y-3 border-t border-zinc-50 dark:border-zinc-800 pt-3">
           <div className="grid sm:grid-cols-3 gap-2 text-xs">
             <div><span className="text-zinc-400">Ativo Original:</span><p className="font-mono font-bold">{ticket.originalAsset?.adsId}</p></div>
-            <div><span className="text-zinc-400">Fornecedor:</span><p className="font-bold">{ticket.vendor?.name}</p></div>
-            <div><span className="text-zinc-400">Culpa do Fornecedor:</span><p className={`font-bold ${ticket.isVendorFault ? 'text-red-600' : 'text-amber-600'}`}>{ticket.isVendorFault ? 'Sim' : 'Não (analisar)'}</p></div>
+            {!producerView && <div><span className="text-zinc-400">Fornecedor:</span><p className="font-bold">{ticket.vendor?.name}</p></div>}
+            {!producerView && <div><span className="text-zinc-400">Culpa do Fornecedor:</span><p className={`font-bold ${ticket.isVendorFault ? 'text-red-600' : 'text-amber-600'}`}>{ticket.isVendorFault ? 'Sim' : 'Não (analisar)'}</p></div>}
             {ticket.hoursAfterDelivery != null && <div><span className="text-zinc-400">Tempo até falha:</span><p className="font-bold">{ticket.hoursAfterDelivery}h após entrega</p></div>}
-            {ticket.replacementCost != null && <div><span className="text-zinc-400">Custo da Reposição:</span><p className="font-bold text-red-600">{BRL(ticket.replacementCost)}</p></div>}
-            {ticket.vendorCreditAmount != null && ticket.vendorCreditAmount > 0 && <div><span className="text-zinc-400">Crédito vs Fornecedor:</span><p className="font-bold text-green-600">{BRL(ticket.vendorCreditAmount)}</p></div>}
+            {!producerView && ticket.replacementCost != null && <div><span className="text-zinc-400">Custo da Reposição:</span><p className="font-bold text-red-600">{BRL(ticket.replacementCost)}</p></div>}
+            {!producerView && ticket.vendorCreditAmount != null && ticket.vendorCreditAmount > 0 && <div><span className="text-zinc-400">Crédito vs Fornecedor:</span><p className="font-bold text-green-600">{BRL(ticket.vendorCreditAmount)}</p></div>}
           </div>
 
           {ticket.replacementAsset && (
             <div className="rounded-lg bg-green-50 dark:bg-green-950/10 border border-green-200 px-3 py-2 text-xs">
-              <p className="font-bold text-green-700">Reposição reservada: {ticket.replacementAsset.adsId} — {ticket.replacementAsset.displayName}</p>
+              <p className="font-bold text-green-700">
+                {producerView ? '✅ Reposição em andamento' : `Reposição reservada: ${ticket.replacementAsset.adsId} — ${ticket.replacementAsset.displayName}`}
+              </p>
             </div>
           )}
 
           {ticket.reasonDetail && <p className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 rounded-lg">{ticket.reasonDetail}</p>}
 
-          {/* Ações por status */}
-          <div className="flex gap-2 flex-wrap">
-            {ticket.status === 'OPEN' && (
-              <>
-                <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
-                  {acting ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}Aprovar Troca
+          {/* Produtor vê só status — ações de aprovação são exclusivas de Compras/Admin */}
+          {producerView ? (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>
+                {ticket.status === 'OPEN' && 'Ticket aberto — aguardando análise do setor de Compras'}
+                {ticket.status === 'UNDER_REVIEW' && '🔍 Em análise pelo Admin'}
+                {ticket.status === 'APPROVED' && '✅ Aprovado — reposição sendo processada'}
+                {ticket.status === 'REPLACEMENT_SENT' && '🚀 Reposição enviada ao cliente'}
+                {ticket.status === 'CLOSED' && '✔️ Ticket encerrado'}
+                {ticket.status === 'REJECTED' && '❌ Ticket rejeitado — entre em contato com o Admin'}
+                {ticket.status === 'CREDITED' && '💰 Creditado ao fornecedor'}
+              </span>
+            </div>
+          ) : (
+            /* Ações por status — apenas Compras/Admin */
+            <div className="flex gap-2 flex-wrap">
+              {ticket.status === 'OPEN' && (
+                <>
+                  <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+                    {acting ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}Aprovar Troca
+                  </button>
+                  <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 text-red-600">
+                    <X className="w-3 h-3" />Rejeitar
+                  </button>
+                </>
+              )}
+              {ticket.status === 'UNDER_REVIEW' && (
+                <>
+                  <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5">Aprovar (Admin)</button>
+                  <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 text-red-600">Rejeitar</button>
+                </>
+              )}
+              {ticket.status === 'APPROVED' && (
+                <button onClick={() => act('SEND_REPLACEMENT')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />Marcar Reposição Enviada
                 </button>
-                <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 text-red-600">
-                  <X className="w-3 h-3" />Rejeitar
+              )}
+              {ticket.status === 'REPLACEMENT_SENT' && (
+                <button onClick={() => act('CLOSE')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5">Fechar Ticket</button>
+              )}
+              {ticket.status === 'CLOSED' && ticket.isVendorFault && (
+                <button onClick={() => act('CREDIT')} disabled={acting} className="text-xs px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-bold">
+                  <DollarSign className="w-3 h-3 inline mr-1" />Emitir Crédito vs Fornecedor
                 </button>
-              </>
-            )}
-            {ticket.status === 'UNDER_REVIEW' && (
-              <>
-                <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5">Aprovar (Admin)</button>
-                <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 text-red-600">Rejeitar</button>
-              </>
-            )}
-            {ticket.status === 'APPROVED' && (
-              <button onClick={() => act('SEND_REPLACEMENT')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" />Marcar Reposição Enviada
-              </button>
-            )}
-            {ticket.status === 'REPLACEMENT_SENT' && (
-              <button onClick={() => act('CLOSE')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5">Fechar Ticket</button>
-            )}
-            {ticket.status === 'CLOSED' && ticket.isVendorFault && (
-              <button onClick={() => act('CREDIT')} disabled={acting} className="text-xs px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-bold">
-                <DollarSign className="w-3 h-3 inline mr-1" />Emitir Crédito vs Fornecedor
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -461,7 +479,10 @@ function DREPanel() {
 
 type SubTab = 'tickets' | 'qa' | 'dre'
 
+const PRODUCER_ROLES = ['PRODUCER', 'PRODUCTION_MANAGER']
+
 export function RMATab({ userRole }: { userRole: string }) {
+  const isProducerView = PRODUCER_ROLES.includes(userRole)
   const [subTab, setSubTab] = useState<SubTab>('tickets')
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
@@ -478,10 +499,13 @@ export function RMATab({ userRole }: { userRole: string }) {
 
   useEffect(() => { if (subTab === 'tickets') loadTickets() }, [subTab, loadTickets])
 
+  // Produtores só vêem tickets — QA e DRE são exclusivos de Compras/Admin
   const SUB_TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
     { id: 'tickets', label: 'Tickets de Troca',       icon: <ShieldAlert className="w-3.5 h-3.5" /> },
-    { id: 'qa',      label: 'QA de Fornecedores',     icon: <BarChart2 className="w-3.5 h-3.5" />   },
-    { id: 'dre',     label: 'Impacto DRE',            icon: <TrendingDown className="w-3.5 h-3.5" /> },
+    ...(!isProducerView ? [
+      { id: 'qa'  as SubTab, label: 'QA de Fornecedores', icon: <BarChart2 className="w-3.5 h-3.5" /> },
+      { id: 'dre' as SubTab, label: 'Impacto DRE',        icon: <TrendingDown className="w-3.5 h-3.5" /> },
+    ] : []),
   ]
 
   const openTickets   = tickets.filter((t) => ['OPEN', 'UNDER_REVIEW', 'APPROVED'].includes(t.status)).length
@@ -499,7 +523,7 @@ export function RMATab({ userRole }: { userRole: string }) {
           {openTickets > 0 && (
             <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold">{openTickets} aberto{openTickets > 1 ? 's' : ''}</span>
           )}
-          {pendingTotal > 0 && (
+          {pendingTotal > 0 && !isProducerView && (
             <span className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold">{BRL(pendingTotal)} em créditos</span>
           )}
           {subTab === 'tickets' && (
@@ -548,7 +572,7 @@ export function RMATab({ userRole }: { userRole: string }) {
             </div>
           ) : (
             <div className="space-y-2">
-              {tickets.map((t) => <TicketCard key={t.id} ticket={t} onAction={loadTickets} />)}
+              {tickets.map((t) => <TicketCard key={t.id} ticket={t} onAction={loadTickets} producerView={isProducerView} />)}
             </div>
           )}
         </div>
