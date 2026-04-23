@@ -104,7 +104,8 @@ export async function POST(req: NextRequest) {
   collectTxids(payload, txids)
 
   // Extrai e2eid do payload (campo endToEndId / e2eid do Inter)
-  const e2eid = (payload as Record<string, unknown>)?.pix?.[0]?.endToEndId as string | undefined
+  const pixArr = (payload as Record<string, unknown>)?.pix
+  const e2eid = (Array.isArray(pixArr) ? (pixArr[0] as Record<string, unknown>)?.endToEndId : undefined) as string | undefined
 
   let ordersUpdated   = 0
   let checkoutsUpdated = 0
