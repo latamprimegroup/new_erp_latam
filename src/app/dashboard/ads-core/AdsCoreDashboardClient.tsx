@@ -1,11 +1,11 @@
 'use client'
 
+import React from 'react'
 import Link from 'next/link'
 import {
   BarChart3, LayoutList, Target, FolderOpen, FileBarChart2,
   Package, Database, Layers, ArrowRight, Zap,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import { AdsCoreGerenteClient } from './AdsCoreGerenteClient'
 import { AdsCoreGerenteInventoryBar } from './AdsCoreGerenteInventoryBar'
 import { AdsCoreProdutorClient } from './AdsCoreProdutorClient'
@@ -14,7 +14,7 @@ import { AdsCoreProdutorClient } from './AdsCoreProdutorClient'
 
 type ModuleItem = {
   href: string
-  icon: LucideIcon
+  icon: React.ComponentType<{ className?: string }>
   label: string
   desc: string
   badge?: string
