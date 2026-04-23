@@ -1,16 +1,8 @@
-/**
- * POST /api/cron/cleanup-expired-pix
- *
- * Libera ativos presos em QUARANTINE quando o PIX expira sem pagamento.
- * Protegido por Bearer token (CRON_SECRET) — chame a cada 5 min via Vercel Cron ou cURL externo.
- *
- * Configurar em vercel.json:
- * {
- *   "crons": [{ "path": "/api/cron/cleanup-expired-pix", "schedule": "*/5 * * * *" }]
- * }
- *
- * E adicionar ao env: CRON_SECRET=<segredo-forte>
- */
+// POST /api/cron/cleanup-expired-pix
+// Libera ativos presos em QUARANTINE quando o PIX expira sem pagamento.
+// Protegido por Bearer token (CRON_SECRET).
+// vercel.json: { "path": "/api/cron/cleanup-expired-pix", "schedule": "*/5 * * * *" }
+// Env necessária: CRON_SECRET=<segredo-forte>
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
