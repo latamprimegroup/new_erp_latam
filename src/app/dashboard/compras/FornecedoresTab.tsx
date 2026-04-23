@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Search, Star, Store, Loader2, RefreshCw, X, Check, ChevronDown, ShieldCheck, ShieldAlert, ShieldX, Building2 } from 'lucide-react'
+import { Plus, Search, Star, Store, Loader2, RefreshCw, X, Check, ShieldCheck, ShieldAlert, ShieldX, Building2, Trash2, Archive } from 'lucide-react'
 
 type Vendor = {
   id: string; name: string; taxId: string | null; category: string; rating: number
@@ -92,9 +92,20 @@ export function FornecedoresTab() {
   }
 
   const archive = async (id: string) => {
-    if (!confirm('Arquivar este fornecedor?')) return
-    await fetch(`/api/compras/fornecedores/${id}`, { method: 'DELETE' })
-    load()
+    if (!confirm('Arquivar este fornecedor? Ele ficará inativo mas seus dados serão preservados.')) return
+    const r = await fetch(`/api/compras/fornecedores/${id}`, { method: 'DELETE' })
+    if (r.ok) { setFlash('Fornecedor arquivado.'); load() }
+    else { const e = await r.json().catch(() => ({})); setFlash((e as {error?:string}).error ?? 'Erro ao arquivar') }
+    setTimeout(() => setFlash(null), 4000)
+  }
+
+  const deleteVendor = async (id: string, name: string) => {
+    const confirm1 = confirm(`⚠️ EXCLUIR PERMANENTEMENTE o fornecedor "${name}"?\n\nEsta ação não pode ser desfeita. Só é possível se não houver ativos ou pedidos vinculados.`)
+    if (!confirm1) return
+    const r = await fetch(`/api/compras/fornecedores/${id}?permanent=1`, { method: 'DELETE' })
+    if (r.ok) { setFlash('Fornecedor excluído permanentemente.'); load() }
+    else { const e = await r.json().catch(() => ({})); setFlash((e as {error?:string}).error ?? 'Erro ao excluir') }
+    setTimeout(() => setFlash(null), 6000)
   }
 
   const validateCnpj = async (vendorId: string) => {
@@ -271,8 +282,10 @@ export function FornecedoresTab() {
                       return (
                         <div className={`rounded-lg border p-2.5 text-[11px] space-y-1 ${r.valid === true ? 'border-green-300 bg-green-50 dark:bg-green-950/10' : r.valid === false ? 'border-red-300 bg-red-50 dark:bg-red-950/10' : 'border-zinc-200 bg-zinc-50'}`}>
                           <div className="flex items-center gap-1.5 font-bold">
-                            {r.valid === true  ? <><ShieldCheck className="w-4 h-4 text-green-600" /><span className="text-green-700">CNPJ ATIVO — Pagamento Liberado</span></>
-                              : r.valid === false ? <><ShieldX className="w-4 h-4 text-red-600" /><span className="text-red-700">CNPJ {r.status} — Pagamento Bloqueado</span></>
+                            {r.valid === true
+                              ? <><ShieldCheck className="w-4 h-4 text-green-600" /><span className="text-green-700">CNPJ ATIVA — Pagamento Liberado ✅</span></>
+                              : r.valid === false
+                              ? <><ShieldX className="w-4 h-4 text-red-600" /><span className="text-red-700">CNPJ {r.status} — Pagamento Suspenso ⛔</span></>
                               : <><ShieldAlert className="w-4 h-4 text-amber-600" /><span className="text-amber-700">Verificação Indisponível</span></>
                             }
                           </div>
@@ -288,11 +301,19 @@ export function FornecedoresTab() {
                   </div>
 
                   <div className="flex gap-2 mt-3">
-                    <button onClick={() => openEdit(v)} className="flex-1 text-xs py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <button onClick={() => openEdit(v)}
+                      className="flex-1 text-xs py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                       Editar
                     </button>
-                    <button onClick={() => archive(v.id)} className="text-xs py-1.5 px-3 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
-                      Arquivar
+                    <button onClick={() => archive(v.id)}
+                      title="Arquivar — preserva histórico"
+                      className="text-xs py-1.5 px-2.5 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors flex items-center gap-1">
+                      <Archive className="w-3.5 h-3.5" />Arquivar
+                    </button>
+                    <button onClick={() => deleteVendor(v.id, v.name)}
+                      title="Excluir permanentemente (só se sem ativos)"
+                      className="text-xs py-1.5 px-2.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors flex items-center gap-1">
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
