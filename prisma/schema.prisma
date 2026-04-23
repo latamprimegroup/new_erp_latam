@@ -5168,3 +5168,78 @@ model PurchaseEntryItem {
   @@index([purchaseEntryId])
   @@map("purchase_entry_items")
 }
+
+// ============ CHECKOUT PIX & PAGAMENTOS ============
+
+/// Status do checkout PIX
+enum CheckoutStatus {
+  PENDING    // PIX gerado — aguardando pagamento
+  PAID       // PIX confirmado pelo Inter
+  EXPIRED    // PIX expirou sem pagamento
+  CANCELLED  // Cancelado manualmente
+}
+
+/// Lead capturado no checkout (antes do pagamento — permite remarketing)
+model Lead {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(200)
+  cpf         String   @db.VarChar(14)          // formato 000.000.000-00
+  whatsapp    String   @db.VarChar(20)           // formato E.164: +5511999999999
+  email       String?  @db.VarChar(200)
+  /// UTMs capturados no momento do acesso à página de checkout
+  utmSource   String?  @map("utm_source")   @db.VarChar(100)
+  utmMedium   String?  @map("utm_medium")   @db.VarChar(100)
+  utmCampaign String?  @map("utm_campaign") @db.VarChar(200)
+  utmContent  String?  @map("utm_content")  @db.VarChar(200)
+  utmTerm     String?  @map("utm_term")     @db.VarChar(200)
+  /// ID do ativo que o lead tentou comprar (para remarketing)
+  adsId       String?  @map("ads_id")       @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  checkouts   SalesCheckout[]
+
+  @@index([cpf])
+  @@index([whatsapp])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+/// Ordem de venda via checkout PIX (Banco Inter)
+model SalesCheckout {
+  id              String         @id @default(cuid())
+  leadId          String         @map("lead_id")
+  lead            Lead           @relation(fields: [leadId], references: [id])
+  /// ID do ativo vendido (adsId público — ex: AA-G21-HS-001)
+  adsId           String         @map("ads_id") @db.VarChar(50)
+  /// ID interno do Asset
+  assetId         String?        @map("asset_id") @db.VarChar(50)
+  /// Valor cobrado ao cliente (R$)
+  amount          Decimal        @db.Decimal(10, 2)
+  status          CheckoutStatus @default(PENDING)
+  /// txid único enviado ao Banco Inter — identifica o PIX
+  interTxid       String?        @unique @map("inter_txid") @db.VarChar(100)
+  /// PIX copia-e-cola gerado pelo Inter
+  pixCopyPaste    String?        @map("pix_copy_paste") @db.Text
+  /// QR Code em Base64
+  pixQrCode       String?        @map("pix_qr_code") @db.Text
+  /// Expiração do PIX (padrão: 30 min)
+  expiresAt       DateTime?      @map("expires_at")
+  /// Timestamp exato em que o Inter confirmou o pagamento
+  paidAt          DateTime?      @map("paid_at")
+  /// E2eid retornado pelo webhook do Inter
+  interE2eId      String?        @map("inter_e2e_id") @db.VarChar(100)
+  /// Payload completo do webhook (auditoria)
+  webhookPayload  Json?          @map("webhook_payload")
+  /// Flag: dados enviados para Utmify
+  utmifySent      Boolean        @default(false) @map("utmify_sent")
+  /// Flag: acesso entregue via WhatsApp
+  deliverySent    Boolean        @default(false) @map("delivery_sent")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt      @map("updated_at")
+
+  @@index([adsId])
+  @@index([status])
+  @@index([interTxid])
+  @@index([createdAt])
+  @@map("sales_checkouts")
+}
