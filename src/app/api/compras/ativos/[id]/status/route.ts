@@ -73,9 +73,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (newStatus === 'RECEIVED')  dateFields.receivedAt  = now
   if (newStatus === 'DELIVERED') dateFields.deliveredAt = now
 
+  const userEmail = session?.user?.email ?? 'sistema'
+  const userId   = session?.user?.id    ?? ''
+
   const movementReason = newStatus === 'SOLD' && buyerName
     ? `Vendido para: ${buyerName}${reason ? ` — ${reason}` : ''}`
-    : reason ?? `Mudança de status por ${session.user.email}`
+    : reason ?? `Mudança de status por ${userEmail}`
 
   const [updated] = await Promise.all([
     prisma.asset.update({
@@ -88,7 +91,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         fromStatus: asset.status,
         toStatus:   newStatus,
         reason:     movementReason,
-        userId:     session.user.id,
+        userId,
       },
     }),
   ])

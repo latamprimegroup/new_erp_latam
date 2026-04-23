@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
 
   const [client, account] = await Promise.all([
     prisma.clientProfile.findUnique({ where: { id: clientId } }),
-    prisma.account.findUnique({ where: { id: originalAccountId } }),
+    prisma.stockAccount.findUnique({ where: { id: originalAccountId } }),
   ])
 
   if (!client) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })

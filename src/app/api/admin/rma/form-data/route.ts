@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       id: true,
       user: { select: { name: true, email: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { clientCode: 'asc' },
     take: 300,
   })
 
