@@ -255,10 +255,10 @@ export function VendasClient() {
     if (filterStatus) params.set('status', filterStatus)
     if (highlightOrderId) params.set('orderId', highlightOrderId)
     const res = await fetch(`/api/vendas?${params}`)
-    const data = await res.json()
+    const data = await res.json().catch(() => ({}))
     if (res.ok) {
-      setOrders(data.orders)
-      setKpis(data.kpis)
+      setOrders(Array.isArray(data.orders) ? data.orders : [])
+      setKpis(data.kpis ?? { revenue: 0, pending: 0, completed: 0 })
     }
   }, [filterStatus, highlightOrderId])
 
