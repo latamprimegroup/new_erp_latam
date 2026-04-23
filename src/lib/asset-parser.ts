@@ -197,12 +197,27 @@ type RawFields = {
   realId?: string
 }
 
-/** Extrai campos de uma linha ou bloco */
+// ─── Utilitário: remove emojis e símbolos visuais do início da linha ─────────
+// Suporte a: ✅ 🔴 ⚠️ ▶ • — ► ✔ ❌ 🔸 🔹 etc.
+const LEADING_SYMBOLS_RX = /^[\p{Emoji}\p{So}\p{Sm}•▶►✔✅❌⚠️🔴🟢🟡⭕✖️\-*\s]+/u
+
+function stripSymbols(line: string): string {
+  return line.replace(LEADING_SYMBOLS_RX, '').trim()
+}
+
+/** Extrai campos de uma linha ou bloco — ignora emojis e símbolos visuais */
 function extractFields(text: string): RawFields {
   const fields: RawFields = {}
 
+  // Normaliza o texto removendo emojis do início de cada linha antes de aplicar regexes
+  const normalized = text
+    .split('\n')
+    .map((l) => stripSymbols(l.trim()))
+    .filter(Boolean)
+    .join('\n')
+
   const patterns: [keyof RawFields, RegExp][] = [
-    ['realId',      /(?:^|\|)\s*ID\s*[:=]\s*([\d\-]{5,30})/im],
+    ['realId',      /(?:^|\||\n)\s*ID\s*[:=]\s*([\d\-]{5,40})/im],
     ['gasto',       /(?:gasto|spend|spent|investimento|inv\.?)\s*[:=]\s*([^\|\n,]+)/i],
     ['nicho',       /(?:nicho|niche|segmento|setor|ramo|area|área|mercado)\s*[:=]\s*([^\|\n,]+)/i],
     ['ano',         /(?:ano|year|criacao|criação|criado em)\s*[:=]\s*(\d{4})/i],
@@ -213,32 +228,32 @@ function extractFields(text: string): RawFields {
   ]
 
   for (const [key, rx] of patterns) {
-    const m = text.match(rx)
+    const m = normalized.match(rx)
     if (m) fields[key] = m[1].trim()
   }
 
   // Tenta extrair ano de 4 dígitos inline se não encontrou
   if (!fields.ano) {
-    const yrM = text.match(/\b(20[0-2][0-9]|201[0-9]|200[0-9])\b/)
+    const yrM = normalized.match(/\b(20[0-2][0-9]|201[0-9]|200[0-9])\b/)
     if (yrM) fields.ano = yrM[1]
   }
 
   // Tenta extrair gasto inline (número com k/m)
   if (!fields.gasto) {
-    const spM = text.match(/(?:R\$|USD?|\$)?\s*(\d[\d.,]*\s*[kmKM]?)\s*(?:de gasto|gasto|spent|investido)?/i)
+    const spM = normalized.match(/(?:R\$|USD?|\$)?\s*(\d[\d.,]*\s*[kmKM]?)\s*(?:de gasto|gasto|spent|investido)?/i)
     if (spM && spM[1]) fields.gasto = spM[1]
   }
 
   // Tenta CNPJ inline
   if (!fields.faturamento) {
-    if (/cnpj/i.test(text))      fields.faturamento = 'CNPJ'
-    else if (/cpf/i.test(text))  fields.faturamento = 'CPF'
+    if (/cnpj/i.test(normalized))      fields.faturamento = 'CNPJ'
+    else if (/cpf/i.test(normalized))  fields.faturamento = 'CPF'
   }
 
   // Verifica 2FA inline
   if (!fields.verificacao) {
-    if (/2fa|two.?factor/i.test(text)) fields.verificacao = '2FA'
-    else if (/verificad[oa]/i.test(text)) fields.verificacao = 'Verificado'
+    if (/2fa|two.?factor/i.test(normalized)) fields.verificacao = '2FA'
+    else if (/verificad[oa]/i.test(normalized)) fields.verificacao = 'Verificado'
   }
 
   return fields
@@ -247,28 +262,36 @@ function extractFields(text: string): RawFields {
 /**
  * Divide o texto em blocos — um bloco por ativo.
  *
+ * Suporta formatos com emojis/checkmarks no início de cada linha:
+ *   ✅ID: 722-617-3875       → stripado para "ID: 722-617-3875"
+ *   ✅Gasto: 6.76k           → stripado para "Gasto: 6.76k"
+ *   🔴1.480,00               → detectado como linha-preço separador
+ *
  * Estratégias (em ordem de prioridade):
- *  1. Lista numerada: "1. campo | campo"
- *  2. Uma linha por ativo (2+ campos na mesma linha)
- *  3. Blocos separados por "ID:" no início — formato WhatsApp multi-linha
+ *  1. Lista numerada
+ *  2. Uma linha por ativo (2+ campos por linha)
+ *  3. Blocos separados por linha com "ID:" (após strip de emojis)
  *  4. Blocos separados por linha em branco
+ *  5. Blocos separados por linha de preço isolado (🔴1.480,00 etc.)
  */
 function splitBlocks(text: string): string[] {
-  // Preserva linhas em branco para detecção de separadores
-  const rawLines = text.split('\n').map((l) => l.trim())
-  const nonEmpty = rawLines.filter(Boolean)
+  // rawLines: preserva linhas em branco (para estratégia 4)
+  // cleanLines: com emojis removidos (para detecção de padrões)
+  const rawLines   = text.split('\n').map((l) => l.trim())
+  const cleanLines = rawLines.map(stripSymbols)           // ✅Gasto → Gasto
+  const nonEmpty   = cleanLines.filter(Boolean)
 
   if (nonEmpty.length === 0) return []
 
   // ── 1. Lista numerada ────────────────────────────────────────────────────
   const isNumbered = nonEmpty.some(
-    (l) => /^[\d]+[.)]\s/.test(l) || /^[🔹🔸•\-]\s*\d+[.)]\s/.test(l),
+    (l) => /^[\d]+[.)]\s/.test(l) || /^[•\-]\s*\d+[.)]\s/.test(l),
   )
   if (isNumbered) {
     const blocks: string[] = []
     let current = ''
     for (const line of nonEmpty) {
-      if (/^[\d]+[.)]\s/.test(line) || /^[🔹🔸•\-]\s*\d+[.)]\s/.test(line)) {
+      if (/^[\d]+[.)]\s/.test(line) || /^[•\-]\s*\d+[.)]\s/.test(line)) {
         if (current) blocks.push(current)
         current = line
       } else {
@@ -279,20 +302,22 @@ function splitBlocks(text: string): string[] {
     return blocks
   }
 
-  // ── 2. Uma linha por ativo (2+ campos separados por | ou :) ──────────────
+  // ── 2. Uma linha por ativo (2+ campos na mesma linha) ────────────────────
   const isSingleLine =
     nonEmpty.length > 1 &&
     nonEmpty.every((l) => (l.match(/[:=]/g) ?? []).length >= 2)
   if (isSingleLine) return nonEmpty
 
-  // ── 3. Blocos iniciados por "ID: ..." (formato WhatsApp multi-linha) ─────
-  //    Detecta se pelo menos 2 linhas começam com "ID:"
-  const idLineCount = nonEmpty.filter((l) => /^ID\s*[:=]/i.test(l)).length
+  // ── 3. Blocos iniciados por "ID: ..." (após strip de emojis) ─────────────
+  //    Detecta se pelo menos 2 linhas limpas começam com "ID:"
+  const isIdLine = (l: string) => /^ID\s*[:=]\s*[\d]/i.test(l)
+  const idLineCount = nonEmpty.filter(isIdLine).length
+
   if (idLineCount >= 2) {
     const blocks: string[] = []
     let current = ''
     for (const line of nonEmpty) {
-      if (/^ID\s*[:=]/i.test(line) && current.trim()) {
+      if (isIdLine(line) && current.trim()) {
         blocks.push(current.trim())
         current = line
       } else {
@@ -304,37 +329,46 @@ function splitBlocks(text: string): string[] {
   }
 
   // ── 4. Blocos separados por linha em branco ──────────────────────────────
-  //    Usa rawLines (com linhas em branco) para detectar separadores
-  const blocks: string[] = []
-  let current = ''
-  for (const line of rawLines) {
-    if (!line) {
-      if (current.trim()) { blocks.push(current.trim()); current = '' }
+  //    Junta cleanLines com rawLines para ter linhas vazias como separadores
+  const blocks4: string[] = []
+  let cur4 = ''
+  for (let i = 0; i < rawLines.length; i++) {
+    const clean = cleanLines[i]
+    if (!clean) {
+      if (cur4.trim()) { blocks4.push(cur4.trim()); cur4 = '' }
     } else {
-      current += (current ? ' | ' : '') + line
+      cur4 += (cur4 ? ' | ' : '') + clean
     }
   }
-  if (current.trim()) blocks.push(current.trim())
+  if (cur4.trim()) blocks4.push(cur4.trim())
 
-  // Se só gerou 1 bloco mas tem muitos campos, tenta separar por preço isolado
-  // (linha com apenas um valor monetário = delimitador de bloco tipo "1.480,00")
-  if (blocks.length <= 1 && nonEmpty.length > 5) {
-    const priceLineRx = /^R?\$?\s*[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?$/
+  if (blocks4.length > 1) return blocks4.filter((b) => b.length > 5)
+
+  // ── 5. Blocos separados por linha de preço isolado ────────────────────────
+  //    Detecta linhas tipo "1.480,00" ou "R$ 1.480,00" (valor monetário sozinho)
+  //    Emojis já foram removidos pelo cleanLines — então "🔴1.480,00" → "1.480,00"
+  const priceLineRx = /^R?\$?\s*[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?$/
+
+  // Conta quantas linhas são apenas um preço
+  const priceLineCount = nonEmpty.filter((l) => priceLineRx.test(l)).length
+  if (priceLineCount >= 2 || (priceLineCount >= 1 && nonEmpty.length > 5)) {
     const reBlocks: string[] = []
-    let cur = ''
+    let cur5 = ''
     for (const line of nonEmpty) {
-      if (priceLineRx.test(line) && cur.trim()) {
-        reBlocks.push(cur.trim() + ' | Valor: ' + line)
-        cur = ''
+      if (priceLineRx.test(line)) {
+        if (cur5.trim()) {
+          reBlocks.push(cur5.trim() + ' | Valor: ' + line)
+          cur5 = ''
+        }
       } else {
-        cur += (cur ? ' | ' : '') + line
+        cur5 += (cur5 ? ' | ' : '') + line
       }
     }
-    if (cur.trim()) reBlocks.push(cur.trim())
+    if (cur5.trim()) reBlocks.push(cur5.trim())
     if (reBlocks.length > 1) return reBlocks.filter((b) => b.length > 5)
   }
 
-  return blocks.filter((b) => b.length > 5)
+  return blocks4.filter((b) => b.length > 5)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
