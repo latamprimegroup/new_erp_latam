@@ -102,7 +102,29 @@ export function EstoqueTab({ role }: { role: string }) {
   const [form, setForm] = useState({
     category: 'CONTAS', subCategory: '', vendorId: '', costPrice: '',
     salePrice: '', displayName: '', description: '', tags: '', vendorRef: '',
+    // Campos War Room OS (armazenados em specs)
+    year: '', paymentType: '', verificacao: false, docStatus: '',
   })
+
+  // Atualiza salePrice via atalho de margem
+  const applyMargin = (pct: number) => {
+    const cost = parseFloat(form.costPrice)
+    if (!cost || cost <= 0) return
+    setForm((f) => ({ ...f, salePrice: (cost * (1 + pct / 100)).toFixed(2) }))
+  }
+
+  // Auto-tag CNH ao mudar docStatus
+  const handleDocStatus = (val: string) => {
+    setForm((f) => {
+      const hasCnh = val === 'CNH Enviada' || val === 'CNH Validada'
+      const tags = f.tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t && t !== 'cnh-validada')
+      if (hasCnh) tags.push('cnh-validada')
+      return { ...f, docStatus: val, tags: tags.filter(Boolean).join(', ') }
+    })
+  }
 
   // Editar
   const [showEdit, setShowEdit]     = useState(false)
@@ -173,6 +195,11 @@ export function EstoqueTab({ role }: { role: string }) {
   // ── CRUD helpers ──────────────────────────────────────────────────────────────
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true)
+    const specs: Record<string, unknown> = {}
+    if (form.year)        specs.year        = parseInt(form.year)
+    if (form.paymentType) specs.paymentType = form.paymentType
+    if (form.verificacao) specs.verificacao = true
+    if (form.docStatus)   specs.docStatus   = form.docStatus
     const r = await fetch('/api/compras/ativos', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -181,6 +208,7 @@ export function EstoqueTab({ role }: { role: string }) {
         salePrice: parseFloat(form.salePrice), displayName: form.displayName,
         description: form.description || undefined, tags: form.tags || undefined,
         vendorRef: form.vendorRef || undefined,
+        specs: Object.keys(specs).length ? specs : undefined,
       }),
     })
     if (r.ok) { showFlash('Ativo cadastrado!'); setShowForm(false); load() }
@@ -506,21 +534,70 @@ export function EstoqueTab({ role }: { role: string }) {
                   <label className="block text-xs font-semibold mb-1">Preço Venda (R$) *</label>
                   <input required type="number" step="0.01" min="0" value={form.salePrice} onChange={(e) => setForm((f) => ({ ...f, salePrice: e.target.value }))} className="input-field" />
                 </div>
-                {form.costPrice && form.salePrice && (
-                  <div className="col-span-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 p-2 text-xs">
-                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                      Margem: {pct(((parseFloat(form.salePrice) - parseFloat(form.costPrice)) / parseFloat(form.salePrice)) * 100)} &nbsp;·&nbsp;
-                      Lucro: {brl(parseFloat(form.salePrice) - parseFloat(form.costPrice))}
-                    </span>
+                {/* Calculadora de Margem 40-60% */}
+                {form.costPrice && parseFloat(form.costPrice) > 0 && (
+                  <div className="col-span-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 p-3 space-y-2">
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Calculadora de Margem</p>
+                    <div className="flex gap-2">
+                      {[
+                        { label: '40% mín.', val: 40, color: 'border-amber-300 text-amber-700 hover:bg-amber-50' },
+                        { label: '50% ideal', val: 50, color: 'border-emerald-400 text-emerald-700 hover:bg-emerald-50' },
+                        { label: '60% máx.', val: 60, color: 'border-blue-300 text-blue-700 hover:bg-blue-50' },
+                      ].map(({ label, val, color }) => (
+                        <button key={val} type="button" onClick={() => applyMargin(val)}
+                          className={`flex-1 rounded-lg border py-1.5 text-[11px] font-bold transition-colors ${color}`}>
+                          {label}<br />
+                          <span className="font-mono text-[10px]">{brl(parseFloat(form.costPrice) * (1 + val / 100))}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {form.salePrice && parseFloat(form.salePrice) > 0 && (
+                      <div className="flex items-center gap-2 text-xs">
+                        {(() => {
+                          const m = ((parseFloat(form.salePrice) - parseFloat(form.costPrice)) / parseFloat(form.salePrice)) * 100
+                          const color = m >= 50 ? 'text-emerald-600' : m >= 40 ? 'text-amber-600' : 'text-red-600'
+                          return <span className={`font-bold ${color}`}>Margem atual: {pct(m)} · Lucro: {brl(parseFloat(form.salePrice) - parseFloat(form.costPrice))}</span>
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold mb-1">Nome Comercial *</label>
                   <input required value={form.displayName} onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))} className="input-field" placeholder="Ex: Gold Asset Premium — Perfil Warm-up" />
                 </div>
+                {/* Campos War Room OS */}
+                <div>
+                  <label className="block text-xs font-semibold mb-1">🍷 Safra (Ano)</label>
+                  <input type="number" min="2000" max="2099" value={form.year} onChange={(e) => setForm((f) => ({ ...f, year: e.target.value }))} className="input-field" placeholder="2019" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Tipo de Pagamento</label>
+                  <select value={form.paymentType} onChange={(e) => setForm((f) => ({ ...f, paymentType: e.target.value }))} className="input-field">
+                    <option value="">Selecionar...</option>
+                    <option value="Manual">Manual</option>
+                    <option value="Auto">Auto</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Status DOC / CNH</label>
+                  <select value={form.docStatus} onChange={(e) => handleDocStatus(e.target.value)} className="input-field">
+                    <option value="">Sem DOC</option>
+                    <option value="Pendente">Pendente</option>
+                    <option value="CNH Enviada">CNH Enviada</option>
+                    <option value="CNH Validada">CNH Validada ✅</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 pt-4">
+                  <input id="verificacao" type="checkbox" checked={form.verificacao} onChange={(e) => setForm((f) => ({ ...f, verificacao: e.target.checked }))} className="w-4 h-4 accent-primary-600" />
+                  <label htmlFor="verificacao" className="text-xs font-semibold">Verificação OK ✅</label>
+                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold mb-1">Tags <span className="font-normal text-zinc-400">(separadas por vírgula)</span></label>
                   <input value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} className="input-field" placeholder="warm-up,gold,30d" />
+                  {form.tags.includes('cnh-validada') && (
+                    <p className="text-[10px] text-emerald-600 mt-1">✅ Tag <code>cnh-validada</code> adicionada automaticamente</p>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold mb-1">Descrição</label>
