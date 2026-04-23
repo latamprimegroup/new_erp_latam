@@ -58,7 +58,7 @@ export async function GET(
 ) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (!['ADMIN', 'COMMERCIAL', 'FINANCE', 'DELIVERER'].includes(session.user?.role || '')) {
+  if (!['ADMIN', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
