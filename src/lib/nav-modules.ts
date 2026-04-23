@@ -95,6 +95,13 @@ export const MODULES_ERP: NavItem[] = [
     icon: 'Target',
     group: 'Produção',
   },
+  {
+    href: '/dashboard/producao/trocas',
+    label: 'Trocas & Reposição',
+    roles: ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
+    icon: 'ShieldAlert',
+    group: 'Produção',
+  },
 
   // ── ADS CORE — Hub ────────────────────────────────────────────────────────
   {
