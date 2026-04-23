@@ -120,14 +120,43 @@ function churnBadge(risk?: string | null) {
   )
 }
 
+// ─── Países com ISO, DDI e label do Tax ID ────────────────────────────────────
+
+const COUNTRIES = [
+  { code: 'BR', name: 'Brasil 🇧🇷',          ddi: '+55', taxLabel: 'CPF / CNPJ',           taxPlaceholder: '000.000.000-00 ou CNPJ' },
+  { code: 'US', name: 'Estados Unidos 🇺🇸',   ddi: '+1',  taxLabel: 'EIN / SSN / Tax ID',   taxPlaceholder: 'XX-XXXXXXX' },
+  { code: 'PT', name: 'Portugal 🇵🇹',          ddi: '+351', taxLabel: 'NIF',                 taxPlaceholder: '123456789' },
+  { code: 'ES', name: 'Espanha 🇪🇸',           ddi: '+34', taxLabel: 'NIF / VAT',            taxPlaceholder: 'ESX1234567X' },
+  { code: 'GB', name: 'Reino Unido 🇬🇧',       ddi: '+44', taxLabel: 'UTR / VAT Number',     taxPlaceholder: 'GB123456789' },
+  { code: 'DE', name: 'Alemanha 🇩🇪',          ddi: '+49', taxLabel: 'Steuernummer / VAT',   taxPlaceholder: 'DE123456789' },
+  { code: 'FR', name: 'França 🇫🇷',            ddi: '+33', taxLabel: 'SIRET / TVA',          taxPlaceholder: 'FR12345678901' },
+  { code: 'IT', name: 'Itália 🇮🇹',            ddi: '+39', taxLabel: 'P.IVA / CF',           taxPlaceholder: 'IT12345678901' },
+  { code: 'MX', name: 'México 🇲🇽',            ddi: '+52', taxLabel: 'RFC',                  taxPlaceholder: 'XAXX010101000' },
+  { code: 'AR', name: 'Argentina 🇦🇷',         ddi: '+54', taxLabel: 'CUIT / CUIL',          taxPlaceholder: '20-12345678-9' },
+  { code: 'CO', name: 'Colômbia 🇨🇴',          ddi: '+57', taxLabel: 'NIT',                  taxPlaceholder: '123456789-0' },
+  { code: 'CL', name: 'Chile 🇨🇱',             ddi: '+56', taxLabel: 'RUT',                  taxPlaceholder: '12.345.678-9' },
+  { code: 'AE', name: 'Emirados Árabes 🇦🇪',   ddi: '+971', taxLabel: 'TRN',                 taxPlaceholder: '100123456700003' },
+  { code: 'CA', name: 'Canadá 🇨🇦',            ddi: '+1',  taxLabel: 'BN / SIN',            taxPlaceholder: '123456789' },
+  { code: 'AU', name: 'Austrália 🇦🇺',         ddi: '+61', taxLabel: 'ABN / TFN',            taxPlaceholder: '51 824 753 556' },
+  { code: 'OTHER', name: 'Outro país 🌍',      ddi: '+',   taxLabel: 'Tax ID / VAT / Doc',   taxPlaceholder: 'Número de identificação' },
+] as const
+
+type CountryCode = typeof COUNTRIES[number]['code']
+
+function getCountry(code: string) {
+  return COUNTRIES.find((c) => c.code === code) ?? COUNTRIES[COUNTRIES.length - 1]
+}
+
 // ─── Tipos do formulário de cadastro ─────────────────────────────────────────
 
 type CreateForm = {
   name: string
   email: string
   phone: string
+  ddi: string
   whatsapp: string
   taxId: string
+  country: string
   companyName: string
   jobTitle: string
   operationNiche: string
@@ -139,9 +168,9 @@ type CreateForm = {
 }
 
 const EMPTY_CREATE: CreateForm = {
-  name: '', email: '', phone: '', whatsapp: '', taxId: '', companyName: '',
-  jobTitle: '', operationNiche: '', leadAcquisitionSource: '', clientStatus: 'ATIVO',
-  preferredCurrency: 'BRL', commercialNotes: '', segmentationTags: [],
+  name: '', email: '', phone: '', ddi: '+55', whatsapp: '', taxId: '', country: 'BR',
+  companyName: '', jobTitle: '', operationNiche: '', leadAcquisitionSource: '',
+  clientStatus: 'ATIVO', preferredCurrency: 'BRL', commercialNotes: '', segmentationTags: [],
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -366,7 +395,8 @@ export function ClientesAdminClient() {
     const errs: Record<string, string> = {}
     if (!createForm.name.trim() || createForm.name.trim().length < 2) errs.name = 'Nome obrigatório (mín. 2 caracteres)'
     if (!createForm.email.trim() || !/^[^@]+@[^@]+\.[^@]+$/.test(createForm.email)) errs.email = 'E-mail inválido'
-    if (createForm.taxId) {
+    // Validação de Tax ID apenas para Brasil (CPF/CNPJ); outros países aceitam qualquer formato
+    if (createForm.country === 'BR' && createForm.taxId) {
       const digits = createForm.taxId.replace(/\D/g, '')
       if (digits.length !== 0 && digits.length !== 11 && digits.length !== 14) errs.taxId = 'CPF (11 dígitos) ou CNPJ (14 dígitos)'
     }
@@ -384,8 +414,9 @@ export function ClientesAdminClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...createForm,
-          phone: createForm.phone || null,
-          whatsapp: createForm.whatsapp || null,
+          phone: createForm.phone ? `${createForm.ddi}${createForm.phone.replace(/\D/g, '')}` : null,
+          whatsapp: createForm.whatsapp ? `${createForm.ddi}${createForm.whatsapp.replace(/\D/g, '')}` : null,
+          country: createForm.country || null,
           taxId: createForm.taxId || null,
           companyName: createForm.companyName || null,
           jobTitle: createForm.jobTitle || null,
@@ -692,18 +723,38 @@ export function ClientesAdminClient() {
                       />
                       {createErrors.email && <p className="text-xs text-red-500 mt-1">{createErrors.email}</p>}
                     </div>
+                    {/* País — controla label do Tax ID e DDI do telefone */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">🌍 País do Cliente</label>
+                      <select
+                        value={createForm.country}
+                        onChange={(e) => {
+                          const c = getCountry(e.target.value)
+                          setCreateForm((f) => ({ ...f, country: e.target.value, ddi: c.ddi }))
+                        }}
+                        className="input-field w-full"
+                      >
+                        {COUNTRIES.map((c) => (
+                          <option key={c.code} value={c.code}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tax ID dinâmico por país */}
                     <div>
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">CPF / CNPJ</label>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        {getCountry(createForm.country).taxLabel}
+                      </label>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           value={createForm.taxId}
                           onChange={(e) => setCreateForm((f) => ({ ...f, taxId: e.target.value }))}
                           className={`input-field flex-1 ${createErrors.taxId ? 'border-red-400' : ''}`}
-                          placeholder="000.000.000-00 ou CNPJ"
-                          maxLength={18}
+                          placeholder={getCountry(createForm.country).taxPlaceholder}
+                          maxLength={50}
                         />
-                        {createForm.taxId.replace(/\D/g, '').length === 14 && (
+                        {createForm.country === 'BR' && createForm.taxId.replace(/\D/g, '').length === 14 && (
                           <button
                             type="button"
                             onClick={() => {
@@ -713,10 +764,7 @@ export function ClientesAdminClient() {
                                 .then(r => r.json())
                                 .then(d => {
                                   if (d.razaoSocial) {
-                                    setCreateForm(f => ({
-                                      ...f,
-                                      companyName: d.razaoSocial || f.companyName,
-                                    }))
+                                    setCreateForm(f => ({ ...f, companyName: d.razaoSocial || f.companyName }))
                                     showToast('success', `Empresa: ${d.razaoSocial}`)
                                   } else {
                                     showToast('error', d.error || 'CNPJ não encontrado')
@@ -735,25 +783,44 @@ export function ClientesAdminClient() {
                       </div>
                       {createErrors.taxId && <p className="text-xs text-red-500 mt-1">{createErrors.taxId}</p>}
                     </div>
+
+                    {/* WhatsApp com DDI */}
                     <div>
                       <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">WhatsApp</label>
-                      <input
-                        type="text"
-                        value={createForm.whatsapp}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, whatsapp: e.target.value }))}
-                        className="input-field w-full"
-                        placeholder="(11) 99999-9999"
-                      />
+                      <div className="flex gap-1">
+                        <select
+                          value={createForm.ddi}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, ddi: e.target.value }))}
+                          className="input-field w-24 shrink-0 text-xs"
+                        >
+                          {COUNTRIES.filter((c) => c.code !== 'OTHER').map((c) => (
+                            <option key={c.code} value={c.ddi}>{c.ddi} {c.code}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={createForm.whatsapp}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, whatsapp: e.target.value }))}
+                          className="input-field flex-1"
+                          placeholder="(11) 99999-9999"
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Será salvo em formato E.164: {createForm.ddi}{createForm.whatsapp.replace(/\D/g,'') || 'XXXXXXXXXX'}</p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Telefone</label>
-                      <input
-                        type="text"
-                        value={createForm.phone}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))}
-                        className="input-field w-full"
-                        placeholder="(11) 3333-4444"
-                      />
+                      <div className="flex gap-1">
+                        <span className="input-field w-16 shrink-0 text-xs flex items-center justify-center bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                          {createForm.ddi}
+                        </span>
+                        <input
+                          type="text"
+                          value={createForm.phone}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))}
+                          className="input-field flex-1"
+                          placeholder="(11) 3333-4444"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Empresa / Nome Fantasia</label>
