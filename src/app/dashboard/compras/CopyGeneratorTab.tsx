@@ -58,6 +58,8 @@ function buildCopy(asset: Asset, template: string, extra: string): string {
 
   if (template === 'war-room') return buildWarRoomCopy(asset, extra)
 
+  const waLink = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(`ID: ${asset.adsId}`)}`
+
   if (template === 'standard') {
     return `📢 *NOVIDADE NO ESTOQUE ADS ATIVOS*
 
@@ -68,7 +70,7 @@ ${CATEGORY_EMOJI[asset.category] ?? '📦'} *Tipo:* ${asset.category}${asset.sub
 📦 *Disponibilidade:* Pronta Entrega
 💰 *Valor:* ${brl(asset.salePrice)}
 ${extra ? `\n📌 ${extra}\n` : ''}
-👉 Interessados chamar no privado com o ID acima.${tagsLine}`
+👉 CONSULTAR: ${waLink}${tagsLine}`
   }
 
   if (template === 'telegram') {
@@ -81,7 +83,7 @@ ${extra ? `\n📌 ${extra}\n` : ''}
 ${extra ? `📌 ${extra}` : ''}
 
 ✅ Pronta entrega | Suporte 24h
-💬 Contato com o ID: *${asset.adsId}*${tagsLine}`
+👉 ${waLink}${tagsLine}`
   }
 
   // template === 'vip'
@@ -98,7 +100,8 @@ ${extra ? `📌 *Obs:* ${extra}` : ''}
 
 💰 *Investimento:* ${brl(asset.salePrice)}
 
-_Estoque limitado. Prioridade para quem chamar primeiro com o ID acima._${tagsLine}`
+_Estoque limitado._
+👉 ${waLink}${tagsLine}`
 }
 
 export function CopyGeneratorTab() {

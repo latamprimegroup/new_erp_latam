@@ -81,33 +81,18 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   const waE164   = whatsapp.startsWith('+') ? whatsapp : `+${whatsapp}`
   const cpfClean = cpf.replace(/\D/g, '')
 
-  // 1. Verifica e reserva N ativos disponíveis (em transação)
-  const assets = await prisma.asset.findMany({
-    where:  { category: listing.assetCategory as never, status: 'AVAILABLE' },
-    select: { id: true, adsId: true },
-    take:   qty,
-    orderBy: { createdAt: 'asc' },
-  })
-
-  if (assets.length < qty) {
-    return NextResponse.json({
-      error: `Estoque insuficiente. Disponível: ${assets.length} unidade(s). Reduza a quantidade.`,
-    }, { status: 409 })
-  }
-
-  const assetIds  = assets.map((a) => a.id)
   const totalAmount = Number(listing.pricePerUnit) * qty
   const txid        = randomUUID().replace(/-/g, '').slice(0, 35)
 
-  // 2. Gera PIX no Banco Inter
+  // 1. Gera PIX ANTES de bloquear ativos (evita segurar estoque se o Inter falhar)
   let pixData: { txid: string; pixCopyPaste: string; qrCodeBase64: string; expiresAt: Date }
   try {
     pixData = await generatePixCharge({
       txid,
-      amount:      totalAmount,
-      buyerName:   name,
-      buyerCpf:    cpfClean,
-      description: `${qty}x ${listing.title} — Ads Ativos`,
+      amount:       totalAmount,
+      buyerName:    name,
+      buyerCpf:     cpfClean,
+      description:  `${qty}x ${listing.title} — Ads Ativos`,
       expiracaoSec: 1800,
     })
   } catch (err) {
@@ -115,35 +100,71 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     return NextResponse.json({ error: 'Falha ao gerar PIX. Tente novamente.' }, { status: 502 })
   }
 
-  // 3. Cria checkout + reserva ativos (transação)
-  const checkout = await prisma.$transaction(async (tx) => {
-    // Marca ativos como QUARANTINE (reservado para esta venda)
-    await tx.asset.updateMany({
-      where: { id: { in: assetIds } },
-      data:  { status: 'QUARANTINE' },
-    })
+  // 2. Reserva ativos de forma ATÔMICA dentro da transação
+  //    updateMany retorna { count } — se count < qty, outra requisição chegou primeiro
+  let checkout: Awaited<ReturnType<typeof prisma.quickSaleCheckout.create>>
+  try {
+    checkout = await prisma.$transaction(async (tx) => {
+      // Seleciona IDs dentro da transação para evitar leitura suja
+      const candidates = await tx.asset.findMany({
+        where:   { category: listing.assetCategory as never, status: 'AVAILABLE' },
+        select:  { id: true },
+        take:    qty,
+        orderBy: { createdAt: 'asc' },
+      })
 
-    return tx.quickSaleCheckout.create({
-      data: {
-        listingId:       listing.id,
-        buyerName:       name,
-        buyerCpf:        cpfClean,
-        buyerWhatsapp:   waE164,
-        buyerEmail:      email || null,
-        qty,
-        totalAmount,
-        status:          'PENDING',
-        interTxid:       pixData.txid,
-        pixCopyPaste:    pixData.pixCopyPaste,
-        pixQrCode:       pixData.qrCodeBase64,
-        expiresAt:       pixData.expiresAt,
-        reservedAssetIds: assetIds,
-        utmSource:       utm_source   ?? null,
-        utmMedium:       utm_medium   ?? null,
-        utmCampaign:     utm_campaign ?? null,
-      },
+      if (candidates.length < qty) {
+        throw new Error(`STOCK_INSUFFICIENT:${candidates.length}`)
+      }
+
+      const assetIds = candidates.map((a) => a.id)
+
+      // Reserva atômica: só afeta registros que AINDA estão AVAILABLE
+      const { count } = await tx.asset.updateMany({
+        where: { id: { in: assetIds }, status: 'AVAILABLE' },
+        data:  { status: 'QUARANTINE' },
+      })
+
+      // Se count < qty, outro processo tomou alguns antes de nós
+      if (count < qty) {
+        throw new Error(`STOCK_RACE:${count}`)
+      }
+
+      return tx.quickSaleCheckout.create({
+        data: {
+          listingId:        listing.id,
+          buyerName:        name,
+          buyerCpf:         cpfClean,
+          buyerWhatsapp:    waE164,
+          buyerEmail:       email || null,
+          qty,
+          totalAmount,
+          status:           'PENDING',
+          interTxid:        pixData.txid,
+          pixCopyPaste:     pixData.pixCopyPaste,
+          pixQrCode:        pixData.qrCodeBase64,
+          expiresAt:        pixData.expiresAt,
+          reservedAssetIds: assetIds,
+          utmSource:        utm_source   ?? null,
+          utmMedium:        utm_medium   ?? null,
+          utmCampaign:      utm_campaign ?? null,
+        },
+      })
+    }, {
+      // Isolamento máximo para evitar double-sell
+      isolationLevel: 'Serializable',
     })
-  })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.startsWith('STOCK_INSUFFICIENT') || msg.startsWith('STOCK_RACE')) {
+      const avail = msg.split(':')[1] ?? '0'
+      return NextResponse.json({
+        error: `Estoque insuficiente. Disponível: ${avail} unidade(s). Reduza a quantidade ou tente novamente.`,
+      }, { status: 409 })
+    }
+    console.error('[Loja reserva]', err)
+    return NextResponse.json({ error: 'Erro interno ao reservar estoque.' }, { status: 500 })
+  }
 
   return NextResponse.json({
     checkoutId:   checkout.id,
