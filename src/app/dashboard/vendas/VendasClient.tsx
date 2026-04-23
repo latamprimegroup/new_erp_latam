@@ -265,7 +265,7 @@ export function VendasClient() {
   const loadClients = useCallback(async () => {
     const res = await fetch('/api/clientes')
     const data = await res.json()
-    if (res.ok) setClients(data)
+    if (res.ok) setClients(Array.isArray(data) ? data : (data.clients ?? []))
   }, [])
 
   useEffect(() => {
@@ -276,7 +276,7 @@ export function VendasClient() {
     setLtvLoading(true)
     fetch(`/api/clientes/${form.clientId}/ltv`)
       .then((r) => r.json())
-      .then((d) => setClientLtv(d))
+      .then((d) => setClientLtv(d?.client ? d : null))
       .catch(() => setClientLtv(null))
       .finally(() => setLtvLoading(false))
   }, [form.clientId])
