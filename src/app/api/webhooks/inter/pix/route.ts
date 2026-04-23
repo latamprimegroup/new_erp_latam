@@ -173,10 +173,8 @@ export async function POST(req: NextRequest) {
         await prisma.asset.update({
           where: { id: checkout.assetId },
           data: {
-            status:     'SOLD',
-            soldAt:     paidAt,
-            buyerName:  checkout.lead.name,
-            soldPrice:  checkout.amount,
+            status:  'SOLD',
+            soldAt:  paidAt,
           },
         }).catch((e) => console.error('[Checkout] Falha ao marcar ativo SOLD:', e))
 
@@ -243,6 +241,124 @@ export async function POST(req: NextRequest) {
             data:  { deliverySent: true },
           })
         }).catch((e) => console.error('[WhatsApp delivery]', e))
+      }
+    }
+
+    // ── 3. Fluxo Venda Rápida: QuickSaleCheckout ─────────────────────────────
+    const quickCheckout = await prisma.quickSaleCheckout.findUnique({
+      where:   { interTxid: txid },
+      include: { listing: { select: { title: true, assetCategory: true } } },
+    })
+
+    if (quickCheckout && quickCheckout.status === 'PENDING') {
+      const paidAt = new Date()
+      const assetIds = Array.isArray(quickCheckout.reservedAssetIds)
+        ? (quickCheckout.reservedAssetIds as string[])
+        : []
+
+      // 3a. Atualiza checkout como PAID
+      await prisma.quickSaleCheckout.update({
+        where: { id: quickCheckout.id },
+        data: {
+          status:         'PAID',
+          paidAt,
+          interE2eId:     e2eid ?? null,
+          webhookPayload: payload as never,
+        },
+      })
+      checkoutsUpdated++
+
+      // 3b. Marca todos os ativos reservados como SOLD
+      if (assetIds.length > 0) {
+        await prisma.asset.updateMany({
+          where: { id: { in: assetIds } },
+          data:  { status: 'SOLD', soldAt: paidAt },
+        }).catch((e) => console.error('[QuickCheckout] Falha ao marcar ativos SOLD:', e))
+
+        // Registra movimento para cada ativo
+        await prisma.assetMovement.createMany({
+          data: assetIds.map((aid) => ({
+            assetId:  aid,
+            toStatus: 'SOLD' as const,
+            reason:   `Venda Rápida — Comprador: ${quickCheckout.buyerName} | CPF: ${quickCheckout.buyerCpf} | Checkout: ${quickCheckout.id}`,
+          })),
+          skipDuplicates: true,
+        }).catch((e) => console.error('[QuickCheckout] Falha ao registrar movimentos:', e))
+      }
+
+      // 3c. Utmify (fire-and-forget)
+      if (!quickCheckout.utmifySent) {
+        sendUtmifyConversion({
+          checkoutId:  quickCheckout.id,
+          adsId:       quickCheckout.id,
+          displayName: quickCheckout.listing.title,
+          amountBrl:   Number(quickCheckout.totalAmount),
+          paidAt,
+          createdAt:   quickCheckout.createdAt,
+          buyer: {
+            name:     quickCheckout.buyerName,
+            email:    quickCheckout.buyerEmail ?? '',
+            whatsapp: quickCheckout.buyerWhatsapp,
+            cpf:      quickCheckout.buyerCpf,
+          },
+          utms: {
+            utm_source:   quickCheckout.utmSource   ?? undefined,
+            utm_medium:   quickCheckout.utmMedium   ?? undefined,
+            utm_campaign: quickCheckout.utmCampaign ?? undefined,
+          },
+        }).then(async (ok) => {
+          if (ok) {
+            await prisma.quickSaleCheckout.update({
+              where: { id: quickCheckout.id },
+              data:  { utmifySent: true },
+            })
+          }
+        }).catch((e) => console.error('[Utmify/Quick]', e))
+      }
+
+      // 3d. WhatsApp — entrega automática multi-ativo (fire-and-forget)
+      if (!quickCheckout.deliverySent) {
+        const evolutionUrl    = process.env.EVOLUTION_API_URL
+        const evolutionApiKey = process.env.EVOLUTION_API_KEY
+        const evolutionInst   = process.env.EVOLUTION_INSTANCE ?? 'adsativos'
+
+        if (evolutionUrl && evolutionApiKey) {
+          const number = quickCheckout.buyerWhatsapp.replace(/\D/g, '')
+          const assetSummary = assetIds.length > 1
+            ? `${assetIds.length} ativos reservados para você`
+            : `1 ativo reservado para você`
+
+          const message = [
+            `✅ *PAGAMENTO CONFIRMADO — ADS ATIVOS*`,
+            ``,
+            `Olá *${quickCheckout.buyerName}*! Seu PIX foi recebido com sucesso.`,
+            ``,
+            `🛡️ *Produto:* ${quickCheckout.listing.title}`,
+            `📦 *Quantidade:* ${quickCheckout.qty} unidade(s)`,
+            `💰 *Total pago:* R$ ${Number(quickCheckout.totalAmount).toFixed(2)}`,
+            ``,
+            `📬 ${assetSummary}. Nossa equipe entrará em contato em instantes com os acessos.`,
+            ``,
+            `🔑 *ID do pedido:* \`${quickCheckout.id}\``,
+            ``,
+            `👉 Qualquer dúvida, responda esta mensagem.`,
+          ].join('\n')
+
+          fetch(`${evolutionUrl}/message/sendText/${evolutionInst}`, {
+            method:  'POST',
+            headers: { apikey: evolutionApiKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              number,
+              options: { delay: 1000, presence: 'composing' },
+              textMessage: { text: message },
+            }),
+          }).then(async () => {
+            await prisma.quickSaleCheckout.update({
+              where: { id: quickCheckout.id },
+              data:  { deliverySent: true },
+            })
+          }).catch((e) => console.error('[WhatsApp/Quick]', e))
+        }
       }
     }
   }

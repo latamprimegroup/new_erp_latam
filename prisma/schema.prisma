@@ -5243,3 +5243,79 @@ model SalesCheckout {
   @@index([createdAt])
   @@map("sales_checkouts")
 }
+
+// ============ VENDA RÁPIDA — LOJA PÚBLICA ============
+
+/// Listing de produto na loja pública — criado pelo comercial, acessado pelo cliente via link
+model ProductListing {
+  id           String   @id @default(cuid())
+  /// Slug amigável para URL: ex: "tiktok-verificada", "google-ads-premium"
+  slug         String   @unique @db.VarChar(100)
+  /// Nome exibido ao cliente
+  title        String   @db.VarChar(200)
+  /// Subtítulo/descrição curta
+  subtitle     String?  @db.VarChar(500)
+  /// Categoria do Asset que será reservado (filtra estoque disponível)
+  assetCategory String  @map("asset_category") @db.VarChar(50)
+  /// Tags opcionais para filtrar ativos (ex: "tiktok,verificada")
+  assetTags    String?  @map("asset_tags") @db.VarChar(200)
+  /// Preço unitário de venda ao cliente
+  pricePerUnit Decimal  @map("price_per_unit") @db.Decimal(10, 2)
+  /// Máximo de unidades por pedido
+  maxQty       Int      @default(10) @map("max_qty")
+  /// Listing ativo ou pausado
+  active       Boolean  @default(true)
+  /// Badge exibido no topo (ex: "ENTREGA AUTOMÁTICA")
+  badge        String?  @db.VarChar(100)
+  /// Criado por (userId do comercial)
+  createdBy    String?  @map("created_by") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  checkouts    QuickSaleCheckout[]
+
+  @@index([slug])
+  @@index([active])
+  @@map("product_listings")
+}
+
+/// Checkout de Venda Rápida — gerado quando cliente paga via listing público
+model QuickSaleCheckout {
+  id             String         @id @default(cuid())
+  listingId      String         @map("listing_id")
+  listing        ProductListing @relation(fields: [listingId], references: [id])
+  /// Dados do comprador
+  buyerName      String         @map("buyer_name") @db.VarChar(200)
+  buyerCpf       String         @map("buyer_cpf") @db.VarChar(14)
+  buyerWhatsapp  String         @map("buyer_whatsapp") @db.VarChar(20)
+  buyerEmail     String?        @map("buyer_email") @db.VarChar(200)
+  /// Quantidade comprada
+  qty            Int            @default(1)
+  /// Valor total cobrado
+  totalAmount    Decimal        @map("total_amount") @db.Decimal(10, 2)
+  status         CheckoutStatus @default(PENDING)
+  /// txid do PIX Inter
+  interTxid      String?        @unique @map("inter_txid") @db.VarChar(100)
+  pixCopyPaste   String?        @map("pix_copy_paste") @db.Text
+  pixQrCode      String?        @map("pix_qr_code") @db.Text
+  expiresAt      DateTime?      @map("expires_at")
+  paidAt         DateTime?      @map("paid_at")
+  interE2eId     String?        @map("inter_e2e_id") @db.VarChar(100)
+  webhookPayload Json?          @map("webhook_payload")
+  /// IDs dos Assets reservados para este pedido (JSON array)
+  reservedAssetIds Json?        @map("reserved_asset_ids")
+  deliverySent   Boolean        @default(false) @map("delivery_sent")
+  utmifySent     Boolean        @default(false) @map("utmify_sent")
+  /// UTMs capturados
+  utmSource      String?        @map("utm_source")   @db.VarChar(100)
+  utmMedium      String?        @map("utm_medium")   @db.VarChar(100)
+  utmCampaign    String?        @map("utm_campaign") @db.VarChar(200)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt      @map("updated_at")
+
+  @@index([status])
+  @@index([interTxid])
+  @@index([listingId])
+  @@index([createdAt])
+  @@map("quick_sale_checkouts")
+}

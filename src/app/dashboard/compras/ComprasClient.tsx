@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert, Truck, Crosshair, TrendingUp } from 'lucide-react'
+import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert, Truck, Crosshair, TrendingUp, Link2 } from 'lucide-react'
 import { FornecedoresTab } from './FornecedoresTab'
 import { EstoqueTab } from './EstoqueTab'
 import { CopyGeneratorTab } from './CopyGeneratorTab'
@@ -14,13 +14,15 @@ import { AssetIntakeTab } from './AssetIntakeTab'
 import { RMATab } from './RMATab'
 import { WarRoomCeoTab } from './WarRoomCeoTab'
 import { RoiTab } from './RoiTab'
+import { VendaRapidaTab } from './VendaRapidaTab'
 import EntradaMercadoriaClient from '../admin/entrada-mercadoria/EntradaMercadoriaClient'
 
-type Tab = 'war-room' | 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc' | 'roi'
+type Tab = 'war-room' | 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc' | 'roi' | 'venda-rapida'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
   { id: 'war-room',     label: '🛰️ War Room OS',           icon: <Crosshair className="w-4 h-4" />,      roles: ['ADMIN'] },
   { id: 'roi',          label: '📈 ROI & Utmify',          icon: <TrendingUp className="w-4 h-4" />,     roles: ['ADMIN'] },
+  { id: 'venda-rapida', label: '⚡ Venda Rápida',          icon: <Link2 className="w-4 h-4" />,          roles: ['ADMIN', 'COMMERCIAL'] },
   { id: 'entrada-merc', label: '🚚 Entrada de Mercadoria', icon: <Truck className="w-4 h-4" />,          roles: ['ADMIN','PURCHASING'] },
   { id: 'intake',       label: '📥 Intake de Ativos',      icon: <ClipboardList className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING'] },
   { id: 'consulta',     label: 'Consulta de Preço',        icon: <Search className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
@@ -77,6 +79,7 @@ export function ComprasClient({ role }: { role: string }) {
       <div>
         {tab === 'war-room'     && <WarRoomCeoTab />}
         {tab === 'roi'          && <RoiTab />}
+        {tab === 'venda-rapida' && <VendaRapidaTab />}
         {tab === 'entrada-merc' && <EntradaMercadoriaClient />}
         {tab === 'intake'       && <AssetIntakeTab />}
         {tab === 'consulta'     && <ConsultaPrecoTab role={role} />}
