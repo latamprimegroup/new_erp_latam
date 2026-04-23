@@ -36,6 +36,7 @@ export type ParsedAssetRow = {
   pagamento:      string | null
   verificacao:    string | null // 2FA | Email | SMS | null
   aquecimento:    string | null // "30 dias" | "60 dias" | null
+  realId:         string | null // ID real do fornecedor (ex: 722-617-3875)
   platform:       Platform
   rawLine:        string        // linha original para auditoria
 
@@ -193,6 +194,7 @@ function buildTags(niche: string, spendClass: SpendClass, currency: 'BRL' | 'USD
 type RawFields = {
   gasto?: string; nicho?: string; ano?: string; faturamento?: string
   pagamento?: string; verificacao?: string; aquecimento?: string
+  realId?: string
 }
 
 /** Extrai campos de uma linha ou bloco */
@@ -200,11 +202,12 @@ function extractFields(text: string): RawFields {
   const fields: RawFields = {}
 
   const patterns: [keyof RawFields, RegExp][] = [
+    ['realId',      /(?:^|\|)\s*ID\s*[:=]\s*([\d\-]{5,30})/im],
     ['gasto',       /(?:gasto|spend|spent|investimento|inv\.?)\s*[:=]\s*([^\|\n,]+)/i],
     ['nicho',       /(?:nicho|niche|segmento|setor|ramo|area|área|mercado)\s*[:=]\s*([^\|\n,]+)/i],
     ['ano',         /(?:ano|year|criacao|criação|criado em)\s*[:=]\s*(\d{4})/i],
     ['faturamento', /(?:faturamento|fat|doc|documento|cnpj|cpf|pj|pf)\s*[:=]\s*([^\|\n,]+)/i],
-    ['pagamento',   /(?:pagamento|pgt|payment|forma de pag)\s*[:=]\s*([^\|\n,]+)/i],
+    ['pagamento',   /(?:pagamento|pag|pgt|payment|forma de pag)\s*[:=]\s*([^\|\n,]+)/i],
     ['verificacao', /(?:verifica[cç][aã]o|verif|2fa|auth)\s*[:=]\s*([^\|\n,]+)/i],
     ['aquecimento', /(?:aquecimento|warm|warmup|warm-up)\s*[:=]\s*([^\|\n,]+)/i],
   ]
@@ -241,18 +244,30 @@ function extractFields(text: string): RawFields {
   return fields
 }
 
-/** Divide o texto em blocos (um por ativo) */
+/**
+ * Divide o texto em blocos — um bloco por ativo.
+ *
+ * Estratégias (em ordem de prioridade):
+ *  1. Lista numerada: "1. campo | campo"
+ *  2. Uma linha por ativo (2+ campos na mesma linha)
+ *  3. Blocos separados por "ID:" no início — formato WhatsApp multi-linha
+ *  4. Blocos separados por linha em branco
+ */
 function splitBlocks(text: string): string[] {
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  // Preserva linhas em branco para detecção de separadores
+  const rawLines = text.split('\n').map((l) => l.trim())
+  const nonEmpty = rawLines.filter(Boolean)
 
-  // Detecta se é lista numerada (1. / 1) / 🔹1.)
-  const isNumbered = lines.some((l) => /^[\d]+[.)]\s/.test(l) || /^[🔹🔸•\-]\s*\d+[.)]\s/.test(l))
+  if (nonEmpty.length === 0) return []
 
+  // ── 1. Lista numerada ────────────────────────────────────────────────────
+  const isNumbered = nonEmpty.some(
+    (l) => /^[\d]+[.)]\s/.test(l) || /^[🔹🔸•\-]\s*\d+[.)]\s/.test(l),
+  )
   if (isNumbered) {
-    // Agrupa por número
     const blocks: string[] = []
     let current = ''
-    for (const line of lines) {
+    for (const line of nonEmpty) {
       if (/^[\d]+[.)]\s/.test(line) || /^[🔹🔸•\-]\s*\d+[.)]\s/.test(line)) {
         if (current) blocks.push(current)
         current = line
@@ -264,22 +279,61 @@ function splitBlocks(text: string): string[] {
     return blocks
   }
 
-  // Detecta se cada linha é um ativo separado (tem pelo menos 2 campos)
-  const isSingleLine = lines.every((l) => (l.match(/[:=]/g) ?? []).length >= 2)
-  if (isSingleLine) return lines
+  // ── 2. Uma linha por ativo (2+ campos separados por | ou :) ──────────────
+  const isSingleLine =
+    nonEmpty.length > 1 &&
+    nonEmpty.every((l) => (l.match(/[:=]/g) ?? []).length >= 2)
+  if (isSingleLine) return nonEmpty
 
-  // Separa por linhas em branco
+  // ── 3. Blocos iniciados por "ID: ..." (formato WhatsApp multi-linha) ─────
+  //    Detecta se pelo menos 2 linhas começam com "ID:"
+  const idLineCount = nonEmpty.filter((l) => /^ID\s*[:=]/i.test(l)).length
+  if (idLineCount >= 2) {
+    const blocks: string[] = []
+    let current = ''
+    for (const line of nonEmpty) {
+      if (/^ID\s*[:=]/i.test(line) && current.trim()) {
+        blocks.push(current.trim())
+        current = line
+      } else {
+        current += (current ? ' | ' : '') + line
+      }
+    }
+    if (current.trim()) blocks.push(current.trim())
+    return blocks.filter((b) => b.length > 5)
+  }
+
+  // ── 4. Blocos separados por linha em branco ──────────────────────────────
+  //    Usa rawLines (com linhas em branco) para detectar separadores
   const blocks: string[] = []
   let current = ''
-  for (const line of lines) {
+  for (const line of rawLines) {
     if (!line) {
-      if (current.trim()) blocks.push(current.trim())
-      current = ''
+      if (current.trim()) { blocks.push(current.trim()); current = '' }
     } else {
       current += (current ? ' | ' : '') + line
     }
   }
   if (current.trim()) blocks.push(current.trim())
+
+  // Se só gerou 1 bloco mas tem muitos campos, tenta separar por preço isolado
+  // (linha com apenas um valor monetário = delimitador de bloco tipo "1.480,00")
+  if (blocks.length <= 1 && nonEmpty.length > 5) {
+    const priceLineRx = /^R?\$?\s*[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?$/
+    const reBlocks: string[] = []
+    let cur = ''
+    for (const line of nonEmpty) {
+      if (priceLineRx.test(line) && cur.trim()) {
+        reBlocks.push(cur.trim() + ' | Valor: ' + line)
+        cur = ''
+      } else {
+        cur += (cur ? ' | ' : '') + line
+      }
+    }
+    if (cur.trim()) reBlocks.push(cur.trim())
+    if (reBlocks.length > 1) return reBlocks.filter((b) => b.length > 5)
+  }
+
   return blocks.filter((b) => b.length > 5)
 }
 
@@ -437,6 +491,7 @@ export function parseAssetText(text: string, platform?: Platform, startSeq = 1):
       rawNiche, rawSpend: fields.gasto ?? '', year, spendValue, currency,
       faturamento: fields.faturamento ?? null, pagamento: fields.pagamento ?? null,
       verificacao: fields.verificacao ?? null, aquecimento: fields.aquecimento ?? null,
+      realId: fields.realId ?? null,
       platform: detectedPlatform, rawLine: block,
       adsId, displayName, description, spendClass, suggestedPrice,
       tags: buildTags(rawNiche, spendClass, currency, fields.verificacao ?? null, year) + `,${authorityTag.toLowerCase().replace(/\s+/g,'-')}`,
@@ -505,6 +560,7 @@ function parsePreformattedTable(text: string, platform: Platform, startSeq: numb
       pagamento:   hasPagAuto ? 'Automático' : (fields.pagamento ?? 'Manual'),
       verificacao: hasVerif ? 'OK' : (fields.verificacao ?? null),
       aquecimento: fields.aquecimento ?? null,
+      realId: fields.realId ?? null,
       platform, rawLine: line,
       adsId,
       displayName,
