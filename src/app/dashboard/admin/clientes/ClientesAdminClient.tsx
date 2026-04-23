@@ -56,6 +56,7 @@ type Client = {
   instagramHandle?: string | null
   facebookUrl?: string | null
   linkedinUrl?: string | null
+  whatsappGroupLink?: string | null
   telegramUsername?: string | null
   // Financeiro
   creditLimit?: number | null
@@ -159,6 +160,8 @@ type CreateForm = {
   country: string
   companyName: string
   jobTitle: string
+  instagramHandle: string
+  whatsappGroupLink: string
   operationNiche: string
   leadAcquisitionSource: string
   clientStatus: 'ATIVO' | 'INATIVO' | 'BLOQUEADO'
@@ -169,7 +172,8 @@ type CreateForm = {
 
 const EMPTY_CREATE: CreateForm = {
   name: '', email: '', phone: '', ddi: '+55', whatsapp: '', taxId: '', country: 'BR',
-  companyName: '', jobTitle: '', operationNiche: '', leadAcquisitionSource: '',
+  companyName: '', jobTitle: '', instagramHandle: '', whatsappGroupLink: '',
+  operationNiche: '', leadAcquisitionSource: '',
   clientStatus: 'ATIVO', preferredCurrency: 'BRL', commercialNotes: '', segmentationTags: [],
 }
 
@@ -420,6 +424,8 @@ export function ClientesAdminClient() {
           taxId: createForm.taxId || null,
           companyName: createForm.companyName || null,
           jobTitle: createForm.jobTitle || null,
+          instagramHandle: createForm.instagramHandle || null,
+          whatsappGroupLink: createForm.whatsappGroupLink || null,
           operationNiche: createForm.operationNiche || null,
           leadAcquisitionSource: createForm.leadAcquisitionSource || null,
           commercialNotes: createForm.commercialNotes || null,
@@ -842,6 +848,50 @@ export function ClientesAdminClient() {
                         placeholder="Ex: Gestor de Tráfego"
                       />
                     </div>
+
+                    {/* Instagram */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        <span className="inline-flex items-center gap-1">
+                          <Instagram className="w-3.5 h-3.5 text-pink-500" /> Instagram
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.instagramHandle}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, instagramHandle: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="@usuario"
+                      />
+                    </div>
+
+                    {/* Grupo WhatsApp */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-green-500 text-xs">💬</span> Link do Grupo WhatsApp
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.whatsappGroupLink}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, whatsappGroupLink: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="https://chat.whatsapp.com/..."
+                      />
+                    </div>
+
+                    {/* Código do cliente — preview */}
+                    {nextClientCode && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                          <span className="inline-flex items-center gap-1"><Hash className="w-3.5 h-3.5 text-primary-500" /> Código do Cliente (gerado automaticamente)</span>
+                        </label>
+                        <div className="input-field w-full bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 font-mono text-sm cursor-not-allowed select-none">
+                          {nextClientCode}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1199,6 +1249,13 @@ export function ClientesAdminClient() {
                         onChange={(v) => setEditForm((f) => ({ ...f, facebookUrl: v }))}
                         placeholder="https://facebook.com/..."
                       />
+                      <div className="col-span-2">
+                        <FormFieldIcon label="💬 Grupo WhatsApp" icon={<></>} editing={editing}
+                          value={editing ? editForm.whatsappGroupLink ?? '' : (selectedClient.whatsappGroupLink ?? '—')}
+                          onChange={(v) => setEditForm((f) => ({ ...f, whatsappGroupLink: v }))}
+                          placeholder="https://chat.whatsapp.com/..."
+                        />
+                      </div>
                     </div>
                   </div>
 

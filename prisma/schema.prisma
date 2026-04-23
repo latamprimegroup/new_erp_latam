@@ -320,6 +320,7 @@ model ClientProfile {
   instagramHandle       String?  @map("instagram_handle") @db.VarChar(64)
   facebookUrl           String?  @map("facebook_url") @db.VarChar(255)
   linkedinUrl           String?  @map("linkedin_url") @db.VarChar(255)
+  whatsappGroupLink     String?  @map("whatsapp_group_link") @db.VarChar(512)
 
   // CRM — Financeiro / faturamento (melhoria 15/04/2026)
   creditLimit           Decimal? @map("credit_limit") @db.Decimal(12, 2)  // Limite de crédito

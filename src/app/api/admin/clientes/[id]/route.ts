@@ -40,6 +40,7 @@ const patchSchema = z.object({
   instagramHandle: z.string().max(64).optional().nullable(),
   facebookUrl: z.string().max(255).optional().nullable(),
   linkedinUrl: z.string().max(255).optional().nullable(),
+  whatsappGroupLink: z.string().max(512).optional().nullable(),
   // Melhoria 15/04/2026 — Financeiro
   creditLimit: z.number().min(0).optional().nullable(),
   preferredDueDay: z.number().int().min(1).max(28).optional().nullable(),
@@ -194,6 +195,7 @@ export async function PATCH(
         ...(data.instagramHandle !== undefined && { instagramHandle: data.instagramHandle }),
         ...(data.facebookUrl !== undefined && { facebookUrl: data.facebookUrl }),
         ...(data.linkedinUrl !== undefined && { linkedinUrl: data.linkedinUrl }),
+        ...(data.whatsappGroupLink !== undefined && { whatsappGroupLink: data.whatsappGroupLink }),
         ...(data.creditLimit !== undefined && { creditLimit: data.creditLimit }),
         ...(data.preferredDueDay !== undefined && { preferredDueDay: data.preferredDueDay }),
         ...(data.segmentationTags !== undefined && { segmentationTags: data.segmentationTags }),
