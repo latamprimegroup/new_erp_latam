@@ -58,6 +58,7 @@ type WarRoomData = {
   topBuyers: Buyer[]
   recentSales: Sale[]
   assets: AssetRow[]
+  generatedAt?: string | number | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
