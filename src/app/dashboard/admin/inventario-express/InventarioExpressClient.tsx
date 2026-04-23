@@ -61,9 +61,12 @@ const TIPO_CONTA_OPTIONS = [
 
 const CONFIGURACAO_OPTIONS = [
   'G2 Manual',
+  'Com G2 e Verificação',
   'Sem G2 / Apenas Verificação',
   'Com Op. Comercial',
   'Sem Gastos',
+  'USD Automático',
+  'EUR Automático',
 ]
 
 const DOCUMENTACAO_OPTIONS = [

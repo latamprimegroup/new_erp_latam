@@ -99,8 +99,13 @@ export async function POST(req: NextRequest) {
     await prisma.$transaction(async (tx) => {
       for (const row of normalizedRows) {
         const currency = currencyFromTipo(row.tipoConta)
-        const isPlugPlay =
-          row.configuracao === 'G2 Manual' || row.configuracao === 'Com Op. Comercial'
+        const isPlugPlay = [
+          'G2 Manual',
+          'Com G2 e Verificação',
+          'Com Op. Comercial',
+          'USD Automático',
+          'EUR Automático',
+        ].includes(row.configuracao)
 
         // niche armazena o produtor — visível para o Comercial no estoque
         const nicheTag = `Produtor: ${row.producerName}`
