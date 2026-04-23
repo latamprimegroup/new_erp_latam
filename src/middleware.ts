@@ -74,6 +74,17 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/gtm-conversao': [
     'ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'MANAGER', 'PLUG_PLAY',
   ],
+  // ── Rotas sem guard explícito (auditoria 22/04/2026) ─────────────────────────
+  // ads-tracker contém S2S postbacks, domínios, UTMs — restrito a ADMIN
+  '/dashboard/ads-tracker': ['ADMIN'],
+  // intelligence-leads: dados de leads para marketing
+  '/dashboard/intelligence-leads': ['ADMIN', 'COMMERCIAL'],
+  // onboarding: fluxo de entrada de clientes
+  '/dashboard/onboarding': ['ADMIN', 'COMMERCIAL', 'DELIVERER'],
+  // sugestões: todos os colaboradores internos
+  '/dashboard/sugestoes': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL'],
+  // perfil: qualquer usuário autenticado (herdaria /dashboard, mas explicitado)
+  '/dashboard/perfil': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL', 'CLIENT', 'MANAGER', 'PLUG_PLAY'],
 }
 
 function getRolesForPath(pathname: string): string[] | null {
