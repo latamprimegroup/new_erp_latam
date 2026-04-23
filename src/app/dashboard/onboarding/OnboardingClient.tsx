@@ -122,7 +122,7 @@ export function OnboardingClient() {
         fetch('/api/onboarding/colaboradores'),
       ])
       if (mRes.ok) setMeetings(await mRes.json())
-      if (cRes.ok) setClients(await cRes.json())
+      if (cRes.ok) { const cd = await cRes.json(); setClients(Array.isArray(cd) ? cd : (cd.clients ?? [])) }
       if (colRes.ok) setColaboradores(await colRes.json())
     } finally {
       setLoading(false)

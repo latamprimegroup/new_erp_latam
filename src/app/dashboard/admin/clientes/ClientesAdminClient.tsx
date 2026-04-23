@@ -200,7 +200,7 @@ export function ClientesAdminClient() {
       const res = await fetch(`/api/clientes?${params}`)
       if (!res.ok) throw new Error('Erro ao carregar')
       const data = await res.json()
-      setClients(data.clients)
+      setClients(data.clients ?? [])
       setTotal(data.total)
       setPages(data.pages)
     } catch {
