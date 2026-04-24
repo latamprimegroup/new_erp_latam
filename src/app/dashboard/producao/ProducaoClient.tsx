@@ -305,6 +305,7 @@ export function ProducaoClient() {
   })
   const [cnpjPdfFile, setCnpjPdfFile] = useState<File | null>(null)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+  const [copiedQuickAction, setCopiedQuickAction] = useState<string | null>(null)
   const [nowTick, setNowTick] = useState(() => new Date())
   const [duplicateBanner, setDuplicateBanner] = useState<string | null>(null)
   const [pdfRenameBanner, setPdfRenameBanner] = useState<string | null>(null)
@@ -463,9 +464,13 @@ export function ProducaoClient() {
     return `${window.location.origin}${path}`
   }
 
-  async function copyQuickValue(value: string, successMessage: string) {
+  async function copyQuickValue(value: string, successMessage: string, actionKey: string) {
     try {
       await navigator.clipboard.writeText(value)
+      setCopiedQuickAction(actionKey)
+      window.setTimeout(() => {
+        setCopiedQuickAction((prev) => (prev === actionKey ? null : prev))
+      }, 2000)
       setToast({ kind: 'success', message: successMessage })
     } catch {
       setToast({ kind: 'error', message: 'Não foi possível copiar. Tente novamente.' })
@@ -2331,12 +2336,16 @@ export function ProducaoClient() {
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      copyQuickValue(a.passwordPlain || '', 'Senha copiada para a área de transferência.')
+                                      copyQuickValue(
+                                        a.passwordPlain || '',
+                                        'Senha copiada para a área de transferência.',
+                                        `dados-senha-${a.id}`
+                                      )
                                     }
                                     className="btn-secondary text-xs"
                                   >
                                     <Copy className="w-3 h-3 inline mr-1" />
-                                    Copiar senha
+                                    {copiedQuickAction === `dados-senha-${a.id}` ? 'Copiado!' : 'Copiar senha'}
                                   </button>
                                 )}
                               </div>
@@ -2363,13 +2372,14 @@ export function ProducaoClient() {
                                     onClick={() =>
                                       copyQuickValue(
                                         cnpjPdfDownloadUrl(a.id),
-                                        'Link do cartão CNPJ copiado para a área de transferência.'
+                                        'Link do cartão CNPJ copiado para a área de transferência.',
+                                        `dados-link-${a.id}`
                                       )
                                     }
                                     className="btn-secondary text-xs"
                                   >
                                     <Copy className="w-3 h-3 inline mr-1" />
-                                    Copiar link
+                                    {copiedQuickAction === `dados-link-${a.id}` ? 'Copiado!' : 'Copiar link'}
                                   </button>
                                 </div>
                               ) : (
@@ -2471,13 +2481,14 @@ export function ProducaoClient() {
                                     onClick={() =>
                                       copyQuickValue(
                                         editForm.currentPassword,
-                                        'Senha copiada para a área de transferência.'
+                                        'Senha copiada para a área de transferência.',
+                                        `approved-senha-${a.id}`
                                       )
                                     }
                                     className="btn-secondary text-xs"
                                   >
                                     <Copy className="w-3 h-3 inline mr-1" />
-                                    Copiar senha
+                                    {copiedQuickAction === `approved-senha-${a.id}` ? 'Copiado!' : 'Copiar senha'}
                                   </button>
                                 )}
                               </div>
@@ -2520,13 +2531,14 @@ export function ProducaoClient() {
                                   onClick={() =>
                                     copyQuickValue(
                                       cnpjPdfDownloadUrl(a.id),
-                                      'Link do cartão CNPJ copiado para a área de transferência.'
+                                      'Link do cartão CNPJ copiado para a área de transferência.',
+                                      `approved-link-${a.id}`
                                     )
                                   }
                                   className="btn-secondary text-xs"
                                 >
                                   <Copy className="w-3 h-3 inline mr-1" />
-                                  Copiar link
+                                  {copiedQuickAction === `approved-link-${a.id}` ? 'Copiado!' : 'Copiar link'}
                                 </button>
                               </div>
                             ) : (
@@ -2594,13 +2606,14 @@ export function ProducaoClient() {
                                     onClick={() =>
                                       copyQuickValue(
                                         editForm.currentPassword,
-                                        'Senha copiada para a área de transferência.'
+                                        'Senha copiada para a área de transferência.',
+                                        `full-senha-${a.id}`
                                       )
                                     }
                                     className="btn-secondary text-xs"
                                   >
                                     <Copy className="w-3 h-3 inline mr-1" />
-                                    Copiar senha
+                                    {copiedQuickAction === `full-senha-${a.id}` ? 'Copiado!' : 'Copiar senha'}
                                   </button>
                                 )}
                               </div>
@@ -2643,13 +2656,14 @@ export function ProducaoClient() {
                                   onClick={() =>
                                     copyQuickValue(
                                       cnpjPdfDownloadUrl(a.id),
-                                      'Link do cartão CNPJ copiado para a área de transferência.'
+                                      'Link do cartão CNPJ copiado para a área de transferência.',
+                                      `full-link-${a.id}`
                                     )
                                   }
                                   className="btn-secondary text-xs"
                                 >
                                   <Copy className="w-3 h-3 inline mr-1" />
-                                  Copiar link
+                                  {copiedQuickAction === `full-link-${a.id}` ? 'Copiado!' : 'Copiar link'}
                                 </button>
                               </div>
                             ) : (
