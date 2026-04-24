@@ -406,9 +406,14 @@ export function AlfredoFastEntry({ compact = false }: { compact?: boolean }) {
           </button>
 
           {processing && (
-            <p className="text-center text-xs text-zinc-400 animate-pulse">
-              Extraindo valor, data, nome e categoria via IA...
-            </p>
+            <div className="text-center space-y-1">
+              <p className="text-xs text-zinc-400 animate-pulse">
+                Extraindo valor, data, nome e categoria via IA...
+              </p>
+              <p className="text-[10px] text-zinc-300">
+                IA Vision processa a imagem · geralmente 3–6 segundos
+              </p>
+            </div>
           )}
         </div>
       )}
