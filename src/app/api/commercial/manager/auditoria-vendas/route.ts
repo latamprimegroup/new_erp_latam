@@ -10,7 +10,10 @@ type AuditSellerFilter =
 
 const PAID_ORDER_STATUSES = ['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED'] as const
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
+  try {
   const auth = await requireSalesManagerAccess()
   if (!auth.ok) return auth.response
 
@@ -135,6 +138,10 @@ export async function GET(req: NextRequest) {
     total: rows.length,
     rows,
   })
+  } catch (err) {
+    console.error('[manager/auditoria-vendas GET] Erro:', err)
+    return NextResponse.json({ error: 'Erro ao carregar auditoria de vendas', rows: [], total: 0 }, { status: 500 })
+  }
 }
 
 export async function PATCH(req: NextRequest) {
