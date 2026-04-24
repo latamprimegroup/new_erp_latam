@@ -125,11 +125,19 @@ export async function POST(req: globalThis.Request) {
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = imageBase64
         ? [{ role: 'user', content: [
             { type: 'text',       text: prompt },
-            { type: 'image_url',  image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'high' } },
+            // 'low' = imagem 512x512, muito mais rápido para comprovantes de texto
+            { type: 'image_url',  image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
           ] }]
         : [{ role: 'user', content: `${prompt}\n\nTexto do comprovante:\n${text}` }]
 
-      const response = await client.chat.completions.create({ model, messages, temperature: 0.1, max_tokens: 500 })
+      const response = await client.chat.completions.create({
+        model,
+        messages,
+        temperature: 0.1,
+        max_tokens: 300,
+        // timeout de 15s — evita serverless pendurar
+        timeout: 15_000,
+      })
       const raw      = response.choices[0]?.message?.content ?? '{}'
       const cleaned  = raw.replace(/```json\n?/g, '').replace(/```/g, '').trim()
       extracted      = JSON.parse(cleaned)

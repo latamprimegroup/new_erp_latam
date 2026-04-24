@@ -233,15 +233,29 @@ export function AlfredoFastEntry({ compact = false }: { compact?: boolean }) {
 
   useEffect(() => { if (showHistory) loadHistory() }, [showHistory, loadHistory])
 
-  // Upload de imagem → base64
+  // Upload de imagem → base64 comprimido (máx 800px, qualidade 0.75)
   const handleImageUpload = (file: File) => {
     setImageName(file.name)
     const reader = new FileReader()
     reader.onload = (e) => {
       const result = e.target?.result as string
-      // Remove prefixo "data:image/...;base64,"
-      const base64 = result.split(',')[1]
-      setImageBase64(base64)
+      const img = new Image()
+      img.onload = () => {
+        const MAX = 800
+        let { width, height } = img
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round((height * MAX) / width); width = MAX }
+          else { width = Math.round((width * MAX) / height); height = MAX }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width; canvas.height = height
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, width, height)
+        // JPEG qualidade 0.75 — suficiente para OCR de texto
+        const compressed = canvas.toDataURL('image/jpeg', 0.75)
+        setImageBase64(compressed.split(',')[1])
+      }
+      img.src = result
     }
     reader.readAsDataURL(file)
   }
