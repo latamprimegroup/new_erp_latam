@@ -37,33 +37,11 @@ function detectCategory(text: string): string {
 }
 
 // ─── Prompt do sistema para a ALFREDO IA ─────────────────────────────────────
+// Prompt ultra-compacto para minimizar tokens e latência
 function buildExtractionPrompt(type: string): string {
-  const isEntrada = type === 'ENTRADA'
-  return `Você é ALFREDO IA, assistente financeiro do ERP Ads Ativos. Extraia dados de comprovantes de ${isEntrada ? 'recebimento' : 'pagamento'} e retorne JSON.
-
-REGRAS:
-- Se for imagem: leia o comprovante (PIX, TED, transferência) e extraia todos os campos visíveis.
-- Se for texto: interprete como mensagem do WhatsApp ou descrição manual.
-- Retorne SOMENTE JSON válido, sem markdown, sem texto extra.
-- Para datas, use ISO 8601 (ex: "2026-04-21T14:30:00.000Z").
-- Para valores, use número com duas casas decimais (ex: 1500.00).
-- Se não conseguir extrair um campo, use null.
-- Para "transactionId", extraia o código E2E do PIX (começa com "E0") ou ID da transação.
-- Para "confidence", estime de 0 a 100 o quão certo você está da extração total.
-
-SCHEMA de saída:
-{
-  "amount": number | null,
-  "currency": "BRL" | "USD" | "EUR",
-  "date": string | null,
-  "name": string | null,
-  "transactionId": string | null,
-  "paymentMethod": "PIX" | "TED" | "DOC" | "BOLETO" | "CARTAO" | "DINHEIRO" | "OUTRO",
-  "category": string | null,
-  "description": string,
-  "confidence": number,
-  "isIncome": boolean
-}`
+  return `Extract payment data from this ${type === 'ENTRADA' ? 'receipt' : 'payment proof'} and return ONLY valid JSON, no markdown.
+Schema: {"amount":number|null,"currency":"BRL","date":"ISO8601"|null,"name":string|null,"transactionId":string|null,"paymentMethod":"PIX"|"TED"|"DOC"|"BOLETO"|"CARTAO"|"OUTRO","category":string|null,"description":string,"confidence":0-100,"isIncome":${type === 'ENTRADA'}}
+Rules: amount=numeric value, date=ISO8601, transactionId=PIX E2E code starting with E0, confidence=0-100, null if missing.`
 }
 
 // ─── Extração sem OpenAI (fallback regex) ───────────────────────────────────
@@ -114,37 +92,37 @@ export async function POST(req: globalThis.Request) {
 
   let extracted: ReturnType<typeof extractWithRegex>
 
-  // ── Tenta com OpenAI ──────────────────────────────────────────────────────
+  // ── Tenta com OpenAI (timeout agressivo de 8s com fallback automático) ─────
   const apiKey = process.env.OPENAI_API_KEY
   if (apiKey) {
     try {
-      const client  = new OpenAI({ apiKey })
-      const model   = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
-      const prompt  = buildExtractionPrompt(type)
+      const client = new OpenAI({ apiKey })
+      // Sempre gpt-4o-mini — mais rápido e barato para OCR simples
+      const model  = 'gpt-4o-mini'
+      const prompt = buildExtractionPrompt(type)
 
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = imageBase64
         ? [{ role: 'user', content: [
-            { type: 'text',       text: prompt },
-            // 'low' = imagem 512x512, muito mais rápido para comprovantes de texto
-            { type: 'image_url',  image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
+            { type: 'text',      text: prompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
           ] }]
-        : [{ role: 'user', content: `${prompt}\n\nTexto do comprovante:\n${text}` }]
+        : [{ role: 'user', content: `${prompt}\n\n${text}` }]
 
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        temperature: 0.1,
-        max_tokens: 300,
-        // timeout de 15s — evita serverless pendurar
-        timeout: 15_000,
+      // Race entre OpenAI e timeout de 8s — cai no regex se demorar
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('OpenAI timeout')), 8_000)
+      )
+      const aiPromise = client.chat.completions.create({
+        model, messages, temperature: 0, max_tokens: 200,
       })
-      const raw      = response.choices[0]?.message?.content ?? '{}'
-      const cleaned  = raw.replace(/```json\n?/g, '').replace(/```/g, '').trim()
-      extracted      = JSON.parse(cleaned)
 
-      // Reforça categoria por palavra-chave se IA retornou null
+      const response = await Promise.race([aiPromise, timeoutPromise])
+      const raw     = response.choices[0]?.message?.content ?? '{}'
+      const cleaned = raw.replace(/```json\n?/g, '').replace(/```/g, '').trim()
+      extracted     = JSON.parse(cleaned)
       if (!extracted.category && text) extracted.category = detectCategory(text)
     } catch {
+      // Fallback instantâneo por regex
       extracted = extractWithRegex(text ?? '', type)
     }
   } else {
