@@ -530,6 +530,7 @@ export async function calculateQuickSaleIncentiveBreakdown(quickSaleCheckoutId: 
   sellerName: string
   managerId: string | null
   managerName: string
+  publicAssetId: string
   grossValue: number
   supplierCost: number
   sellerCommission: number
@@ -561,6 +562,7 @@ export async function calculateQuickSaleIncentiveBreakdown(quickSaleCheckoutId: 
       sellerName: 'N/A',
       managerId: null,
       managerName: 'N/A',
+      publicAssetId: quickSaleCheckoutId,
       grossValue: 0,
       supplierCost: 0,
       sellerCommission: 0,
@@ -598,7 +600,10 @@ export async function calculateQuickSaleIncentiveBreakdown(quickSaleCheckoutId: 
       : seller?.leader ?? null
   const assetIds = Array.isArray(checkout.reservedAssetIds) ? (checkout.reservedAssetIds as string[]) : []
   const assets = assetIds.length
-    ? await prisma.asset.findMany({ where: { id: { in: assetIds } }, select: { costPrice: true, specs: true } })
+    ? await prisma.asset.findMany({
+        where: { id: { in: assetIds } },
+        select: { costPrice: true, specs: true, adsId: true },
+      })
     : []
   const grossValue = Number(checkout.totalAmount ?? 0)
   const supplierCost = computeAssetSupplierCost(assets)
@@ -616,12 +621,14 @@ export async function calculateQuickSaleIncentiveBreakdown(quickSaleCheckoutId: 
     typeof firstSpecs?.authorityTag === 'string'
       ? firstSpecs.authorityTag
       : checkout.listing.assetCategory || 'AUTHORITY_GERAL'
+  const publicAssetId = assets[0]?.adsId ?? quickSaleCheckoutId
 
   return {
     sellerId,
     sellerName: seller?.name || seller?.email || 'N/A',
     managerId,
     managerName: manager?.name || manager?.email || 'N/A',
+    publicAssetId,
     grossValue,
     supplierCost,
     sellerCommission: calc.sellerCommission,
