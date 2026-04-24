@@ -15,10 +15,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
+import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 import { syncClientLTV } from '@/lib/client-ltv'
-import { notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
+import {
+  notifyAdminsQuickSaleApproved,
+  notifyAdminsSaleCompleted,
+  notifyProductionManagerStockSold,
+} from '@/lib/notifications/admin-events'
+import { sendSaleIncentiveNotifications } from '@/lib/notifications/sales-incentive'
 import { sendUtmifyConversion } from '@/lib/utmify'
+import {
+  calculateQuickSaleIncentiveBreakdown,
+  registerQuickSaleProductionBonus,
+  getSalesCheckoutIncentiveBreakdown,
+} from '@/lib/incentive-engine'
 
 export const runtime = 'nodejs'
 
@@ -146,6 +157,8 @@ export async function POST(req: NextRequest) {
       }
       runCommercialOrderPaidBridge(order.id, 'webhook_inter')
         .catch((e) => console.error('commercialBridge', e))
+      handleSaleToFinancialBridge(order.id, 'webhook_inter')
+        .catch((e) => console.error('financialBridge', e))
     }
 
     // ── 2. Fluxo novo: SalesCheckout PIX ────────────────────────────────────
@@ -188,17 +201,21 @@ export async function POST(req: NextRequest) {
         }).catch((e) => console.error('[Checkout] Falha ao registrar movimento:', e))
       }
 
-      // 2c. Utmify — envia conversão (fire-and-forget)
+      // 2c. Utmify — envia conversão
+      const checkoutIncentive = await getSalesCheckoutIncentiveBreakdown(checkout.id)
+      let checkoutUtmifySynced = Boolean(checkout.utmifySent)
+
       if (!checkout.utmifySent) {
         const asset = checkout.assetId
           ? await prisma.asset.findUnique({ where: { id: checkout.assetId }, select: { displayName: true } })
           : null
 
-        sendUtmifyConversion({
+        checkoutUtmifySynced = await sendUtmifyConversion({
           checkoutId:  checkout.id,
           adsId:       checkout.adsId,
           displayName: asset?.displayName ?? checkout.adsId,
           amountBrl:   Number(checkout.amount),
+          netProfitBrl: checkoutIncentive.netProfit,
           paidAt,
           createdAt:   checkout.createdAt,
           buyer: {
@@ -214,14 +231,17 @@ export async function POST(req: NextRequest) {
             utm_content:  checkout.lead.utmContent  ?? undefined,
             utm_term:     checkout.lead.utmTerm     ?? undefined,
           },
-        }).then(async (ok) => {
-          if (ok) {
-            await prisma.salesCheckout.update({
-              where: { id: checkout.id },
-              data:  { utmifySent: true },
-            })
-          }
-        }).catch((e) => console.error('[Utmify]', e))
+        }).catch((e) => {
+          console.error('[Utmify]', e)
+          return false
+        })
+
+        if (checkoutUtmifySynced) {
+          await prisma.salesCheckout.update({
+            where: { id: checkout.id },
+            data:  { utmifySent: true },
+          }).catch((e) => console.error('[Utmify] Falha ao marcar sincronização:', e))
+        }
       }
 
       // 2d. Entrega WhatsApp automática (fire-and-forget)
@@ -242,6 +262,29 @@ export async function POST(req: NextRequest) {
             data:  { deliverySent: true },
           })
         }).catch((e) => console.error('[WhatsApp delivery]', e))
+      }
+
+      if (checkoutIncentive.sellerId) {
+        sendSaleIncentiveNotifications({
+          sellerId: checkoutIncentive.sellerId,
+          sellerName: checkoutIncentive.sellerName,
+          publicId: checkout.adsId,
+          grossValue: checkoutIncentive.grossValue,
+          sellerCommission: checkoutIncentive.sellerCommission,
+          managerCommission: checkoutIncentive.managerCommission,
+          supplierCost: checkoutIncentive.supplierCost,
+          netProfit: checkoutIncentive.netProfit,
+          remainingToUnlock: checkoutIncentive.sellerRemainingToUnlock ?? 0,
+          utmifySynced: checkoutUtmifySynced,
+        }).catch((e) => console.error('[Checkout] Incentive notify', e))
+      }
+
+      if (checkoutIncentive.nicheForReplenishment) {
+        notifyProductionManagerStockSold({
+          assetId: checkout.adsId,
+          niche: checkoutIncentive.nicheForReplenishment,
+          listingTitle: checkoutIncentive.displayName || checkout.adsId,
+        }).catch((e) => console.error('[Checkout] notify production manager', e))
       }
     }
 
@@ -269,6 +312,38 @@ export async function POST(req: NextRequest) {
       })
       checkoutsUpdated++
 
+      // 3a.1. Lança receita no Financeiro (vendas do dia / ERP)
+      const quickIncentive = await calculateQuickSaleIncentiveBreakdown(quickCheckout.id)
+      await prisma.quickSaleCheckout.update({
+        where: { id: quickCheckout.id },
+        data: {
+          sellerId: quickIncentive.sellerId,
+          managerId: quickIncentive.managerId,
+          sellerCommission: quickIncentive.sellerCommission,
+          managerCommission: quickIncentive.managerCommission,
+          supplierCost: quickIncentive.supplierCost,
+          netProfit: quickIncentive.netProfit,
+          sellerMetaUnlocked: quickIncentive.sellerMetaUnlocked,
+        },
+      }).catch((e) => console.error('[QuickCheckout] Falha ao persistir incentivos:', e))
+
+      await prisma.financialEntry.create({
+        data: {
+          type:          'INCOME',
+          category:      'RECEITA_COMERCIAL',
+          value:         Number(quickCheckout.totalAmount),
+          currency:      'BRL',
+          date:          paidAt,
+          dueDate:       paidAt,
+          paymentDate:   paidAt,
+          entryStatus:   'PAID',
+          paymentMethod: 'PIX',
+          reconciled:    false,
+          netProfit:     quickIncentive.netProfit,
+          description:   `Venda Rápida: ${quickCheckout.listing.title} | Checkout: ${quickCheckout.id} | Cliente: ${quickCheckout.buyerName}`,
+        },
+      }).catch((e) => console.error('[QuickCheckout] Falha ao registrar receita financeira:', e))
+
       // 3b. Marca todos os ativos reservados como SOLD
       if (assetIds.length > 0) {
         await prisma.asset.updateMany({
@@ -287,13 +362,15 @@ export async function POST(req: NextRequest) {
         }).catch((e) => console.error('[QuickCheckout] Falha ao registrar movimentos:', e))
       }
 
-      // 3c. Utmify (fire-and-forget)
+      // 3c. Utmify
+      let quickUtmifySynced = Boolean(quickCheckout.utmifySent)
       if (!quickCheckout.utmifySent) {
-        sendUtmifyConversion({
+        quickUtmifySynced = await sendUtmifyConversion({
           checkoutId:  quickCheckout.id,
           adsId:       quickCheckout.id,
           displayName: quickCheckout.listing.title,
           amountBrl:   Number(quickCheckout.totalAmount),
+          netProfitBrl: quickIncentive.netProfit,
           paidAt,
           createdAt:   quickCheckout.createdAt,
           buyer: {
@@ -307,15 +384,52 @@ export async function POST(req: NextRequest) {
             utm_medium:   quickCheckout.utmMedium   ?? undefined,
             utm_campaign: quickCheckout.utmCampaign ?? undefined,
           },
-        }).then(async (ok) => {
-          if (ok) {
-            await prisma.quickSaleCheckout.update({
-              where: { id: quickCheckout.id },
-              data:  { utmifySent: true },
-            })
-          }
-        }).catch((e) => console.error('[Utmify/Quick]', e))
+        }).catch((e) => {
+          console.error('[Utmify/Quick]', e)
+          return false
+        })
+        if (quickUtmifySynced) {
+          await prisma.quickSaleCheckout.update({
+            where: { id: quickCheckout.id },
+            data:  { utmifySent: true },
+          }).catch((e) => console.error('[Utmify/Quick] Falha ao marcar sincronização:', e))
+        }
       }
+
+      notifyAdminsQuickSaleApproved({
+        checkoutId:  quickCheckout.id,
+        buyerName:   quickCheckout.buyerName,
+        listingTitle: quickCheckout.listing.title,
+        quantity:    quickCheckout.qty,
+        totalAmount: Number(quickCheckout.totalAmount),
+      }).catch((e) => console.error('[QuickCheckout] Falha ao notificar admins:', e))
+
+      if (quickIncentive.sellerId) {
+        sendSaleIncentiveNotifications({
+          sellerId: quickIncentive.sellerId,
+          sellerName: quickIncentive.sellerName,
+          publicId: quickIncentive.publicAssetId,
+          grossValue: quickIncentive.grossValue,
+          sellerCommission: quickIncentive.sellerCommission,
+          managerCommission: quickIncentive.managerCommission,
+          supplierCost: quickIncentive.supplierCost,
+          netProfit: quickIncentive.netProfit,
+          remainingToUnlock: quickIncentive.sellerRemainingToUnlock ?? 0,
+          utmifySynced: quickUtmifySynced,
+        }).catch((e) => console.error('[QuickCheckout] Incentive notify', e))
+      }
+
+      notifyProductionManagerStockSold({
+        assetId: quickIncentive.publicAssetId,
+        niche: quickIncentive.nicheForReplenishment,
+        listingTitle: quickCheckout.listing.title,
+      }).catch((e) => console.error('[QuickCheckout] notify production manager', e))
+
+      registerQuickSaleProductionBonus({
+        quickCheckoutId: quickCheckout.id,
+        assetIds,
+        paidAt,
+      }).catch((e) => console.error('[QuickCheckout] production bonus', e))
 
       // 3d. WhatsApp — entrega automática multi-ativo (fire-and-forget)
       if (!quickCheckout.deliverySent) {

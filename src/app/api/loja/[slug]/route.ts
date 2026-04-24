@@ -5,8 +5,13 @@
 import { NextResponse } from 'next/server'
 import { z }           from 'zod'
 import { randomUUID }  from 'crypto'
+import { getServerSession } from 'next-auth/next'
 import { prisma }      from '@/lib/prisma'
+import { authOptions } from '@/lib/auth'
 import { generatePixCharge } from '@/lib/inter/client'
+import { sendUtmifyPixGerado } from '@/lib/utmify'
+import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
+import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 
 // ─── GET: retorna info do produto OU status do checkout ───────────────────────
 
@@ -18,10 +23,31 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
   if (checkoutId) {
     const co = await prisma.quickSaleCheckout.findUnique({
       where:  { id: checkoutId },
-      select: { status: true, paidAt: true },
+      select: {
+        status: true,
+        paidAt: true,
+        expiresAt: true,
+        pixCopyPaste: true,
+        pixQrCode: true,
+        totalAmount: true,
+        qty: true,
+        listing: { select: { slug: true, title: true } },
+      },
     })
     if (!co) return NextResponse.json({ error: 'Checkout não encontrado' }, { status: 404 })
-    return NextResponse.json({ status: co.status, paidAt: co.paidAt })
+    if (co.listing.slug !== params.slug) {
+      return NextResponse.json({ error: 'Checkout não pertence a este produto' }, { status: 404 })
+    }
+    return NextResponse.json({
+      status: co.status,
+      paidAt: co.paidAt,
+      expiresAt: co.expiresAt,
+      pixCopyPaste: co.pixCopyPaste,
+      qrCodeBase64: co.pixQrCode,
+      totalAmount: Number(co.totalAmount),
+      qty: co.qty,
+      title: co.listing.title,
+    })
   }
 
   const listing = await prisma.productListing.findUnique({
@@ -60,6 +86,8 @@ const schema = z.object({
   utm_source:   z.string().max(100).optional(),
   utm_medium:   z.string().max(100).optional(),
   utm_campaign: z.string().max(200).optional(),
+  utm_content:  z.string().max(200).optional(),
+  utm_term:     z.string().max(200).optional(),
 })
 
 export async function POST(req: globalThis.Request, { params }: { params: { slug: string } }) {
@@ -77,9 +105,27 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   if (!parsed.success)
     return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
 
-  const { name, cpf, whatsapp, email, qty, utm_source, utm_medium, utm_campaign } = parsed.data
+  const {
+    name,
+    cpf,
+    whatsapp,
+    email,
+    qty,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    utm_content,
+    utm_term,
+  } = parsed.data
   const waE164   = whatsapp.startsWith('+') ? whatsapp : `+${whatsapp}`
   const cpfClean = cpf.replace(/\D/g, '')
+  const session = await getServerSession(authOptions).catch(() => null)
+  const checkoutSellerId =
+    session?.user?.role === 'COMMERCIAL' || session?.user?.role === 'ADMIN'
+      ? session.user.id
+      : null
+  const checkoutManagerId =
+    session?.user?.role === 'COMMERCIAL' ? session.user.leaderId ?? null : null
 
   const totalAmount = Number(listing.pricePerUnit) * qty
   const txid        = randomUUID().replace(/-/g, '').slice(0, 35)
@@ -145,6 +191,8 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           pixQrCode:        pixData.qrCodeBase64,
           expiresAt:        pixData.expiresAt,
           reservedAssetIds: assetIds,
+          sellerId:         checkoutSellerId,
+          managerId:        checkoutManagerId,
           utmSource:        utm_source   ?? null,
           utmMedium:        utm_medium   ?? null,
           utmCampaign:      utm_campaign ?? null,
@@ -166,6 +214,48 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     return NextResponse.json({ error: 'Erro interno ao reservar estoque.' }, { status: 500 })
   }
 
+  const baseUrl = getPublicAppBaseUrl() || new URL(req.url).origin
+  const resumeUrl = `${baseUrl}/loja/${listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`
+
+  sendUtmifyPixGerado({
+    checkoutId: checkout.id,
+    adsId: listing.id,
+    displayName: listing.title,
+    amountBrl: totalAmount,
+    createdAt: checkout.createdAt,
+    buyer: {
+      name,
+      email: email || '',
+      whatsapp: waE164,
+      cpf: cpfClean,
+    },
+    utms: {
+      utm_source,
+      utm_medium,
+      utm_campaign,
+      utm_content,
+      utm_term,
+    },
+  }).catch((e) => console.error('[Utmify quick PIX_GERADO]', e))
+
+  const whatsappMsg = [
+    '🚀 *PIX GERADO — ADS ATIVOS*',
+    '',
+    `Produto: *${listing.title}*`,
+    `Quantidade: *${qty}*`,
+    `Valor: *R$ ${totalAmount.toFixed(2)}*`,
+    '',
+    '📋 *PIX Copia e Cola:*',
+    pixData.pixCopyPaste,
+    '',
+    `🔳 *QR Code para pagamento:* ${resumeUrl}`,
+    '',
+    'Assim que o pagamento for aprovado, enviamos a confirmação automaticamente.',
+  ].join('\n')
+
+  sendWhatsApp({ phone: waE164, message: whatsappMsg })
+    .catch((e) => console.error('[Loja WhatsApp PIX]', e))
+
   return NextResponse.json({
     checkoutId:   checkout.id,
     txid:         pixData.txid,
@@ -175,6 +265,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     totalAmount,
     qty,
     title:        listing.title,
+    resumeUrl,
   }, { status: 201 })
 }
 

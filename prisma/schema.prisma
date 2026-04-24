@@ -138,6 +138,12 @@ model User {
   stockMovements           StockMovement[]
   /// Taxa de comissão do vendedor em % (ex: 5.00 = 5%). Usado no bridge comercial→financeiro.
   commissionRate           Decimal? @map("commission_rate") @db.Decimal(5, 2)
+  /// Cargo funcional para engenharia de incentivos (Vendedor, Gerente, Produção, etc.)
+  cargo                    String?  @map("cargo") @db.VarChar(40)
+  /// Vincula o colaborador ao líder direto (hierarquia comercial/produção)
+  leaderId                 String?  @map("lider_id")
+  leader                   User?    @relation("UserHierarchy", fields: [leaderId], references: [id])
+  ledUsers                 User[]   @relation("UserHierarchy")
 
   // Supply Chain / Compras
   assetMovements           AssetMovement[]
@@ -157,9 +163,12 @@ model User {
   isPartner                Boolean                   @default(false) @map("is_partner")
   loginAuditLogs           LoginAuditLog[]
   purchaseEntriesCreated   PurchaseEntry[]           @relation("PurchaseEntryCreator")
+  quickSaleCheckoutsSold   QuickSaleCheckout[]       @relation("QuickSaleSeller")
+  quickSaleCheckoutsManaged QuickSaleCheckout[]      @relation("QuickSaleManager")
 
   @@index([phone])
   @@index([status])
+  @@index([leaderId])
 }
 
 /// Auditoria de tentativas de login — registra IP, user-agent e resultado
@@ -1540,6 +1549,18 @@ model Order {
   warrantyEndsAt DateTime? @map("warranty_ends_at")
   /// IDs externos colados na venda (Ads, BM, AdsPower) — JSON string[]
   deliveredAssetIdsJson Json? @map("delivered_asset_ids_json")
+  /// Comissão direta do vendedor nesta venda (auditoria)
+  sellerCommission Decimal? @map("comissao_vendedor") @db.Decimal(12, 2)
+  /// Comissão override de gerente comercial nesta venda (auditoria)
+  managerCommission Decimal? @map("comissao_gerente") @db.Decimal(12, 2)
+  /// Custo do ativo/estoque (fornecedor) abatido do lucro
+  supplierCost Decimal? @map("custo_fornecedor") @db.Decimal(12, 2)
+  /// Lucro líquido calculado na aprovação do pagamento
+  netProfit Decimal? @map("lucro_liquido") @db.Decimal(12, 2)
+  /// Se o vendedor já havia alcançado o gatilho de meta mensal no momento da venda
+  sellerMetaUnlocked Boolean? @map("seller_meta_unlocked")
+  /// Auditoria gerencial de conferência comercial
+  commercialAuditAt DateTime? @map("commercial_audit_at")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
@@ -5315,6 +5336,20 @@ model QuickSaleCheckout {
   webhookPayload Json?          @map("webhook_payload")
   /// IDs dos Assets reservados para este pedido (JSON array)
   reservedAssetIds Json?        @map("reserved_asset_ids")
+  /// Vendedor responsável (normalmente quem criou o listing)
+  sellerId        String?       @map("seller_id")
+  seller          User?         @relation("QuickSaleSeller", fields: [sellerId], references: [id])
+  /// Gerente comercial (override)
+  managerId       String?       @map("manager_id")
+  manager         User?         @relation("QuickSaleManager", fields: [managerId], references: [id])
+  /// Auditoria financeira da venda
+  sellerCommission Decimal?     @map("comissao_vendedor") @db.Decimal(12, 2)
+  managerCommission Decimal?    @map("comissao_gerente") @db.Decimal(12, 2)
+  supplierCost      Decimal?    @map("custo_fornecedor") @db.Decimal(12, 2)
+  netProfit         Decimal?    @map("lucro_liquido") @db.Decimal(12, 2)
+  sellerMetaUnlocked Boolean?   @map("seller_meta_unlocked")
+  /// Auditoria gerencial de conferência comercial
+  commercialAuditAt DateTime?   @map("commercial_audit_at")
   deliverySent   Boolean        @default(false) @map("delivery_sent")
   utmifySent     Boolean        @default(false) @map("utmify_sent")
   /// UTMs capturados
@@ -5327,6 +5362,8 @@ model QuickSaleCheckout {
   @@index([status])
   @@index([interTxid])
   @@index([listingId])
+  @@index([sellerId])
+  @@index([managerId])
   @@index([createdAt])
   @@map("quick_sale_checkouts")
 }

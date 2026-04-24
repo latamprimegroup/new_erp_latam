@@ -4,6 +4,8 @@ declare module 'next-auth' {
   interface User {
     id: string
     role: string
+    cargo?: string | null
+    leaderId?: string | null
     /** Status de aprovação: PENDING | ACTIVE | BANNED */
     status?: string
     /** pt-BR | en-US | es — preferência de idioma (área cliente) */
@@ -16,6 +18,8 @@ declare module 'next-auth' {
     user: User & {
       id: string
       role: string
+      cargo?: string | null
+      leaderId?: string | null
       status: string
       languageCode?: string
     }
@@ -26,6 +30,8 @@ declare module 'next-auth/jwt' {
   interface JWT {
     id: string
     role: string
+    cargo?: string | null
+    leaderId?: string | null
     status: string
     languageCode?: string
   }

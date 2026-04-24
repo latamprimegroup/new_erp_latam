@@ -72,6 +72,7 @@ export const authOptions: NextAuthOptions = {
         let user: {
           id: string; email: string; name: string | null; role: string;
           photo: string | null; passwordHash: string | null; languageCode: string | null;
+          cargo: string | null; leaderId: string | null;
           status: string;
         } | null
 
@@ -81,6 +82,7 @@ export const authOptions: NextAuthOptions = {
             select: {
               id: true, email: true, name: true, role: true,
               photo: true, passwordHash: true, languageCode: true,
+              cargo: true, leaderId: true,
               status: true,
             },
           })
@@ -122,6 +124,8 @@ export const authOptions: NextAuthOptions = {
           image:        user.photo ?? undefined,
           remember,
           languageCode: user.languageCode ?? undefined,
+          cargo:        user.cargo ?? undefined,
+          leaderId:     user.leaderId ?? undefined,
           status:       user.status,
         }
       },
@@ -137,6 +141,8 @@ export const authOptions: NextAuthOptions = {
         token.role         = user.role
         token.status       = (user as { status?: string }).status ?? 'ACTIVE'
         token.languageCode = (user as { languageCode?: string }).languageCode ?? 'pt-BR'
+        token.cargo        = (user as { cargo?: string }).cargo
+        token.leaderId     = (user as { leaderId?: string }).leaderId
         const remember     = !!(user as { remember?: boolean }).remember
         const shortSec = parseInt(process.env.SESSION_SHORT_MAX_AGE_SEC || `${14 * 60 * 60}`, 10)
         const longSec  = parseInt(process.env.SESSION_LONG_MAX_AGE_SEC  || `${30 * 24 * 60 * 60}`, 10)
@@ -150,6 +156,8 @@ export const authOptions: NextAuthOptions = {
         session.user.role         = token.role as string
         session.user.status       = token.status as string
         session.user.languageCode = (token.languageCode as string) ?? 'pt-BR'
+        session.user.cargo        = (token.cargo as string | undefined) ?? undefined
+        session.user.leaderId     = (token.leaderId as string | undefined) ?? undefined
       }
       return session
     },

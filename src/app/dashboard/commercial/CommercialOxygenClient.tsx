@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
+import { VendaRapidaTab } from '@/app/dashboard/compras/VendaRapidaTab'
 
 type Stats = {
   faturamento24h: number
@@ -20,6 +22,7 @@ type Stats = {
   diaAtual?: number
   ticketMedioPorLinha?: { accountType: string; pedidos: number; faturamento: number; ticketMedio: number }[]
   performanceVendedoresMes?: { sellerId: string | null; nome: string; faturamento: number; pedidos: number }[]
+  sellerGoalBrl?: number
   churnClientes30d: number
   taxaConversaoPedido30d: number
   taxaConversaoLeads30d: number | null
@@ -47,6 +50,38 @@ type Stats = {
       clientName: string | null
     }[]
   }
+}
+
+type IncentiveSummary = {
+  monthStart: string
+  targetBrl: number
+  totalApprovedBrl: number
+  progressPct: number
+  remainingToUnlockBrl: number
+  unlocked: boolean
+  sellerCommissionPct: number
+  managerOverridePct: number
+  productionUnitBonusBrl: number
+  productionManagerBonusBrl: number
+  topSellers?: {
+    sellerId: string
+    sellerName: string
+    approvedAmountBrl: number
+    sellerCommissionBrl: number
+    managerCommissionBrl: number
+    unlocked: boolean
+  }[]
+}
+
+type IncentiveStatementRow = {
+  orderId: string
+  paidAt: string
+  clientName: string | null
+  grossBrl: number
+  sellerCommissionBrl: number
+  managerCommissionBrl: number
+  supplierCostBrl: number
+  netProfitBrl: number
 }
 
 type GateOrder = {
@@ -152,6 +187,11 @@ async function safeJson(r: Response) {
 }
 
 export function CommercialOxygenClient() {
+  const { data: session } = useSession()
+  const managerCargo = (session?.user?.cargo || '').toUpperCase()
+  const isManagerCargo =
+    session?.user?.role === 'ADMIN' ||
+    ['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(managerCargo)
   const [stats, setStats] = useState<Stats | null>(null)
   const [gate, setGate] = useState<GateOrder[]>([])
   const [crm, setCrm] = useState<CrmRow[]>([])
@@ -176,6 +216,7 @@ export function CommercialOxygenClient() {
   const [crmInactiveDays, setCrmInactiveDays] = useState(0)
   const [crmMinSpent, setCrmMinSpent] = useState(0)
   const [crmSort, setCrmSort] = useState<'spent' | 'lastPurchase'>('spent')
+  const [incentiveSummary, setIncentiveSummary] = useState<IncentiveSummary | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -193,8 +234,9 @@ export function CommercialOxygenClient() {
       fetch('/api/commercial/wait-queue').then(safeJson),
       fetch('/api/commercial/contact-logs').then(safeJson),
       fetch('/api/commercial/coupons').then(safeJson),
+      fetch('/api/commercial/incentives/summary').then(safeJson),
     ])
-      .then(([s, o, c, w, l, cp]) => {
+      .then(([s, o, c, w, l, cp, inc]) => {
         if (s.error) throw new Error(s.error)
         if (typeof s.faturamento24h !== 'number' || typeof s.taxaConversaoPedido30d !== 'number') {
           throw new Error('Resposta de KPIs inválida')
@@ -210,6 +252,7 @@ export function CommercialOxygenClient() {
         setContactLogs(l.logs || [])
         if (cp.error) throw new Error(cp.error)
         setCoupons(cp.coupons || [])
+        if (!inc.error) setIncentiveSummary(inc)
       })
       .catch((e) => setErr(e.message || 'Erro ao carregar'))
       .finally(() => setLoading(false))
@@ -370,6 +413,7 @@ export function CommercialOxygenClient() {
       : 0
   const linhas = stats.ticketMedioPorLinha ?? []
   const vendedores = stats.performanceVendedoresMes ?? []
+  const sellerGoal = Number(stats.sellerGoalBrl ?? 30_000)
 
   return (
     <div className="space-y-8">
@@ -434,6 +478,79 @@ export function CommercialOxygenClient() {
             <code>TINTIM_WEBHOOK_SECRET</code>, <code>TINTIM_PRODUCT_MAP_JSON</code>,{' '}
             <code>TINTIM_DELIVERY_RESPONSIBLE_USER_ID</code>.
           </p>
+        </section>
+      ) : null}
+
+      {incentiveSummary && (
+        <section className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+          <h2 className="text-lg font-semibold text-emerald-900 dark:text-emerald-100">
+            Engenharia de Incentivos (Comercial & Produção)
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="rounded-lg bg-white dark:bg-gray-900/80 p-3 border border-gray-100 dark:border-white/10">
+              <p className="text-xs text-gray-500">Meta gatilho</p>
+              <p className="text-xl font-bold">
+                {incentiveSummary.targetBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white dark:bg-gray-900/80 p-3 border border-gray-100 dark:border-white/10">
+              <p className="text-xs text-gray-500">Aprovado no mês</p>
+              <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">
+                {incentiveSummary.totalApprovedBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white dark:bg-gray-900/80 p-3 border border-gray-100 dark:border-white/10">
+              <p className="text-xs text-gray-500">Comissão vendedor</p>
+              <p className="text-xl font-bold">{incentiveSummary.sellerCommissionPct}%</p>
+            </div>
+            <div className="rounded-lg bg-white dark:bg-gray-900/80 p-3 border border-gray-100 dark:border-white/10">
+              <p className="text-xs text-gray-500">Override gerente</p>
+              <p className="text-xl font-bold">{incentiveSummary.managerOverridePct}%</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-300">
+            {incentiveSummary.unlocked
+              ? '✅ Meta comercial liberada: comissões ativas no mês atual.'
+              : `⚠️ Faltam ${incentiveSummary.remainingToUnlockBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} para liberar comissão do vendedor.`}
+            {' '}Bônus produção por unidade em estoque: {incentiveSummary.productionUnitBonusBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.
+          </p>
+          {incentiveSummary.topSellers && incentiveSummary.topSellers.length > 0 ? (
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-white/70 dark:bg-black/20 p-3">
+              <p className="text-xs font-semibold text-emerald-900 dark:text-emerald-100 mb-2">
+                Extrato rápido de comissão (mês atual)
+              </p>
+              <ul className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
+                {incentiveSummary.topSellers.map((s) => (
+                  <li key={s.sellerId} className="flex flex-wrap justify-between gap-2">
+                    <span>
+                      <strong>{s.sellerName}</strong> — {s.approvedAmountBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {s.unlocked ? '' : ' (meta ainda não liberada)'}
+                    </span>
+                    <span>
+                      comissão: {s.sellerCommissionBrl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div>
+            <Link href="/dashboard/commercial/incentivos" className="text-sm text-emerald-700 dark:text-emerald-300 underline">
+              Ver extrato completo de comissões →
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {isManagerCargo ? (
+        <section className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-4">
+          <h2 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100">Área do Gerente Comercial</h2>
+          <p className="text-sm text-indigo-900/80 dark:text-indigo-100/80 mt-1">
+            Gestão de equipe, auditoria de vendas, distribuição de leads e relatório de comissões (payday).
+          </p>
+          <Link href="/dashboard/commercial/manager" className="inline-block mt-3 text-sm underline text-indigo-700 dark:text-indigo-300">
+            Abrir painel gerencial →
+          </Link>
         </section>
       ) : null}
 
@@ -560,7 +677,10 @@ export function CommercialOxygenClient() {
           </div>
           <div className="card overflow-x-auto">
             <h3 className="font-semibold text-sm mb-2">Performance de vendedores (mês)</h3>
-            <p className="text-xs text-gray-500 mb-2">Base para comissão / bônus futuro.</p>
+            <p className="text-xs text-gray-500 mb-2">
+              Barra de progresso considera meta mínima de{' '}
+              {(stats.sellerGoalBrl ?? 30000).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.
+            </p>
             {vendedores.length === 0 ? (
               <p className="text-gray-500 text-sm">Nenhuma venda com vendedor atribuído no mês.</p>
             ) : (
@@ -570,6 +690,7 @@ export function CommercialOxygenClient() {
                     <th className="pb-2">Vendedor</th>
                     <th className="pb-2">Pedidos</th>
                     <th className="pb-2">Faturamento</th>
+                    <th className="pb-2">Meta</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -580,12 +701,44 @@ export function CommercialOxygenClient() {
                       <td className="py-2 font-medium">
                         {v.faturamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
+                      <td className="py-2 w-[180px]">
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-gray-500">
+                            {Math.min(
+                              100,
+                              Math.round((v.faturamento / Math.max(1, stats.sellerGoalBrl ?? 30000)) * 100)
+                            )}
+                            %
+                          </p>
+                          <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 rounded-full transition-all"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.round((v.faturamento / Math.max(1, stats.sellerGoalBrl ?? 30000)) * 100)
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
           </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="heading-2 mb-4">Links de venda rápida (PIX + WhatsApp)</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Crie links de checkout público para fechar no comercial com envio instantâneo de PIX no WhatsApp.
+        </p>
+        <div className="card">
+          <VendaRapidaTab />
         </div>
       </section>
 
@@ -786,6 +939,16 @@ export function CommercialOxygenClient() {
           <Link href="/dashboard/estoque" className="text-primary-600 text-sm inline-block">
             Estoque completo →
           </Link>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="heading-2 mb-4">Venda rápida (PIX + WhatsApp)</h2>
+        <div className="card">
+          <p className="text-xs text-gray-500 mb-3">
+            Crie links comerciais de checkout rápido para fechar no WhatsApp com PIX e QR Code.
+          </p>
+          <VendaRapidaTab />
         </div>
       </section>
 
