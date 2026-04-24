@@ -360,6 +360,13 @@ export const MODULES_ERP: NavItem[] = [
     icon: 'BarChart2',
     group: 'Financeiro',
   },
+  {
+    href: '/dashboard/financeiro/alfredo-fast-entry',
+    label: 'ALFREDO Fast-Entry',
+    roles: ['ADMIN', 'FINANCE'],
+    icon: 'Zap',
+    group: 'Financeiro',
+  },
 
   // ── Marketing & Tech ──────────────────────────────────────────────────────
   {

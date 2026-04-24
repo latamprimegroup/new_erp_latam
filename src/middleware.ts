@@ -45,6 +45,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/api/rma':           ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/compras': ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCTION_MANAGER'],
   '/dashboard/financeiro': ['ADMIN', 'FINANCE'],
+  '/dashboard/financeiro/alfredo-fast-entry': ['ADMIN', 'FINANCE'],
   '/dashboard/saques': ['ADMIN', 'FINANCE'],
   '/dashboard/metas': ['ADMIN', 'PRODUCER'],
   '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL', 'FINANCE'],

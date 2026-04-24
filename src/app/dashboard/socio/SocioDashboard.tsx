@@ -146,7 +146,7 @@ function Sparkline({ data }: { data: { month: string; income: number; expense: n
 // Fast-Entry pessoal
 // ─────────────────────────────────────────────────────────────────────────────
 
-function PersonalFastEntry({ onSaved }: { onSaved: () => void }) {
+export function PersonalFastEntry({ onSaved }: { onSaved: () => void }) {
   const [mode,  setMode]  = useState<'text' | 'image'>('text')
   const [type,  setType]  = useState<'RECEITA' | 'DESPESA'>('DESPESA')
   const [text,  setText]  = useState('')
