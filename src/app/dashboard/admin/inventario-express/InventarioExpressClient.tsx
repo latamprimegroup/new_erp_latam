@@ -51,6 +51,7 @@ interface SubmitResult {
 
 const TIPO_CONTA_OPTIONS = [
   'BRL Manual',
+  'BRL Automática',
   'BRL Robusto',
   'USD',
   'EUR',
