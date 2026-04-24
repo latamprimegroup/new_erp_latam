@@ -20,7 +20,7 @@ export async function POST(
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'PRODUCER']
+  const roles = ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
@@ -38,13 +38,12 @@ export async function POST(
     },
   })
   if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
-  if (!['PENDING', 'UNDER_REVIEW'].includes(account.status)) {
-    return NextResponse.json({ error: 'Só é possível enviar PDF para contas pendentes ou em análise' }, { status: 400 })
-  }
 
-  const isProducer = account.producerId === session.user.id
-  if (!isProducer && session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Apenas o produtor ou admin pode enviar documentos' }, { status: 403 })
+  // Permite upload para qualquer status (incluindo APPROVED) — produtor, gerente ou admin
+  const isOwner = account.producerId === session.user.id
+  const isManagerOrAdmin = ['ADMIN', 'PRODUCTION_MANAGER'].includes(session.user.role ?? '')
+  if (!isOwner && !isManagerOrAdmin) {
+    return NextResponse.json({ error: 'Apenas o produtor, gerente ou admin pode enviar documentos' }, { status: 403 })
   }
 
   try {
