@@ -23,7 +23,10 @@ const PLATFORM_LABELS: Record<string, string> = {
 }
 
 /** KPIs, conversão, estoque por plataforma/tipo, upsell — ADMIN / COMERCIAL. */
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
+  try {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
@@ -423,4 +426,8 @@ export async function GET() {
       followUpPendente: tintimFollowUpLeads,
     },
   })
+  } catch (err) {
+    console.error('[commercial/stats] Erro:', err)
+    return NextResponse.json({ error: 'Erro ao carregar estatísticas' }, { status: 500 })
+  }
 }

@@ -63,7 +63,10 @@ async function getCpaMedioEquipe(opts: {
   return Math.round((spend / conversions) * 100) / 100
 }
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
+  try {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id || !session.user.role) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -185,4 +188,8 @@ export async function GET(req: NextRequest) {
       performers,
     },
   })
+  } catch (err) {
+    console.error('[manager/overview] Erro:', err)
+    return NextResponse.json({ error: 'Erro ao carregar overview do gerente' }, { status: 500 })
+  }
 }

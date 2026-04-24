@@ -3,7 +3,10 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
+  try {
   const session = await getServerSession(authOptions)
   if (!session?.user) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -115,4 +118,8 @@ export async function GET(req: NextRequest) {
     },
     items,
   })
+  } catch (err) {
+    console.error('[seller/stock] Erro:', err)
+    return NextResponse.json({ error: 'Erro ao carregar estoque', totals: { totalListings: 0, activeListings: 0, totalAvailable: 0 }, items: [] }, { status: 500 })
+  }
 }
