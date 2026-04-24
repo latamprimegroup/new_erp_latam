@@ -48,7 +48,7 @@ type SocioEntriesResponse = {
   }
 }
 
-type Tab = 'empresa' | 'pessoal' | 'historico'
+type Tab = 'empresa' | 'pessoal' | 'historico' | 'whatsapp'
 type HistFilter = 'ALL' | 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'DUPLICATE'
 
 const BRL = (v: number) =>
@@ -116,9 +116,10 @@ export function FinanceiroAlfredoFastEntryClient() {
       <div className="card">
         <div className="flex flex-wrap gap-2">
           {[
-            { id: 'empresa' as const, label: 'Empresa' },
-            { id: 'pessoal' as const, label: 'Pessoal' },
+            { id: 'empresa'   as const, label: 'Empresa' },
+            { id: 'pessoal'   as const, label: 'Pessoal' },
             { id: 'historico' as const, label: 'Histórico' },
+            { id: 'whatsapp'  as const, label: '📱 WhatsApp' },
           ].map((item) => (
             <button
               key={item.id}
@@ -214,10 +215,17 @@ export function FinanceiroAlfredoFastEntryClient() {
                 <div className="space-y-2 max-h-[460px] overflow-y-auto">
                   {financeDrafts.map((d) => (
                     <div key={d.id} className="rounded-lg border border-gray-200 dark:border-white/10 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusPill(d.status)}`}>
-                          {d.status}
-                        </span>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${statusPill(d.status)}`}>
+                            {d.status}
+                          </span>
+                          {(d as FinanceDraft & { source?: string }).source === 'WHATSAPP' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300">
+                              📱 WhatsApp
+                            </span>
+                          )}
+                        </div>
                         <span className="text-xs text-gray-500">{new Date(d.createdAt).toLocaleString('pt-BR')}</span>
                       </div>
                       <p className="text-sm font-semibold mt-1">
@@ -276,6 +284,93 @@ export function FinanceiroAlfredoFastEntryClient() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {tab === 'whatsapp' && (
+        <section className="space-y-4 max-w-2xl">
+          <div className="card border-l-4 border-l-green-500">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-950/40 flex items-center justify-center text-xl">📱</div>
+              <div>
+                <h2 className="heading-2">ALFREDO via WhatsApp</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Zero Entry Policy — cole o comprovante direto no WhatsApp</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+              Configure a integração abaixo e envie qualquer comprovante (PIX, TED, fatura) para o número do ALFREDO no WhatsApp.
+              A IA extrai os dados automaticamente e cria o rascunho aqui. Você só precisa revisar e confirmar.
+            </p>
+          </div>
+
+          <div className="card space-y-4">
+            <h3 className="font-semibold text-base">Como funciona</h3>
+            <ol className="space-y-3 text-sm">
+              {[
+                { n: '1', title: 'Envie o comprovante', desc: 'Tire uma foto ou cole o texto do comprovante (PIX, TED, boleto) no WhatsApp do ALFREDO.' },
+                { n: '2', title: 'ALFREDO IA processa', desc: 'Em segundos, a IA lê o comprovante (imagem ou texto) e extrai: valor, data, categoria, método de pagamento e ID da transação.' },
+                { n: '3', title: 'Rascunho criado', desc: 'Um rascunho aparece automaticamente na aba Histórico com badge 📱 WhatsApp.' },
+                { n: '4', title: 'Você confirma', desc: 'Acesse o Histórico, revise os dados e clique em Confirmar. O lançamento entra no financeiro da empresa.' },
+              ].map((step) => (
+                <li key={step.n} className="flex gap-3">
+                  <div className="w-6 h-6 rounded-full bg-primary-600 text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                    {step.n}
+                  </div>
+                  <div>
+                    <p className="font-medium">{step.title}</p>
+                    <p className="text-gray-500 dark:text-gray-400">{step.desc}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-base">Configuração (DevOps)</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Adicione as seguintes variáveis de ambiente na Vercel e configure o webhook na Evolution API:
+            </p>
+            <div className="rounded-lg bg-zinc-900 text-green-400 font-mono text-xs p-4 space-y-1 overflow-x-auto">
+              <p># Evolution API</p>
+              <p>EVOLUTION_API_URL=https://sua-evolution.com</p>
+              <p>EVOLUTION_API_KEY=sua-api-key</p>
+              <p>EVOLUTION_INSTANCE=alfredo</p>
+              <p>EVOLUTION_WEBHOOK_SECRET=secret-seguro-aqui</p>
+              <p className="mt-2"># Números autorizados (vírgula = separador)</p>
+              <p>ALFREDO_ALLOWED_PHONES=5511999999999,5521888888888</p>
+              <p className="mt-2"># ID do usuário ADMIN/FINANCE que recebe os drafts</p>
+              <p>ALFREDO_ADMIN_USER_ID=cuid-do-usuario-aqui</p>
+            </div>
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-sm">
+              <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">URL do Webhook (Evolution API)</p>
+              <code className="text-blue-700 dark:text-blue-400 break-all">
+                https://www.adsativos.com/api/webhooks/evolution/fast-entry
+              </code>
+              <p className="text-blue-600 dark:text-blue-400 mt-2 text-xs">
+                No painel da Evolution API: Instância → Webhooks → URL acima, eventos: <strong>messages.upsert</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="card space-y-2">
+            <h3 className="font-semibold text-base">Tipos de mensagem suportados</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {[
+                { icon: '📝', label: 'Texto colado', desc: 'Cole o texto do comprovante' },
+                { icon: '📸', label: 'Foto do comprovante', desc: 'Tire foto do recibo ou tela' },
+                { icon: '🖼️', label: 'Screenshot', desc: 'Print do PIX, TED ou boleto' },
+                { icon: '📄', label: 'Texto com legenda', desc: 'Documento com descrição' },
+              ].map((item) => (
+                <div key={item.icon} className="flex items-start gap-2 p-2 rounded-lg bg-gray-50 dark:bg-white/5">
+                  <span className="text-xl">{item.icon}</span>
+                  <div>
+                    <p className="font-medium text-xs">{item.label}</p>
+                    <p className="text-xs text-gray-500">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </section>
