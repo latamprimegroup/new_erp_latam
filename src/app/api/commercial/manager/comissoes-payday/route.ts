@@ -14,7 +14,10 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
+  try {
   const auth = await requireSalesManagerAccess()
   if (!auth.ok) return auth.response
 
@@ -88,5 +91,9 @@ export async function GET(req: NextRequest) {
     managerOverrideBrl: overrideBrl,
     sellers: details.sort((a, b) => b.totalVendidoBrl - a.totalVendidoBrl),
   })
+  } catch (err) {
+    console.error('[manager/comissoes-payday] Erro:', err)
+    return NextResponse.json({ error: 'Erro ao calcular comissões', sellers: [], teamGrossBrl: 0, managerOverrideBrl: 0 }, { status: 500 })
+  }
 }
 

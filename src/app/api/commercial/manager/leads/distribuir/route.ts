@@ -83,31 +83,38 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json(updated)
 }
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
-  const access = await requireCommercialManagerAccess()
-  if (!access.ok) return access.response
+  try {
+    const access = await requireCommercialManagerAccess()
+    if (!access.ok) return access.response
 
-  const managerId = access.session.user.id
-  const where =
-    access.session.user.role === 'ADMIN'
-      ? { role: 'COMMERCIAL' as const }
-      : {
-          role: 'COMMERCIAL' as const,
-          OR: [{ leaderId: managerId }, { id: managerId }],
-        }
+    const managerId = access.session.user.id
+    const where =
+      access.session.user.role === 'ADMIN'
+        ? { role: 'COMMERCIAL' as const }
+        : {
+            role: 'COMMERCIAL' as const,
+            OR: [{ leaderId: managerId }, { id: managerId }],
+          }
 
-  const sellers = await prisma.user.findMany({
-    where,
-    select: { id: true, name: true, email: true },
-    orderBy: { name: 'asc' },
-  })
+    const sellers = await prisma.user.findMany({
+      where,
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    })
 
-  return NextResponse.json({
-    sellers: sellers.map((s) => ({
-      id: s.id,
-      name: s.name || s.email,
-      email: s.email,
-    })),
-  })
+    return NextResponse.json({
+      sellers: sellers.map((s) => ({
+        id: s.id,
+        name: s.name || s.email,
+        email: s.email,
+      })),
+    })
+  } catch (err) {
+    console.error('[manager/leads/distribuir GET] Erro:', err)
+    return NextResponse.json({ sellers: [] }, { status: 500 })
+  }
 }
 
