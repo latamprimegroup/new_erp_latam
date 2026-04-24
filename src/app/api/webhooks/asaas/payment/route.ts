@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
+import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 import { syncClientLTV } from '@/lib/client-ltv'
 import { notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
@@ -114,6 +115,7 @@ export async function POST(req: NextRequest) {
     ).catch((e) => console.error('notify sale asaas', e))
   }
   runCommercialOrderPaidBridge(orderId, 'webhook_asaas').catch((e) => console.error('bridge asaas', e))
+  handleSaleToFinancialBridge(orderId, 'webhook_asaas').catch((e) => console.error('financial bridge asaas', e))
 
   return NextResponse.json({ ok: true, orderId, updated: true })
 }

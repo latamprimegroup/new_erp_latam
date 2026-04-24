@@ -17,8 +17,19 @@ import { prisma } from '@/lib/prisma'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 import { syncClientLTV } from '@/lib/client-ltv'
-import { notifyAdminsQuickSaleApproved, notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
+import {
+  notifyAdminsQuickSaleApproved,
+  notifyAdminsSaleCompleted,
+  notifyProductionManagerStockSold,
+} from '@/lib/notifications/admin-events'
+import { sendSaleIncentiveNotifications } from '@/lib/notifications/sales-incentive'
 import { sendUtmifyConversion } from '@/lib/utmify'
+import {
+  calculateOrderIncentiveBreakdown,
+  calculateQuickSaleIncentiveBreakdown,
+  registerQuickSaleProductionBonus,
+  getSalesCheckoutIncentiveBreakdown,
+} from '@/lib/incentive-engine'
 
 export const runtime = 'nodejs'
 
@@ -189,6 +200,8 @@ export async function POST(req: NextRequest) {
       }
 
       // 2c. Utmify — envia conversão (fire-and-forget)
+      const checkoutIncentive = await getSalesCheckoutIncentiveBreakdown(checkout.id)
+
       if (!checkout.utmifySent) {
         const asset = checkout.assetId
           ? await prisma.asset.findUnique({ where: { id: checkout.assetId }, select: { displayName: true } })
@@ -199,6 +212,7 @@ export async function POST(req: NextRequest) {
           adsId:       checkout.adsId,
           displayName: asset?.displayName ?? checkout.adsId,
           amountBrl:   Number(checkout.amount),
+          netProfitBrl: checkoutIncentive.netProfit,
           paidAt,
           createdAt:   checkout.createdAt,
           buyer: {
@@ -242,6 +256,29 @@ export async function POST(req: NextRequest) {
             data:  { deliverySent: true },
           })
         }).catch((e) => console.error('[WhatsApp delivery]', e))
+      }
+
+      if (checkoutIncentive.sellerId) {
+        sendSaleIncentiveNotifications({
+          sellerId: checkoutIncentive.sellerId,
+          sellerName: checkoutIncentive.sellerName,
+          publicId: checkout.adsId,
+          grossValue: checkoutIncentive.grossValue,
+          sellerCommission: checkoutIncentive.sellerCommission,
+          managerCommission: checkoutIncentive.managerCommission,
+          supplierCost: checkoutIncentive.supplierCost,
+          netProfit: checkoutIncentive.netProfit,
+          remainingToUnlock: checkoutIncentive.sellerRemainingToUnlock ?? 0,
+          utmifySynced: true,
+        }).catch((e) => console.error('[Checkout] Incentive notify', e))
+      }
+
+      if (checkoutIncentive.nicheForReplenishment) {
+        notifyProductionManagerStockSold({
+          assetId: checkout.adsId,
+          niche: checkoutIncentive.nicheForReplenishment,
+          listingTitle: checkoutIncentive.displayName || checkout.adsId,
+        }).catch((e) => console.error('[Checkout] notify production manager', e))
       }
     }
 
