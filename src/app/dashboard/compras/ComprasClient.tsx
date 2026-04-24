@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert, Truck, Crosshair, TrendingUp, Link2 } from 'lucide-react'
+import { ShoppingCart, Store, Package, Zap, Upload, AlertTriangle, Search, ClipboardList, BarChart2, ShieldAlert, Truck, Crosshair, TrendingUp, Link2, LayoutGrid, Flame } from 'lucide-react'
 import { FornecedoresTab } from './FornecedoresTab'
 import { EstoqueTab } from './EstoqueTab'
 import { CopyGeneratorTab } from './CopyGeneratorTab'
@@ -15,29 +15,37 @@ import { RMATab } from './RMATab'
 import { WarRoomCeoTab } from './WarRoomCeoTab'
 import { RoiTab } from './RoiTab'
 import { VendaRapidaTab } from './VendaRapidaTab'
+import { VitrineComercialTab } from './VitrineComercialTab'
+import { ProducaoEstoqueTab } from './ProducaoEstoqueTab'
 import EntradaMercadoriaClient from '../admin/entrada-mercadoria/EntradaMercadoriaClient'
 
-type Tab = 'war-room' | 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc' | 'roi' | 'venda-rapida'
+type Tab = 'war-room' | 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc' | 'roi' | 'venda-rapida' | 'vitrine' | 'producao-estoque'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
-  { id: 'war-room',     label: '🛰️ War Room OS',           icon: <Crosshair className="w-4 h-4" />,      roles: ['ADMIN'] },
-  { id: 'roi',          label: '📈 ROI & Utmify',          icon: <TrendingUp className="w-4 h-4" />,     roles: ['ADMIN'] },
-  { id: 'venda-rapida', label: '⚡ Venda Rápida',          icon: <Link2 className="w-4 h-4" />,          roles: ['ADMIN', 'COMMERCIAL'] },
-  { id: 'entrada-merc', label: '🚚 Entrada de Mercadoria', icon: <Truck className="w-4 h-4" />,          roles: ['ADMIN','PURCHASING'] },
-  { id: 'intake',       label: '📥 Intake de Ativos',      icon: <ClipboardList className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING'] },
-  { id: 'consulta',     label: 'Consulta de Preço',        icon: <Search className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
-  { id: 'orders',       label: 'Ordens de Serviço',        icon: <ShoppingCart className="w-4 h-4" />,   roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
-  { id: 'rma',          label: 'Trocas & Garantia',        icon: <ShieldAlert className="w-4 h-4" />,    roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
-  { id: 'estoque',      label: 'Estoque de Ativos',        icon: <Package className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
-  { id: 'fornecedores', label: 'Fornecedores',             icon: <Store className="w-4 h-4" />,          roles: ['ADMIN','PURCHASING'] },
-  { id: 'pedidos',      label: 'Ordens de Compra',         icon: <Upload className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING','FINANCE'] },
-  { id: 'bi',           label: 'BI & Margem',              icon: <BarChart2 className="w-4 h-4" />,      roles: ['ADMIN','PURCHASING','FINANCE'] },
-  { id: 'bulk',         label: 'Importação CSV',           icon: <Upload className="w-4 h-4" />,         roles: ['ADMIN','PURCHASING'] },
-  { id: 'copy',         label: 'Copy Generator',           icon: <Zap className="w-4 h-4" />,            roles: ['ADMIN','PURCHASING','COMMERCIAL'] },
+  { id: 'war-room',          label: '🛰️ War Room OS',           icon: <Crosshair className="w-4 h-4" />,    roles: ['ADMIN'] },
+  { id: 'roi',               label: '📈 ROI & Utmify',          icon: <TrendingUp className="w-4 h-4" />,   roles: ['ADMIN'] },
+  { id: 'venda-rapida',      label: '⚡ Venda Rápida',          icon: <Link2 className="w-4 h-4" />,        roles: ['ADMIN', 'COMMERCIAL'] },
+  { id: 'vitrine',           label: '🛍️ Vitrine de Vendas',     icon: <LayoutGrid className="w-4 h-4" />,   roles: ['ADMIN', 'COMMERCIAL'] },
+  { id: 'producao-estoque',  label: '🔥 Estoque de Produção',   icon: <Flame className="w-4 h-4" />,        roles: ['ADMIN', 'PURCHASING', 'PRODUCTION_MANAGER'] },
+  { id: 'entrada-merc',      label: '🚚 Entrada de Mercadoria', icon: <Truck className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING'] },
+  { id: 'intake',            label: '📥 Intake de Ativos',      icon: <ClipboardList className="w-4 h-4" />,roles: ['ADMIN','PURCHASING'] },
+  { id: 'consulta',          label: 'Consulta de Preço',        icon: <Search className="w-4 h-4" />,       roles: ['ADMIN','PURCHASING','COMMERCIAL','DELIVERER'] },
+  { id: 'orders',            label: 'Ordens de Serviço',        icon: <ShoppingCart className="w-4 h-4" />, roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE','DELIVERER'] },
+  { id: 'rma',               label: 'Trocas & Garantia',        icon: <ShieldAlert className="w-4 h-4" />,  roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
+  { id: 'estoque',           label: 'Estoque de Ativos',        icon: <Package className="w-4 h-4" />,      roles: ['ADMIN','PURCHASING','COMMERCIAL','FINANCE'] },
+  { id: 'fornecedores',      label: 'Fornecedores',             icon: <Store className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING'] },
+  { id: 'pedidos',           label: 'Ordens de Compra',         icon: <Upload className="w-4 h-4" />,       roles: ['ADMIN','PURCHASING','FINANCE'] },
+  { id: 'bi',                label: 'BI & Margem',              icon: <BarChart2 className="w-4 h-4" />,    roles: ['ADMIN','PURCHASING','FINANCE'] },
+  { id: 'bulk',              label: 'Importação CSV',           icon: <Upload className="w-4 h-4" />,       roles: ['ADMIN','PURCHASING'] },
+  { id: 'copy',              label: 'Copy Generator',           icon: <Zap className="w-4 h-4" />,          roles: ['ADMIN','PURCHASING','COMMERCIAL'] },
 ]
 
 export function ComprasClient({ role }: { role: string }) {
-  const defaultTab: Tab = role === 'ADMIN' ? 'war-room' : (role === 'PURCHASING') ? 'entrada-merc' : ['COMMERCIAL','DELIVERER'].includes(role) ? 'consulta' : 'estoque'
+  const defaultTab: Tab = role === 'ADMIN' ? 'war-room'
+    : role === 'PURCHASING'          ? 'entrada-merc'
+    : role === 'PRODUCTION_MANAGER'  ? 'producao-estoque'
+    : ['COMMERCIAL','DELIVERER'].includes(role) ? 'vitrine'
+    : 'estoque'
   const [tab, setTab] = useState<Tab>(defaultTab)
 
   const visibleTabs = TABS.filter((t) => t.roles.includes(role))
@@ -77,20 +85,22 @@ export function ComprasClient({ role }: { role: string }) {
 
       {/* Content */}
       <div>
-        {tab === 'war-room'     && <WarRoomCeoTab />}
-        {tab === 'roi'          && <RoiTab />}
-        {tab === 'venda-rapida' && <VendaRapidaTab />}
-        {tab === 'entrada-merc' && <EntradaMercadoriaClient />}
-        {tab === 'intake'       && <AssetIntakeTab />}
-        {tab === 'consulta'     && <ConsultaPrecoTab role={role} />}
-        {tab === 'orders'       && <OrdensComerciais role={role} />}
-        {tab === 'rma'          && <RMATab userRole={role} />}
-        {tab === 'estoque'      && <EstoqueTab role={role} />}
-        {tab === 'fornecedores' && <FornecedoresTab />}
-        {tab === 'pedidos'      && <PedidosTab role={role} />}
-        {tab === 'bi'           && <AssetBiTab />}
-        {tab === 'bulk'         && <BulkImportTab />}
-        {tab === 'copy'         && <CopyGeneratorTab />}
+        {tab === 'war-room'         && <WarRoomCeoTab />}
+        {tab === 'roi'              && <RoiTab />}
+        {tab === 'venda-rapida'     && <VendaRapidaTab />}
+        {tab === 'vitrine'          && <VitrineComercialTab />}
+        {tab === 'producao-estoque' && <ProducaoEstoqueTab />}
+        {tab === 'entrada-merc'     && <EntradaMercadoriaClient />}
+        {tab === 'intake'           && <AssetIntakeTab />}
+        {tab === 'consulta'         && <ConsultaPrecoTab role={role} />}
+        {tab === 'orders'           && <OrdensComerciais role={role} />}
+        {tab === 'rma'              && <RMATab userRole={role} />}
+        {tab === 'estoque'          && <EstoqueTab role={role} />}
+        {tab === 'fornecedores'     && <FornecedoresTab />}
+        {tab === 'pedidos'          && <PedidosTab role={role} />}
+        {tab === 'bi'               && <AssetBiTab />}
+        {tab === 'bulk'             && <BulkImportTab />}
+        {tab === 'copy'             && <CopyGeneratorTab />}
       </div>
     </div>
   )

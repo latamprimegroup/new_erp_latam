@@ -8,7 +8,7 @@
  *   SOLD            → AWAITING_VENDOR
  *   AWAITING_VENDOR → RECEIVED
  *   RECEIVED        → TRIAGEM
- *   TRIAGEM         → DELIVERED | DEAD
+ *   TRIAGEM         → AVAILABLE | DELIVERED | DEAD   ← TRIAGEM→AVAILABLE: Gerente libera para venda
  *   DEAD            → (terminal)
  *   DELIVERED       → (terminal)
  */
@@ -20,8 +20,8 @@ import { prisma } from '@/lib/prisma'
 import { COMPRAS_WRITE_ROLES } from '@/lib/asset-privacy'
 import type { AssetStatus } from '@prisma/client'
 
-// COMMERCIAL pode marcar como SOLD; demais transições exigem WRITE_ROLES
-const COMMERCIAL_SELL_ROLES = [...COMPRAS_WRITE_ROLES, 'COMMERCIAL']
+// COMMERCIAL pode marcar como SOLD; PRODUCTION_MANAGER pode liberar TRIAGEM→AVAILABLE
+const COMMERCIAL_SELL_ROLES = [...COMPRAS_WRITE_ROLES, 'COMMERCIAL', 'PRODUCTION_MANAGER']
 
 const TRANSITIONS: Record<AssetStatus, AssetStatus[]> = {
   AVAILABLE:       ['QUARANTINE', 'SOLD', 'DEAD'],
@@ -29,7 +29,7 @@ const TRANSITIONS: Record<AssetStatus, AssetStatus[]> = {
   SOLD:            ['AWAITING_VENDOR'],
   AWAITING_VENDOR: ['RECEIVED'],
   RECEIVED:        ['TRIAGEM'],
-  TRIAGEM:         ['DELIVERED', 'DEAD'],
+  TRIAGEM:         ['AVAILABLE', 'DELIVERED', 'DEAD'],
   DELIVERED:       [],
   DEAD:            [],
 }
@@ -61,6 +61,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // COMMERCIAL só pode fazer AVAILABLE → SOLD
   if (role === 'COMMERCIAL' && newStatus !== 'SOLD')
     return NextResponse.json({ error: 'Comercial só pode registrar vendas (SOLD).' }, { status: 403 })
+
+  // PRODUCTION_MANAGER só pode fazer TRIAGEM → AVAILABLE
+  if (role === 'PRODUCTION_MANAGER' && !(asset.status === 'TRIAGEM' && newStatus === 'AVAILABLE'))
+    return NextResponse.json({ error: 'Gerente de Produção só pode liberar ativos de Triagem para Disponível.' }, { status: 403 })
 
   if (!allowed.includes(newStatus))
     return NextResponse.json({

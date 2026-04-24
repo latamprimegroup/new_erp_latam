@@ -312,7 +312,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/compras',
     label: 'Supply Chain & White Label',
-    roles: ['ADMIN', 'PURCHASING'],
+    roles: ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'PRODUCTION_MANAGER'],
     icon: 'ShoppingCart',
     group: 'Compras',
   },
