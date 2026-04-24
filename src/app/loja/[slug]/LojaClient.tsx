@@ -123,7 +123,7 @@ export function LojaClient({ slug, urlUtms, checkoutId }: Props) {
       .then((data) => {
         if (data.error) { setErrorMsg(data.error); setStep('error'); return }
         setProduct(data)
-        setStep('form')
+        setStep((prev) => (prev === 'loading' ? 'form' : prev))
       })
       .catch(() => { setErrorMsg('Erro ao carregar produto.'); setStep('error') })
   }, [slug])
