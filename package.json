@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && node scripts/db-push-safe.mjs && next build",
     "typecheck": "tsc --noEmit",
     "start": "node server.js",
     "lint": "next lint",
