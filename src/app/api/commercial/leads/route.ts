@@ -24,6 +24,8 @@ const createSchema = z.object({
   funnelStep: z.enum(FUNNEL_STEPS).optional(),
 })
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -31,17 +33,22 @@ export async function GET() {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  const onlyMyLeads = session.user.role === 'COMMERCIAL' && !isCommercialManager(session.user)
-  const leads = await prisma.commercialLead.findMany({
-    where: onlyMyLeads ? { assignedCommercialId: session.user.id } : undefined,
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    include: {
-      assignedCommercial: { select: { name: true, email: true } },
-      convertedClient: { select: { id: true, clientCode: true } },
-    },
-  })
-  return NextResponse.json({ leads })
+  try {
+    const onlyMyLeads = session.user.role === 'COMMERCIAL' && !isCommercialManager(session.user)
+    const leads = await prisma.commercialLead.findMany({
+      where: onlyMyLeads ? { assignedCommercialId: session.user.id } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        assignedCommercial: { select: { name: true, email: true } },
+        convertedClient: { select: { id: true, clientCode: true } },
+      },
+    })
+    return NextResponse.json({ leads })
+  } catch (err) {
+    console.error('[commercial/leads] Erro:', err)
+    return NextResponse.json({ leads: [] })
+  }
 }
 
 export async function POST(req: NextRequest) {
