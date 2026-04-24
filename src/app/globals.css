@@ -318,3 +318,18 @@ input[type='radio']:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
+
+/* ─── Loja dark inputs ────────────────────────────────────────────────────── */
+.input-dark {
+  width: 100%;
+  background-color: rgb(39 39 42);
+  border: 1px solid rgb(63 63 70);
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+  color: white;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input-dark::placeholder { color: rgb(113 113 122); }
+.input-dark:focus { border-color: rgb(16 185 129); }

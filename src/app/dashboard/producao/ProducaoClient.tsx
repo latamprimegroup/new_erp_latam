@@ -3,13 +3,14 @@
 import { Fragment, useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
-import { Eye, EyeOff, Copy, Check, Search, Pencil, Trash2, Send, FileText } from 'lucide-react'
+import { Eye, EyeOff, Copy, Check, Search, Pencil, Trash2, Send, FileText, ShieldAlert, ClipboardList } from 'lucide-react'
 import { SkeletonCards, SkeletonTable } from '@/components/Skeleton'
 import { ProductionChecklist } from '@/components/producao/ProductionChecklist'
 import { ProductionFeedback } from '@/components/producao/ProductionFeedback'
 import { NotificationsBell } from '@/components/NotificationsBell'
 import { productionAccountCreateSchema } from '@/lib/schemas/production-account-create'
 import { GLOBAL_CURRENCY_OPTIONS } from '@/lib/global-currencies'
+import { RMATab } from '@/app/dashboard/compras/RMATab'
 
 const ROLE_BADGE: Record<string, string> = {
   ADMIN: 'Admin',
@@ -256,6 +257,7 @@ type StockDisponivel = {
 export function ProducaoClient() {
   const { data: session } = useSession()
   const canApprove = session?.user?.role === 'ADMIN' || session?.user?.role === 'FINANCE'
+  const [mainSection, setMainSection] = useState<'producao' | 'trocas'>('producao')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [kpis, setKpis] = useState({
     daily: 0,
@@ -1041,6 +1043,39 @@ export function ProducaoClient() {
         </p>
       </section>
 
+      {/* ── Navegação principal ────────────────────────────────────────────────── */}
+      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-700 mb-5">
+        <button
+          onClick={() => setMainSection('producao')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            mainSection === 'producao'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          Tabela de Produção
+        </button>
+        <button
+          onClick={() => setMainSection('trocas')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            mainSection === 'trocas'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4" />
+          Trocas & Reposição
+        </button>
+      </div>
+
+      {/* ── Seção: Trocas & Reposição ──────────────────────────────────────────── */}
+      {mainSection === 'trocas' && (
+        <RMATab userRole={session?.user?.role ?? 'PRODUCER'} />
+      )}
+
+      {/* ── Seção: Tabela de Produção — ocultada via CSS quando Trocas está ativa */}
+      <div className={mainSection === 'trocas' ? 'hidden' : undefined}>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
         <div>
           <h1 className="heading-1 text-2xl sm:text-3xl">Tabela de Produção</h1>
@@ -2681,6 +2716,7 @@ export function ProducaoClient() {
           </div>
         </div>
       )}
+      </div> {/* fim wrapper producao */}
     </div>
   )
 }

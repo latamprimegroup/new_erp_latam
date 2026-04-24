@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AccountRmaStatus } from '@prisma/client'
+import { AccountRmaReason, AccountRmaStatus } from '@prisma/client'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
 import { parseEvidenceUrls, RMA_REASON_LABELS, RMA_STATUS_LABELS } from '@/lib/rma'
@@ -70,4 +70,46 @@ export async function GET(req: NextRequest) {
     topReasons,
     labels: { reasons: RMA_REASON_LABELS, statuses: RMA_STATUS_LABELS },
   })
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireRoles(['ADMIN', 'PRODUCTION_MANAGER'])
+  if (!auth.ok) return auth.response
+
+  const body = await req.json()
+  const { clientId, originalAccountId, reason, reasonDetail, warrantyHours } = body
+
+  if (!clientId || !originalAccountId || !reason) {
+    return NextResponse.json({ error: 'clientId, originalAccountId e reason são obrigatórios' }, { status: 400 })
+  }
+
+  if (!Object.values(AccountRmaReason).includes(reason as AccountRmaReason)) {
+    return NextResponse.json({ error: 'Motivo inválido' }, { status: 400 })
+  }
+
+  const [client, account] = await Promise.all([
+    prisma.clientProfile.findUnique({ where: { id: clientId } }),
+    prisma.stockAccount.findUnique({ where: { id: originalAccountId } }),
+  ])
+
+  if (!client) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
+  if (!account) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
+
+  const rma = await prisma.accountReplacementRequest.create({
+    data: {
+      clientId,
+      originalAccountId,
+      reason: reason as AccountRmaReason,
+      reasonDetail: reasonDetail || null,
+      warrantyHours: warrantyHours ? Number(warrantyHours) : null,
+      status: 'EM_ANALISE',
+      actionTaken: 'AGUARDANDO',
+    },
+    include: {
+      client: { include: { user: { select: { name: true, email: true } } } },
+      originalAccount: { select: { id: true, googleAdsCustomerId: true, platform: true, deliveredAt: true } },
+    },
+  })
+
+  return NextResponse.json(rma, { status: 201 })
 }

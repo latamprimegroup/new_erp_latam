@@ -95,8 +95,15 @@ export const MODULES_ERP: NavItem[] = [
     icon: 'Target',
     group: 'Produção',
   },
+  {
+    href: '/dashboard/producao/trocas',
+    label: 'Trocas & Reposição',
+    roles: ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
+    icon: 'ShieldAlert',
+    group: 'Produção',
+  },
 
-  // ── ADS CORE ──────────────────────────────────────────────────────────────
+  // ── ADS CORE — Hub ────────────────────────────────────────────────────────
   {
     href: '/dashboard/ads-core',
     label: 'ADS CORE — Hub',
@@ -104,46 +111,20 @@ export const MODULES_ERP: NavItem[] = [
     icon: 'Zap',
     group: 'ADS CORE',
   },
-  {
-    href: '/dashboard/ads-core/bi',
-    label: 'Dashboard de Gestão',
-    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
-    icon: 'BarChart3',
-    group: 'ADS CORE',
-  },
-  {
-    href: '/dashboard/ads-core/demandas',
-    label: 'Painel de Demandas',
-    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
-    icon: 'LayoutList',
-    group: 'ADS CORE',
-  },
+
+  // ── ADS CORE — Ativos & Infraestrutura ────────────────────────────────────
   {
     href: '/dashboard/ads-core/atribuicao',
-    label: 'Estoque e Atribuição',
+    label: 'Estoque & Atribuição',
     roles: ['ADMIN', 'PRODUCTION_MANAGER'],
     icon: 'Target',
     group: 'ADS CORE',
   },
   {
     href: '/dashboard/ads-core/nichos',
-    label: 'Gestão por Nicho',
+    label: 'Nichos & Células',
     roles: ['ADMIN', 'PRODUCTION_MANAGER'],
     icon: 'FolderOpen',
-    group: 'ADS CORE',
-  },
-  {
-    href: '/dashboard/ads-core/gestao-contas',
-    label: 'Contas MCC — Painel de Guerra',
-    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
-    icon: 'Layers',
-    group: 'ADS CORE',
-  },
-  {
-    href: '/dashboard/ads-core/relatorios-producao',
-    label: 'Relatórios e Auditoria',
-    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
-    icon: 'FileBarChart2',
     group: 'ADS CORE',
   },
   {
@@ -154,18 +135,50 @@ export const MODULES_ERP: NavItem[] = [
     group: 'ADS CORE',
   },
   {
+    href: '/dashboard/base',
+    label: 'Base E-mails / CNPJs',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'Database',
+    group: 'ADS CORE',
+  },
+
+  // ── ADS CORE — Monitoramento ──────────────────────────────────────────────
+  {
+    href: '/dashboard/ads-core/bi',
+    label: 'Dashboard de Gestão',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'BarChart3',
+    group: 'Análise & Relatórios',
+  },
+  {
+    href: '/dashboard/ads-core/demandas',
+    label: 'Painel de Demandas',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'LayoutList',
+    group: 'Análise & Relatórios',
+  },
+  {
+    href: '/dashboard/ads-core/relatorios-producao',
+    label: 'Relatórios & Auditoria',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'FileBarChart2',
+    group: 'Análise & Relatórios',
+  },
+  {
+    href: '/dashboard/ads-core/gestao-contas',
+    label: 'Contas MCC',
+    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
+    icon: 'Layers',
+    group: 'Análise & Relatórios',
+  },
+
+  // ── Estoque Operacional ───────────────────────────────────────────────────
+  {
     href: '/dashboard/ads-core/inventario',
     label: 'Inventário de Estoque',
     roles: ['ADMIN', 'PRODUCTION_MANAGER'],
     icon: 'ClipboardList',
-    group: 'ADS CORE',
-  },
-  {
-    href: '/dashboard/base',
-    label: 'Base (E-mails / CNPJs)',
-    roles: ['ADMIN', 'PRODUCTION_MANAGER'],
-    icon: 'Database',
-    group: 'ADS CORE',
+    group: 'Operações',
   },
 
   // ── Comercial ─────────────────────────────────────────────────────────────
@@ -207,7 +220,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/admin/clientes',
     label: 'Cadastro de Clientes (CRM)',
-    roles: ['ADMIN', 'COMMERCIAL'],
+    roles: ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'FINANCE', 'PRODUCER', 'PRODUCTION_MANAGER'],
     icon: 'BookUser',
     group: 'Comercial',
   },
@@ -299,7 +312,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/compras',
     label: 'Supply Chain & White Label',
-    roles: ['ADMIN', 'PURCHASING'],
+    roles: ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'PRODUCTION_MANAGER'],
     icon: 'ShoppingCart',
     group: 'Compras',
   },
@@ -405,14 +418,14 @@ export const MODULES_ERP: NavItem[] = [
     label: 'Inventário Express',
     roles: ['ADMIN', 'PRODUCTION_MANAGER'],
     icon: 'Rocket',
-    group: 'Administração',
+    group: 'Operações',
   },
   {
     href: '/dashboard/admin/rma',
-    label: 'Suporte & RMA',
+    label: 'Trocas & RMA',
     roles: ['ADMIN', 'PRODUCTION_MANAGER', 'COMMERCIAL', 'DELIVERER'],
     icon: 'ShieldAlert',
-    group: 'Administração',
+    group: 'Operações',
   },
   {
     href: '/dashboard/admin/fechamento-producao',

@@ -1,17 +1,14 @@
-# Deploy pipeline — main branch only
-# verify → deploy-hostinger (se secrets configurados)
+# CI pipeline — roda em todo push para main
+# Verifica lint, tipos e schema Prisma.
+# O deploy em produção é feito automaticamente pela Vercel via integração GitHub.
 
-name: Deploy to Hostinger
+name: CI Verify
 
 on:
   push:
     branches: [main]
-
-# Sem cancel-in-progress: aguarda o deploy ativo terminar antes de iniciar o próximo.
-# Isso evita builds concorrentes no servidor que corrompem a pasta .next/
-concurrency:
-  group: deploy-main
-  cancel-in-progress: false
+  pull_request:
+    branches: [main]
 
 jobs:
   verify:
@@ -42,42 +39,3 @@ jobs:
 
       - name: Gerar cliente Prisma
         run: npx prisma generate
-
-  deploy-hostinger:
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          # request_timeout garante que o SSH aguarda o build completo (~8 min) sem timeout
-          command_timeout: 15m
-          script: |
-            set -e
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
-            cd "${DEPLOY_PATH:-/var/www/erp-ads-ativos}"
-
-            echo "==> Baixando código mais recente..."
-            git fetch origin main
-            git reset --hard origin/main
-
-            echo "==> Instalando dependências..."
-            npm ci --prefer-offline
-
-            echo "==> Matando qualquer build anterior que ainda esteja rodando..."
-            pkill -f "next build" || true
-            sleep 2
-
-            echo "==> Limpando build anterior para garantir compilação limpa..."
-            rm -rf .next
-
-            echo "==> Buildando aplicação..."
-            NODE_OPTIONS="--max-old-space-size=3000" npm run build
-
-            echo "==> Reiniciando processo PM2..."
-            pm2 restart erp-ads-ativos --update-env
-
-            echo "==> Deploy concluido com sucesso!"

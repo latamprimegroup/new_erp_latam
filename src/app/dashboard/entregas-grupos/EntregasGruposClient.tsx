@@ -95,7 +95,7 @@ export function EntregasGruposClient() {
           setItems(d1.items || [])
           setKpis(d1.kpis || kpis)
         }
-        if (r2.ok) setClients(d2 || [])
+        if (r2.ok) setClients(Array.isArray(d2) ? d2 : (d2.clients ?? []))
         if (r3.ok) setOrders(d3.orders || d3.items || [])
       })
       .finally(() => setLoading(false))

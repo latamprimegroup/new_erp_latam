@@ -70,10 +70,12 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { id:
     // Busca ativo disponível para reposição (mesmo vendor não prioritário — usa melhor vendor)
     let replacement = replacementAssetId
       ? await prisma.asset.findUnique({ where: { id: replacementAssetId, status: 'AVAILABLE' } })
-      : await prisma.asset.findFirst({
-          where:   { status: 'AVAILABLE', category: ticket.originalAsset.category, id: { not: ticket.originalAssetId } },
-          orderBy: { vendor: { rating: 'desc' } }, // Prioriza fornecedor com maior rating
-        })
+      : ticket.originalAsset
+        ? await prisma.asset.findFirst({
+            where:   { status: 'AVAILABLE', category: ticket.originalAsset.category, id: { not: ticket.originalAssetId ?? undefined } },
+            orderBy: { vendor: { rating: 'desc' } },
+          })
+        : null
 
     if (!replacement) return NextResponse.json({ error: 'Nenhum ativo disponível para reposição nesta categoria' }, { status: 409 })
 
@@ -102,7 +104,7 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { id:
       data: {
         type:    'INSIGHT',
         title:   `RMA Aprovado: ${ticket.ticketNumber}`,
-        content: `Reposição aprovada. Custo: R$${replacementCost.toLocaleString('pt-BR')}. Crédito vs fornecedor ${ticket.vendor.name}: R$${vendorCredit.toLocaleString('pt-BR')}. Ativo de reposição: ${replacement.adsId}`,
+        content: `Reposição aprovada. Custo: R$${replacementCost.toLocaleString('pt-BR')}. Crédito vs fornecedor ${ticket.vendor?.name ?? '—'}: R$${vendorCredit.toLocaleString('pt-BR')}. Ativo de reposição: ${replacement.adsId}`,
         metadata: { ticketId: ticket.id, vendorId: ticket.vendorId, replacementCost, vendorCredit },
         userId: session.user.id,
       },
@@ -143,7 +145,7 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { id:
     })
 
     // Verificar taxa de RMA do fornecedor e disparar blacklist se necessário
-    await checkVendorBlacklist(ticket.vendorId, session.user.id)
+    if (ticket.vendorId) await checkVendorBlacklist(ticket.vendorId, session.user.id)
 
     return NextResponse.json(updated)
   }

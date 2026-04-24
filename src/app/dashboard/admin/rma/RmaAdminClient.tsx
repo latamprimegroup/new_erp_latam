@@ -1,25 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import {
-  RefreshCw,
-  Loader2,
-  ShieldAlert,
-  BarChart3,
-  ClipboardList,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertTriangle,
-  TrendingUp,
-  Users,
-  ChevronDown,
-  ChevronUp,
+  RefreshCw, Loader2, ShieldAlert, BarChart3, ClipboardList,
+  CheckCircle, XCircle, Clock, AlertTriangle, TrendingUp,
+  Users, ChevronDown, ChevronUp, Plus, X, TrendingDown,
+  ArrowUpRight, ArrowDownRight, Package, Zap,
 } from 'lucide-react'
 import { RMA_ACTION_LABELS, RMA_REASON_LABELS, warrantyStatus } from '@/lib/rma'
 import type { AccountRmaActionTaken, AccountRmaReason, AccountRmaStatus } from '@prisma/client'
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────
+// ─── Tipos ──────────────────────────────────────────────────────────────────
 
 type RmaItem = {
   id: string
@@ -36,8 +28,20 @@ type RmaItem = {
   reasonDetail: string | null
   additionalComments: string | null
   evidenceUrls: string[]
-  originalAccount: { id: string; googleAdsCustomerId: string | null; platform: string; deliveredAt: string | null }
-  replacementAccount: { id: string; googleAdsCustomerId: string | null } | null
+  originalAccount: {
+    id: string
+    googleAdsCustomerId: string | null
+    platform: string
+    type: string
+    deliveredAt: string | null
+    salePrice?: number | null
+  }
+  replacementAccount: {
+    id: string
+    googleAdsCustomerId: string | null
+    platform: string
+    type: string
+  } | null
   client: { id: string; user: { name: string | null; email: string | null } }
   assignedTo: { id: string; name: string | null; email: string | null } | null
 }
@@ -48,14 +52,17 @@ type AnalyticsData = {
   totalOrders: number
   replacementRate: number
   avgResolutionMinutes: number
+  thisMonth: { total: number; resolved: number }
+  lastMonth: { total: number; resolved: number }
+  monthlyChange: number | null
+  monthlyBreakdown: { month: string; total: number; reposicoes: number; negados: number }[]
   topReasons: { reason: string; label: string; count: number; percent: number }[]
   actionStats: { action: string; label: string; count: number }[]
   statusStats: { status: string; count: number }[]
+  byPlatform: { platform: string; count: number }[]
+  byType: { type: string; count: number }[]
   byProducer: { id: string; name: string | null; email: string; rmas: number }[]
-  ltvData: {
-    clientId: string; name: string; grossLtv: number
-    rmaCount: number; orderCount: number; rmaRate: number; isAbuse: boolean
-  }[]
+  ltvData: { clientId: string; name: string; grossLtv: number; rmaCount: number; orderCount: number; rmaRate: number; isAbuse: boolean }[]
   abuseFlagCount: number
 }
 
@@ -69,23 +76,26 @@ type AbuseData = {
   threshold: number
 }
 
-// ─── Status labels / colors ─────────────────────────────────────────────────
+// ─── Labels e cores ──────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
-  EM_ANALISE: 'Em análise',
-  EM_REPOSICAO: 'Em reposição',
-  CONCLUIDO: 'Concluído',
-  NEGADO_TERMO: 'Negado',
+  EM_ANALISE: 'Em análise', EM_REPOSICAO: 'Em reposição',
+  CONCLUIDO: 'Concluído', NEGADO_TERMO: 'Negado',
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  EM_ANALISE: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  EM_ANALISE:   'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   EM_REPOSICAO: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  CONCLUIDO: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+  CONCLUIDO:    'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   NEGADO_TERMO: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
 }
 
-// ─── Componentes auxiliares ────────────────────────────────────────────────
+const PLATFORM_LABELS: Record<string, string> = {
+  GOOGLE_ADS: 'Google Ads', META_ADS: 'Meta Ads',
+  TIKTOK_ADS: 'TikTok Ads', KWAI_ADS: 'Kwai Ads', OTHER: 'Outro',
+}
+
+// ─── Subcomponentes ──────────────────────────────────────────────────────────
 
 function Badge({ text, color }: { text: string; color: string }) {
   return (
@@ -118,7 +128,131 @@ function StatCard({ icon: Icon, label, value, sub, color = 'text-primary-600 dar
   )
 }
 
-// ─── Aba 1: Fila de RMA ────────────────────────────────────────────────────
+// ─── Modal Novo RMA ──────────────────────────────────────────────────────────
+
+type ClientOption = { id: string; name: string | null; email: string | null }
+type AccountOption = { id: string; googleAdsCustomerId: string | null; platform: string; type: string }
+
+function NovoRmaModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [clients, setClients] = useState<ClientOption[]>([])
+  const [clientId, setClientId] = useState('')
+  const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [originalAccountId, setOriginalAccountId] = useState('')
+  const [reason, setReason] = useState<AccountRmaReason | ''>('')
+  const [reasonDetail, setReasonDetail] = useState('')
+  const [warrantyHours, setWarrantyHours] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    fetch('/api/admin/rma/form-data')
+      .then((r) => r.json())
+      .then((d) => setClients(Array.isArray(d.clients) ? d.clients : []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!clientId) { setAccounts([]); return }
+    fetch(`/api/admin/rma/form-data?clientId=${clientId}`)
+      .then((r) => r.json())
+      .then((d) => setAccounts(Array.isArray(d.accounts) ? d.accounts : []))
+      .catch(() => setAccounts([]))
+  }, [clientId])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!clientId || !originalAccountId || !reason) {
+      setError('Preencha cliente, conta e motivo.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/rma', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, originalAccountId, reason, reasonDetail, warrantyHours: warrantyHours || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Erro ao criar RMA'); return }
+      onCreated()
+      onClose()
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg">
+        <div className="flex items-center justify-between p-5 border-b border-zinc-200 dark:border-zinc-700">
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-violet-500" /> Abrir Ticket de Reposição
+          </h2>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <X className="w-5 h-5 text-zinc-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {error && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-400">
+              {error}
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Cliente</label>
+            <select value={clientId} onChange={(e) => { setClientId(e.target.value); setOriginalAccountId('') }} className="input-field text-sm py-2 w-full" required>
+              <option value="">— Selecione o cliente —</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name || c.email}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Conta / Ativo com Problema</label>
+            <select value={originalAccountId} onChange={(e) => setOriginalAccountId(e.target.value)} className="input-field text-sm py-2 w-full" required disabled={!clientId}>
+              <option value="">— Selecione a conta —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  [{PLATFORM_LABELS[a.platform] ?? a.platform}] {a.type} · {a.googleAdsCustomerId || a.id.slice(0, 10)}
+                </option>
+              ))}
+            </select>
+            {clientId && accounts.length === 0 && (
+              <p className="text-xs text-zinc-400 mt-1">Nenhuma conta entregue encontrada para este cliente.</p>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Motivo da Queda / Problema</label>
+            <select value={reason} onChange={(e) => setReason(e.target.value as AccountRmaReason)} className="input-field text-sm py-2 w-full" required>
+              <option value="">— Selecione —</option>
+              {(Object.entries(RMA_REASON_LABELS) as [AccountRmaReason, string][]).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Detalhes (opcional)</label>
+            <textarea value={reasonDetail} onChange={(e) => setReasonDetail(e.target.value)} className="input-field text-sm py-2 w-full resize-none" rows={2} placeholder="Descreva o problema..." />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 block">Prazo de Garantia (horas)</label>
+            <input type="number" value={warrantyHours} onChange={(e) => setWarrantyHours(e.target.value)} className="input-field text-sm py-2 w-32" min={1} placeholder="Ex: 72" />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary text-sm py-2 px-4">Cancelar</button>
+            <button type="submit" disabled={saving} className="btn-primary text-sm py-2 px-5 flex items-center gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Abrir Ticket
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Aba 1: Fila de RMA ──────────────────────────────────────────────────────
 
 function QueueTab() {
   const [items, setItems] = useState<RmaItem[]>([])
@@ -126,7 +260,8 @@ function QueueTab() {
   const [selected, setSelected] = useState<RmaItem | null>(null)
   const [filterStatus, setFilterStatus] = useState('')
   const [patching, setPatching] = useState(false)
-  const [availableAccounts, setAvailableAccounts] = useState<{ id: string; googleAdsCustomerId: string | null }[]>([])
+  const [availableAccounts, setAvailableAccounts] = useState<{ id: string; googleAdsCustomerId: string | null; platform: string; type: string }[]>([])
+  const [showNovoRma, setShowNovoRma] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -140,10 +275,9 @@ function QueueTab() {
 
   useEffect(() => { load() }, [load])
 
-  // Busca contas disponíveis quando seleciona um RMA
   useEffect(() => {
     if (!selected) { setAvailableAccounts([]); return }
-    fetch('/api/estoque/disponivel?limit=50')
+    fetch('/api/estoque/disponivel?limit=100')
       .then((r) => r.json())
       .then((d) => setAvailableAccounts(Array.isArray(d.items) ? d.items : []))
       .catch(() => setAvailableAccounts([]))
@@ -168,27 +302,75 @@ function QueueTab() {
   }
 
   const openCount = items.filter((i) => ['EM_ANALISE', 'EM_REPOSICAO'].includes(i.status)).length
+  const resolvedThisMonth = items.filter((i) => {
+    if (!i.resolvedAt) return false
+    const r = new Date(i.resolvedAt)
+    const now = new Date()
+    return r.getFullYear() === now.getFullYear() && r.getMonth() === now.getMonth()
+  }).length
 
   return (
     <div className="space-y-4">
+      {showNovoRma && (
+        <NovoRmaModal onClose={() => setShowNovoRma(false)} onCreated={() => { load(); setShowNovoRma(false) }} />
+      )}
+
+      {/* KPIs rápidos */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="card p-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-amber-600">{openCount}</p>
+            <p className="text-[11px] text-zinc-500">Em aberto</p>
+          </div>
+        </div>
+        <div className="card p-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-green-600">{resolvedThisMonth}</p>
+            <p className="text-[11px] text-zinc-500">Resolvidos este mês</p>
+          </div>
+        </div>
+        <div className="card p-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+            <RefreshCw className="w-4 h-4 text-violet-600" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-violet-600">
+              {items.filter((i) => i.actionTaken === 'REPOSICAO_EFETUADA').length}
+            </p>
+            <p className="text-[11px] text-zinc-500">Reposições feitas</p>
+          </div>
+        </div>
+        <div className="card p-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+            <XCircle className="w-4 h-4 text-red-600" />
+          </div>
+          <div>
+            <p className="text-xl font-bold text-red-600">
+              {items.filter((i) => i.actionTaken === 'GARANTIA_NEGADA').length}
+            </p>
+            <p className="text-[11px] text-zinc-500">Garantias negadas</p>
+          </div>
+        </div>
+      </div>
+
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="input-field text-sm py-1.5 w-44"
-        >
+        <button onClick={() => setShowNovoRma(true)} className="btn-primary flex items-center gap-2 text-sm py-1.5 px-4">
+          <Plus className="w-4 h-4" /> Novo Ticket RMA
+        </button>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="input-field text-sm py-1.5 w-44">
           <option value="">Todos os status</option>
-          {Object.entries(STATUS_LABELS).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
+          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <button onClick={load} className="btn-secondary flex items-center gap-2 text-sm py-1.5">
           <RefreshCw className="w-4 h-4" /> Atualizar
         </button>
-        <span className="text-sm text-zinc-500">
-          Em aberto: <strong className="text-amber-600 dark:text-amber-400">{openCount}</strong>
-        </span>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
@@ -204,9 +386,9 @@ function QueueTab() {
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-700">
                 <tr>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wide">Cliente / Conta</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wide">Cliente / Ativo</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wide">Tipo / Plataforma</th>
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wide">Status</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wide">Garantia</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -221,23 +403,21 @@ function QueueTab() {
                         {r.client.user?.name || r.client.user?.email}
                       </p>
                       <p className="text-xs text-zinc-400 font-mono">
-                        {r.originalAccount?.googleAdsCustomerId || r.originalAccount?.id?.slice(0, 10)}
+                        ID: {r.originalAccount?.googleAdsCustomerId || r.originalAccount?.id?.slice(0, 10)}
                       </p>
-                      {r.abuseFlag && (
-                        <span className="text-[10px] text-red-500 font-semibold">⚠ Abuso</span>
-                      )}
+                      {r.abuseFlag && <span className="text-[10px] text-red-500 font-semibold">⚠ Abuso</span>}
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                        {PLATFORM_LABELS[r.originalAccount?.platform] ?? r.originalAccount?.platform}
+                      </p>
+                      <p className="text-[11px] text-zinc-400">{r.originalAccount?.type ?? '—'}</p>
                     </td>
                     <td className="px-3 py-2.5 align-top">
                       <Badge text={STATUS_LABELS[r.status] ?? r.status} color={STATUS_COLORS[r.status] ?? ''} />
                       <p className="text-[11px] text-zinc-400 mt-1">
                         {RMA_REASON_LABELS[r.reason] ?? r.reason}
                       </p>
-                    </td>
-                    <td className="px-3 py-2.5 align-top">
-                      <WarrantyBadge
-                        warrantyHours={r.warrantyHours}
-                        deliveredAt={r.originalAccount.deliveredAt}
-                      />
                     </td>
                   </tr>
                 ))}
@@ -246,111 +426,145 @@ function QueueTab() {
           )}
         </div>
 
-        {/* Detalhe / Ações */}
+        {/* Detalhe */}
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 space-y-4">
           {!selected ? (
             <p className="text-sm text-zinc-500">Selecione um RMA para ver detalhes e agir.</p>
           ) : (
             <>
+              {/* Cabeçalho */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Detalhes do RMA</h3>
                   {selected.abuseFlag && (
-                    <Badge text="⚠ Abuso Sinalizado" color="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" />
+                    <Badge text="⚠ Abuso" color="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" />
                   )}
                 </div>
                 <p className="text-xs text-zinc-400 font-mono">{selected.id}</p>
               </div>
 
-              {/* Garantia */}
-              <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 space-y-2">
-                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Diagnóstico de Garantia</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-600 dark:text-zinc-300">Status</span>
-                  <WarrantyBadge warrantyHours={selected.warrantyHours} deliveredAt={selected.originalAccount.deliveredAt} />
-                </div>
-                {selected.originalAccount.deliveredAt && (
-                  <div className="flex items-center justify-between text-xs text-zinc-500">
-                    <span>Data compra</span>
-                    <span>{new Date(selected.originalAccount.deliveredAt).toLocaleDateString('pt-BR')}</span>
+              {/* Cliente e conta com problema */}
+              <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-3 space-y-2">
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Cliente &amp; Ativo com Problema</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                      {selected.client.user?.name || selected.client.user?.email}
+                    </p>
+                    <p className="text-xs text-zinc-500">{selected.client.user?.email}</p>
                   </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-500">Prazo (horas)</label>
-                  <input
-                    type="number"
-                    defaultValue={selected.warrantyHours ?? ''}
-                    className="input-field text-xs py-1 w-20"
-                    min={1}
-                    onBlur={(e) => {
-                      const v = parseInt(e.target.value)
-                      if (!isNaN(v) && v > 0) patch({ warrantyHours: v })
-                    }}
-                  />
                 </div>
-              </div>
-
-              {/* Motivo e Ação */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-zinc-500 mb-1 block">Motivo da Queda</label>
-                  <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                    {RMA_REASON_LABELS[selected.reason] ?? selected.reason}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-500 mb-1 block">Ação Tomada</label>
-                  <select
-                    value={selected.actionTaken}
-                    disabled={patching}
-                    onChange={(e) => patch({ actionTaken: e.target.value })}
-                    className="input-field text-sm py-1 w-full"
-                  >
-                    {Object.entries(RMA_ACTION_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <div>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wide">Plataforma</p>
+                    <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      {PLATFORM_LABELS[selected.originalAccount?.platform] ?? selected.originalAccount?.platform}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wide">Tipo de Conta</p>
+                    <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      {selected.originalAccount?.type ?? '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wide">ID da Conta</p>
+                    <p className="text-xs font-mono text-zinc-600 dark:text-zinc-400">
+                      {selected.originalAccount?.googleAdsCustomerId || selected.originalAccount?.id?.slice(0, 12)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wide">Garantia</p>
+                    <WarrantyBadge warrantyHours={selected.warrantyHours} deliveredAt={selected.originalAccount.deliveredAt} />
+                  </div>
                 </div>
               </div>
 
               {/* Conta substituta */}
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Conta Substituta</label>
+                <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5 block">
+                  Conta Substituta (do estoque disponível)
+                </label>
+                {selected.replacementAccount && (
+                  <div className="mb-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 text-xs">
+                    <p className="font-semibold text-green-800 dark:text-green-300">
+                      ✓ {PLATFORM_LABELS[selected.replacementAccount.platform] ?? selected.replacementAccount.platform} · {selected.replacementAccount.type}
+                    </p>
+                    <p className="text-green-700 dark:text-green-400 font-mono">
+                      ID: {selected.replacementAccount.googleAdsCustomerId || selected.replacementAccount.id.slice(0, 10)}
+                    </p>
+                  </div>
+                )}
                 <select
                   value={selected.replacementAccount?.id ?? ''}
-                  disabled={patching}
+                  disabled={patching || selected.status === 'CONCLUIDO' || selected.status === 'NEGADO_TERMO'}
                   onChange={(e) => patch({ replacementAccountId: e.target.value || null })}
-                  className="input-field text-sm py-1 w-full"
+                  className="input-field text-sm py-1.5 w-full"
                 >
-                  <option value="">— Sem conta substituta —</option>
-                  {selected.replacementAccount && (
-                    <option value={selected.replacementAccount.id}>
-                      ✓ Atual: {selected.replacementAccount.googleAdsCustomerId}
-                    </option>
-                  )}
+                  <option value="">— Selecionar conta do estoque —</option>
                   {availableAccounts
                     .filter((a) => a.id !== selected.replacementAccount?.id)
                     .map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.googleAdsCustomerId || a.id.slice(0, 8)}
+                        {PLATFORM_LABELS[a.platform] ?? a.platform} · {(a as Record<string, unknown>).type as string} · {a.googleAdsCustomerId || a.id.slice(0, 8)}
                       </option>
                     ))}
+                </select>
+                {(selected.status !== 'CONCLUIDO' && selected.status !== 'NEGADO_TERMO') && (
+                  <p className="text-[10px] text-zinc-400 mt-1">
+                    Ao concluir com "Reposição efetuada", a conta original é baixada do estoque automaticamente.
+                  </p>
+                )}
+              </div>
+
+              {/* Ação tomada */}
+              <div>
+                <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5 block">Ação Tomada</label>
+                <select
+                  value={selected.actionTaken}
+                  disabled={patching || selected.status === 'CONCLUIDO' || selected.status === 'NEGADO_TERMO'}
+                  onChange={(e) => patch({ actionTaken: e.target.value })}
+                  className="input-field text-sm py-1.5 w-full"
+                >
+                  {Object.entries(RMA_ACTION_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
                 </select>
               </div>
 
               {/* Status */}
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Status do Ticket</label>
+                <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5 block">Status do Ticket</label>
                 <select
                   value={selected.status}
-                  disabled={patching}
+                  disabled={patching || selected.status === 'CONCLUIDO' || selected.status === 'NEGADO_TERMO'}
                   onChange={(e) => patch({ status: e.target.value })}
-                  className="input-field text-sm py-1 w-full"
+                  className="input-field text-sm py-1.5 w-full"
                 >
-                  {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
+                  {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
+                {selected.status === 'CONCLUIDO' && (
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    ✓ Ticket concluído em {new Date(selected.resolvedAt!).toLocaleString('pt-BR')}
+                    {selected.resolutionMinutes ? ` (${selected.resolutionMinutes} min)` : ''}
+                  </p>
+                )}
+              </div>
+
+              {/* Prazo de garantia */}
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-zinc-500">Prazo (h)</label>
+                <input
+                  type="number"
+                  defaultValue={selected.warrantyHours ?? ''}
+                  className="input-field text-xs py-1 w-20"
+                  min={1}
+                  disabled={selected.status === 'CONCLUIDO' || selected.status === 'NEGADO_TERMO'}
+                  onBlur={(e) => {
+                    const v = parseInt(e.target.value)
+                    if (!isNaN(v) && v > 0) patch({ warrantyHours: v })
+                  }}
+                />
               </div>
 
               {selected.autoMessageSentAt && (
@@ -372,7 +586,216 @@ function QueueTab() {
   )
 }
 
-// ─── Aba 2: Analytics CEO ──────────────────────────────────────────────────
+// ─── Aba 2: Mensal ───────────────────────────────────────────────────────────
+
+function MensalTab() {
+  const [data, setData] = useState<AnalyticsData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/admin/rma/analytics')
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => null)
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="w-5 h-5 animate-spin" /> Carregando…</div>
+  if (!data) return <p className="text-zinc-500 text-sm">Erro ao carregar dados.</p>
+
+  const monthChange = data.monthlyChange
+  const maxMonthly = Math.max(...data.monthlyBreakdown.map((m) => m.total), 1)
+
+  return (
+    <div className="space-y-6">
+      {/* Mês atual vs anterior */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="card p-4">
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <RefreshCw className="w-3.5 h-3.5" /> Este mês
+          </div>
+          <p className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">{data.thisMonth.total}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">tickets abertos</p>
+          {monthChange !== null && (
+            <div className={`flex items-center gap-1 text-xs font-medium mt-1 ${monthChange > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {monthChange > 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+              {Math.abs(monthChange)}% vs mês passado
+            </div>
+          )}
+        </div>
+        <div className="card p-4">
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <CheckCircle className="w-3.5 h-3.5 text-green-500" /> Resolvidos
+          </div>
+          <p className="text-3xl font-bold text-green-600 dark:text-green-400">{data.thisMonth.resolved}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">este mês</p>
+          <p className="text-xs text-zinc-400 mt-0.5">{data.lastMonth.resolved} no mês passado</p>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-amber-500" /> Mês Passado
+          </div>
+          <p className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">{data.lastMonth.total}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">tickets abertos</p>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5 text-violet-500" /> Taxa de Reposição
+          </div>
+          <p className={`text-3xl font-bold ${data.replacementRate > 15 ? 'text-red-600' : 'text-green-600 dark:text-green-400'}`}>
+            {data.replacementRate}%
+          </p>
+          <p className="text-xs text-zinc-400 mt-0.5">RMAs / pedidos (90d)</p>
+        </div>
+      </div>
+
+      {/* Gráfico de barras mensal */}
+      {data.monthlyBreakdown.length > 0 && (
+        <div className="card p-4">
+          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-violet-500" /> Trocas &amp; Reposições por Mês (últimos 6 meses)
+          </h3>
+          <div className="space-y-3">
+            {data.monthlyBreakdown.map((m) => {
+              const [year, month] = m.month.split('-')
+              const label = new Date(Number(year), Number(month) - 1).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+              const repPct = m.total > 0 ? (m.reposicoes / m.total) * 100 : 0
+              const negPct = m.total > 0 ? (m.negados / m.total) * 100 : 0
+              return (
+                <div key={m.month}>
+                  <div className="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400 mb-1">
+                    <span className="font-semibold w-12">{label}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-violet-600 dark:text-violet-400">↺ {m.reposicoes} repos.</span>
+                      <span className="text-red-600 dark:text-red-400">✗ {m.negados} negados</span>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">{m.total} total</span>
+                    </div>
+                  </div>
+                  <div className="h-6 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex">
+                    <div
+                      className="h-full bg-violet-500 dark:bg-violet-600 transition-all"
+                      style={{ width: `${(m.total / maxMonthly) * 100}%` }}
+                    >
+                      {repPct > 10 && (
+                        <div className="h-full bg-violet-400 dark:bg-violet-500" style={{ width: `${repPct}%` }} />
+                      )}
+                    </div>
+                    {negPct > 0 && (
+                      <div className="h-full bg-red-400 dark:bg-red-500 -ml-0.5 opacity-70" style={{ width: `${(m.negados / maxMonthly) * 100}%` }} />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-4 mt-3 text-[11px] text-zinc-500">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-violet-500 inline-block" /> Reposições efetuadas</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-400 inline-block" /> Garantias negadas</span>
+          </div>
+        </div>
+      )}
+
+      {/* Por plataforma e tipo */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        {data.byPlatform.length > 0 && (
+          <div className="card p-4">
+            <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-blue-500" /> RMAs por Plataforma
+            </h3>
+            <div className="space-y-2">
+              {data.byPlatform.map((p) => {
+                const pct = totalRmasFor(data, p.count)
+                return (
+                  <div key={p.platform}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-zinc-700 dark:text-zinc-300">{PLATFORM_LABELS[p.platform] ?? p.platform}</span>
+                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">{p.count} ({pct}%)</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
+                      <div className="h-full rounded-full bg-blue-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {data.byType.length > 0 && (
+          <div className="card p-4">
+            <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-3 flex items-center gap-2">
+              <Package className="w-4 h-4 text-emerald-500" /> RMAs por Tipo de Conta
+            </h3>
+            <div className="space-y-2">
+              {data.byType.map((t) => {
+                const pct = totalRmasFor(data, t.count)
+                return (
+                  <div key={t.type}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-zinc-700 dark:text-zinc-300">{t.type}</span>
+                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">{t.count} ({pct}%)</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
+                      <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Top motivos */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="card p-4">
+          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500" /> Top Motivos de Queda
+          </h3>
+          <div className="space-y-3">
+            {data.topReasons.map((r) => (
+              <div key={r.reason}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-zinc-700 dark:text-zinc-300">{r.label}</span>
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-100">{r.count} ({r.percent}%)</span>
+                </div>
+                <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800">
+                  <div className="h-full rounded-full bg-amber-500" style={{ width: `${r.percent}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {data.byProducer.length > 0 && (
+          <div className="card p-4">
+            <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-3 flex items-center gap-2">
+              <Users className="w-4 h-4 text-violet-500" /> RMAs por Produtor (G2)
+            </h3>
+            <div className="space-y-2">
+              {data.byProducer.map((p) => (
+                <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{p.name || p.email}</p>
+                    <p className="text-xs text-zinc-400">{p.email}</p>
+                  </div>
+                  <span className="font-bold text-red-600 dark:text-red-400">{p.rmas} RMAs</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function totalRmasFor(data: AnalyticsData, count: number) {
+  const total = data.byPlatform.reduce((s, p) => s + p.count, 0) || 1
+  return Math.round((count / total) * 100)
+}
+
+// ─── Aba 3: Analytics CEO ─────────────────────────────────────────────────────
 
 function AnalyticsTab() {
   const [data, setData] = useState<AnalyticsData | null>(null)
@@ -387,75 +810,24 @@ function AnalyticsTab() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-zinc-500">
-        <Loader2 className="w-5 h-5 animate-spin" /> Carregando analytics…
-      </div>
-    )
-  }
+  if (loading) return <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="w-5 h-5 animate-spin" /> Carregando analytics…</div>
   if (!data) return <p className="text-zinc-500 text-sm">Erro ao carregar dados.</p>
 
   return (
     <div className="space-y-6">
-      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          icon={ClipboardList}
-          label="Total RMAs (90d)"
-          value={data.totalRmas}
-          sub={`${data.totalOrders} pedidos no período`}
-        />
-        <StatCard
-          icon={TrendingUp}
-          label="Taxa de Reposição"
-          value={`${data.replacementRate}%`}
-          sub="RMAs / Pedidos"
-          color={data.replacementRate > 15 ? 'text-red-600' : 'text-green-600 dark:text-green-400'}
-        />
-        <StatCard
-          icon={Clock}
-          label="SLA Médio"
-          value={`${data.avgResolutionMinutes} min`}
-          sub="Tempo médio de resolução"
-        />
-        <StatCard
-          icon={ShieldAlert}
-          label="Flags de Abuso"
-          value={data.abuseFlagCount}
-          sub="Clientes marcados"
-          color={data.abuseFlagCount > 0 ? 'text-red-600' : 'text-zinc-500'}
-        />
+        <StatCard icon={ClipboardList} label="Total RMAs (90d)" value={data.totalRmas} sub={`${data.totalOrders} pedidos`} />
+        <StatCard icon={TrendingUp} label="Taxa de Reposição" value={`${data.replacementRate}%`} sub="RMAs / Pedidos"
+          color={data.replacementRate > 15 ? 'text-red-600' : 'text-green-600 dark:text-green-400'} />
+        <StatCard icon={Clock} label="SLA Médio" value={`${data.avgResolutionMinutes} min`} sub="Tempo de resolução" />
+        <StatCard icon={AlertTriangle} label="Flags de Abuso" value={data.abuseFlagCount} sub="Clientes marcados"
+          color={data.abuseFlagCount > 0 ? 'text-red-600' : 'text-zinc-500'} />
       </div>
 
-      {/* Top Motivos + Ações */}
+      {/* Ações tomadas e status */}
       <div className="grid lg:grid-cols-2 gap-4">
-        <div className="card">
-          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-primary-500" /> Top Motivos de Queda
-          </h3>
-          <div className="space-y-3">
-            {data.topReasons.map((r) => (
-              <div key={r.reason}>
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="text-zinc-700 dark:text-zinc-300">{r.label}</span>
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                    {r.count} ({r.percent}%)
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-primary-500 dark:bg-primary-400 transition-all"
-                    style={{ width: `${r.percent}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
+        <div className="card p-4">
+          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-3 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-green-500" /> Ações Tomadas
           </h3>
           <div className="space-y-2">
@@ -466,9 +838,10 @@ function AnalyticsTab() {
               </div>
             ))}
           </div>
-
-          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mt-4 mb-3">Status Atual</h3>
-          <div className="space-y-1">
+        </div>
+        <div className="card p-4">
+          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Status Atual dos Tickets</h3>
+          <div className="space-y-2">
             {data.statusStats.map((s) => (
               <div key={s.status} className="flex items-center justify-between text-sm">
                 <Badge text={STATUS_LABELS[s.status] ?? s.status} color={STATUS_COLORS[s.status] ?? ''} />
@@ -479,66 +852,11 @@ function AnalyticsTab() {
         </div>
       </div>
 
-      {/* Por Produtor */}
-      {data.byProducer.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
-            <Users className="w-4 h-4 text-violet-500" /> Taxa de RMA por Produtor (G2)
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-zinc-200 dark:border-zinc-700">
-                <tr>
-                  <th className="text-left py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Produtor</th>
-                  <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">RMAs</th>
-                  <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Qualidade</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {data.byProducer.map((p, i) => {
-                  const maxRmas = data.byProducer[0]?.rmas ?? 1
-                  const quality = Math.max(0, 100 - Math.round((p.rmas / maxRmas) * 100))
-                  return (
-                    <tr key={p.id}>
-                      <td className="py-2 px-3">
-                        <p className="font-medium text-zinc-800 dark:text-zinc-200">{p.name || p.email}</p>
-                        <p className="text-xs text-zinc-400">{p.email}</p>
-                      </td>
-                      <td className="py-2 px-3 text-right font-bold text-zinc-900 dark:text-zinc-100">
-                        {p.rmas}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${quality >= 70 ? 'bg-green-500' : quality >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
-                              style={{ width: `${quality}%` }}
-                            />
-                          </div>
-                          <span className={`text-xs font-semibold ${quality >= 70 ? 'text-green-600' : quality >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
-                            {quality}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* LTV Ajustado */}
       {data.ltvData.length > 0 && (
-        <div className="card">
-          <button
-            onClick={() => setShowLtv((v) => !v)}
-            className="flex items-center justify-between w-full font-semibold text-zinc-800 dark:text-zinc-200"
-          >
-            <span className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary-500" /> LTV Ajustado por Cliente (RMA)
-            </span>
+        <div className="card p-4">
+          <button onClick={() => setShowLtv((v) => !v)} className="flex items-center justify-between w-full font-semibold text-zinc-800 dark:text-zinc-200">
+            <span className="flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary-500" /> LTV Ajustado por Cliente (RMA)</span>
             {showLtv ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showLtv && (
@@ -546,10 +864,10 @@ function AnalyticsTab() {
               <table className="w-full text-sm">
                 <thead className="border-b border-zinc-200 dark:border-zinc-700">
                   <tr>
-                    <th className="text-left py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Cliente</th>
-                    <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">LTV Bruto</th>
-                    <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">RMAs</th>
-                    <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">Taxa</th>
+                    <th className="text-left py-2 px-3 text-xs font-semibold text-zinc-500 uppercase">Cliente</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase">LTV Bruto</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase">RMAs</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-zinc-500 uppercase">Taxa</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -578,7 +896,7 @@ function AnalyticsTab() {
   )
 }
 
-// ─── Aba 3: Alertas de Abuso ───────────────────────────────────────────────
+// ─── Aba 4: Alertas de Abuso ─────────────────────────────────────────────────
 
 function AbusosTab() {
   const [data, setData] = useState<AbuseData | null>(null)
@@ -587,11 +905,7 @@ function AbusosTab() {
 
   const load = useCallback(() => {
     setLoading(true)
-    fetch('/api/admin/rma/abusos')
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => null)
-      .finally(() => setLoading(false))
+    fetch('/api/admin/rma/abusos').then((r) => r.json()).then(setData).catch(() => null).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -599,40 +913,26 @@ function AbusosTab() {
   async function toggleFlag(clientId: string, flag: boolean) {
     setFlagging(clientId)
     try {
-      await fetch('/api/admin/rma/abusos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, flag }),
-      })
+      await fetch('/api/admin/rma/abusos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId, flag }) })
       load()
-    } finally {
-      setFlagging(null)
-    }
+    } finally { setFlagging(null) }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-zinc-500">
-        <Loader2 className="w-5 h-5 animate-spin" /> Carregando alertas…
-      </div>
-    )
-  }
-
+  if (loading) return <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="w-5 h-5 animate-spin" /> Carregando…</div>
   if (!data) return <p className="text-zinc-500 text-sm">Erro ao carregar dados.</p>
 
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
         <div>
           <p className="font-semibold text-amber-800 dark:text-amber-300">Detecção de Abuso de Garantia</p>
           <p className="text-sm text-amber-700 dark:text-amber-400">
             Clientes com taxa de reposição acima de {data.threshold}% nos últimos 90 dias.
-            {data.suspects.length === 0 ? ' Nenhum caso detectado.' : ` ${data.suspects.length} cliente(s) identificado(s).`}
+            {data.suspects.length === 0 ? ' Nenhum caso.' : ` ${data.suspects.length} cliente(s) identificado(s).`}
           </p>
         </div>
       </div>
-
       {data.suspects.length === 0 ? (
         <div className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-6 text-center">
           <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
@@ -641,54 +941,39 @@ function AbusosTab() {
       ) : (
         <div className="space-y-3">
           {data.suspects.map((s) => (
-            <div
-              key={s.clientId}
-              className={`rounded-xl border p-4 space-y-3 ${
-                s.alreadyFlagged
-                  ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20'
-                  : 'border-zinc-200 dark:border-zinc-700'
-              }`}
-            >
+            <div key={s.clientId} className={`rounded-xl border p-4 space-y-3 ${s.alreadyFlagged ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20' : 'border-zinc-200 dark:border-zinc-700'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-zinc-900 dark:text-zinc-100">{s.name}</p>
                   <p className="text-xs text-zinc-400">{s.email}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {s.alreadyFlagged && (
-                    <Badge text="⚠ Flagged" color="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" />
-                  )}
+                  {s.alreadyFlagged && <Badge text="⚠ Flagged" color="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" />}
                   <button
                     onClick={() => toggleFlag(s.clientId, !s.alreadyFlagged)}
                     disabled={flagging === s.clientId}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                      s.alreadyFlagged
-                        ? 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300'
-                        : 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300'
-                    }`}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${s.alreadyFlagged ? 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300' : 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300'}`}
                   >
                     {flagging === s.clientId ? '…' : s.alreadyFlagged ? 'Remover flag' : 'Sinalizar abuso'}
                   </button>
                 </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="text-center">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
                   <p className="text-2xl font-bold text-red-600 dark:text-red-400">{s.rmaRate}%</p>
                   <p className="text-xs text-zinc-500">Taxa RMA</p>
                 </div>
-                <div className="text-center">
+                <div>
                   <p className="text-2xl font-bold text-zinc-800 dark:text-zinc-200">{s.rmaCount}/{s.orderCount}</p>
                   <p className="text-xs text-zinc-500">RMAs / Pedidos</p>
                 </div>
-                <div className="text-center">
+                <div>
                   <p className="text-lg font-bold text-zinc-700 dark:text-zinc-300">
                     {s.grossLtv.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
                   </p>
                   <p className="text-xs text-zinc-500">LTV Bruto</p>
                 </div>
               </div>
-
               {s.recentRmas.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-zinc-500 mb-1">Últimos RMAs</p>
@@ -713,40 +998,49 @@ function AbusosTab() {
   )
 }
 
-// ─── Componente Principal ───────────────────────────────────────────────────
+// ─── Componente Principal ─────────────────────────────────────────────────────
 
-const TABS = [
-  { id: 'queue', label: 'Fila de RMA', icon: ClipboardList },
-  { id: 'analytics', label: 'Analytics CEO', icon: BarChart3 },
-  { id: 'abusos', label: 'Alertas de Abuso', icon: ShieldAlert },
+const ALL_TABS = [
+  { id: 'queue',     label: 'Trocas & Reposições', icon: ClipboardList, roles: ['ADMIN', 'PRODUCTION_MANAGER', 'COMMERCIAL', 'DELIVERER', 'PURCHASING'] },
+  { id: 'mensal',    label: 'Resumo do Mês',        icon: BarChart3,     roles: ['ADMIN', 'PRODUCTION_MANAGER', 'PURCHASING'] },
+  { id: 'analytics', label: 'Analytics CEO',        icon: TrendingDown,  roles: ['ADMIN'] },
+  { id: 'abusos',    label: 'Alertas de Abuso',     icon: AlertTriangle, roles: ['ADMIN'] },
 ]
 
 export default function RmaAdminClient() {
-  const [tab, setTab] = useState<'queue' | 'analytics' | 'abusos'>('queue')
+  const { data: session } = useSession()
+  const role = session?.user?.role ?? ''
+  const [tab, setTab] = useState<'queue' | 'mensal' | 'analytics' | 'abusos'>('queue')
+
+  const visibleTabs = ALL_TABS.filter((t) => t.roles.includes(role))
+
+  const isProductionManager = role === 'PRODUCTION_MANAGER'
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-xl bg-violet-100 dark:bg-violet-900/30">
           <ShieldAlert className="w-6 h-6 text-violet-600 dark:text-violet-400" />
         </div>
         <div>
-          <h1 className="heading-1 text-lg">Suporte & RMA</h1>
+          <h1 className="heading-1 text-lg">
+            {isProductionManager ? 'Trocas & Reposição de Contas' : 'Suporte & RMA — Reposições e Trocas'}
+          </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Reposições · Diagnóstico · Analytics de Perdas
+            {isProductionManager
+              ? 'Abrir tickets · Selecionar conta substituta · Resolver e fechar'
+              : 'Controle completo · Saída automática do estoque · Métricas mensais'}
           </p>
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="border-b border-zinc-200 dark:border-zinc-700">
-        <nav className="flex gap-1 -mb-px">
-          {TABS.map(({ id, label, icon: Icon }) => (
+        <nav className="flex gap-1 -mb-px overflow-x-auto">
+          {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setTab(id as typeof tab)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === id
                   ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                   : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
@@ -759,10 +1053,10 @@ export default function RmaAdminClient() {
         </nav>
       </div>
 
-      {/* Conteúdo */}
-      {tab === 'queue' && <QueueTab />}
+      {tab === 'queue'     && <QueueTab />}
+      {tab === 'mensal'    && <MensalTab />}
       {tab === 'analytics' && <AnalyticsTab />}
-      {tab === 'abusos' && <AbusosTab />}
+      {tab === 'abusos'    && <AbusosTab />}
     </div>
   )
 }

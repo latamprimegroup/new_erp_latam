@@ -1,11 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Search, Copy, CheckCheck, RefreshCw, Zap, Loader2 } from 'lucide-react'
+import { Search, Copy, CheckCheck, Zap, Loader2, ExternalLink } from 'lucide-react'
+
+type AssetSpecs = {
+  year?: number; paymentType?: string; verificacao?: boolean; docStatus?: string
+  spendBRL?: number; spendUSD?: number; spendClass?: string; nicho?: string
+  faturamento?: string; authorityTag?: string; platform?: string
+}
 
 type Asset = {
   id: string; adsId: string; category: string; subCategory: string | null
-  status: string; salePrice: number; displayName: string; description: string | null; tags: string | null
+  status: string; salePrice: number; displayName: string; description: string | null
+  tags: string | null; specs?: AssetSpecs | null
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -15,9 +22,43 @@ const CATEGORY_EMOJI: Record<string, string> = {
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+const WA_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? '5511999999999'
+
+function buildWarRoomCopy(asset: Asset, extra: string): string {
+  const s = asset.specs ?? {}
+  const fonte   = asset.subCategory ?? asset.category
+  const nicho   = s.authorityTag ?? s.nicho ?? (asset.tags?.split(',')[0]?.trim() ?? 'Multi-nicho')
+  const gastos  = s.spendBRL
+    ? s.spendBRL >= 1000 ? `+${Math.round(s.spendBRL / 1000)}k BRL` : `R$${s.spendBRL}`
+    : s.spendUSD ? `$${s.spendUSD}k USD` : 'Consultar'
+  const ano     = s.year ? String(s.year) : 'Consultar'
+  const pag     = s.paymentType ?? 'Consultar'
+  const verif   = s.verificacao ? 'OK' : 'Consultar'
+  const fat     = s.faturamento ?? 'OK'
+  const waLink  = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(`ID: ${asset.adsId}`)}`
+  const obsLine = extra ? `\n📌 *OBS:* ${extra}` : ''
+
+  return `🛡️ CONTA GOOGLE ADS COM GASTOS - ADS ATIVOS
+⚡ ID DA CONTA: ${asset.adsId}
+🧬 DNA / FONTE: ${fonte} (Nicho: ${nicho})
+💰 GASTOS: ${gastos}
+🍷 ANO: ${ano}
+✅ STATUS: EM OPERAÇÃO (AQUECIDA)
+✅ NICHO: ${nicho}
+✅ ANO: ${ano}
+✅ FATURAMENTO: ${fat}
+✅ PAG: ${pag}
+⚙️ PAGAMENTO: ${pag} | VERIFICAÇÃO: ${verif}${obsLine}
+👉 CONSULTAR VALOR: ${waLink}`
+}
+
 function buildCopy(asset: Asset, template: string, extra: string): string {
   const tags = asset.tags ? asset.tags.split(',').map((t) => `#${t.trim().replace(/\s+/g,'')}`) : []
   const tagsLine = tags.length ? `\n${tags.join(' ')}` : ''
+
+  if (template === 'war-room') return buildWarRoomCopy(asset, extra)
+
+  const waLink = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(`ID: ${asset.adsId}`)}`
 
   if (template === 'standard') {
     return `📢 *NOVIDADE NO ESTOQUE ADS ATIVOS*
@@ -29,7 +70,7 @@ ${CATEGORY_EMOJI[asset.category] ?? '📦'} *Tipo:* ${asset.category}${asset.sub
 📦 *Disponibilidade:* Pronta Entrega
 💰 *Valor:* ${brl(asset.salePrice)}
 ${extra ? `\n📌 ${extra}\n` : ''}
-👉 Interessados chamar no privado com o ID acima.${tagsLine}`
+👉 CONSULTAR: ${waLink}${tagsLine}`
   }
 
   if (template === 'telegram') {
@@ -42,7 +83,7 @@ ${extra ? `\n📌 ${extra}\n` : ''}
 ${extra ? `📌 ${extra}` : ''}
 
 ✅ Pronta entrega | Suporte 24h
-💬 Contato com o ID: *${asset.adsId}*${tagsLine}`
+👉 ${waLink}${tagsLine}`
   }
 
   // template === 'vip'
@@ -59,7 +100,8 @@ ${extra ? `📌 *Obs:* ${extra}` : ''}
 
 💰 *Investimento:* ${brl(asset.salePrice)}
 
-_Estoque limitado. Prioridade para quem chamar primeiro com o ID acima._${tagsLine}`
+_Estoque limitado._
+👉 ${waLink}${tagsLine}`
 }
 
 export function CopyGeneratorTab() {
@@ -67,7 +109,7 @@ export function CopyGeneratorTab() {
   const [loading, setLoading]       = useState(false)
   const [q, setQ]                   = useState('')
   const [selected, setSelected]     = useState<Asset | null>(null)
-  const [template, setTemplate]     = useState<'standard' | 'telegram' | 'vip'>('standard')
+  const [template, setTemplate]     = useState<'war-room' | 'standard' | 'telegram' | 'vip'>('war-room')
   const [extra, setExtra]           = useState('')
   const [copied, setCopied]         = useState(false)
   const textareaRef                 = useRef<HTMLTextAreaElement>(null)
@@ -207,14 +249,31 @@ export function CopyGeneratorTab() {
           {selected && (
             <div>
               <label className="block text-xs font-semibold mb-2">Modelo de Copy</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['standard','telegram','vip'] as const).map((t) => (
-                  <button key={t} onClick={() => setTemplate(t)}
-                    className={`py-2 rounded-xl border text-xs font-semibold capitalize transition-colors ${template === t ? 'bg-primary-600 text-white border-primary-600' : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
-                    {t === 'standard' ? '📣 Padrão' : t === 'telegram' ? '✈️ Telegram' : '🥇 VIP'}
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { id: 'war-room', label: '🛡️ War Room VIP' },
+                  { id: 'standard', label: '📣 Padrão' },
+                  { id: 'telegram', label: '✈️ Telegram' },
+                  { id: 'vip',      label: '🥇 VIP Clássico' },
+                ] as const).map((t) => (
+                  <button key={t.id} onClick={() => setTemplate(t.id)}
+                    className={`py-2 rounded-xl border text-xs font-semibold transition-colors ${template === t.id ? 'bg-primary-600 text-white border-primary-600' : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+                    {t.label}
                   </button>
                 ))}
               </div>
+              {template === 'war-room' && selected && (
+                <div className="mt-2 rounded-lg border border-primary-200 bg-primary-50 dark:bg-primary-950/10 p-2 text-[10px] text-primary-700 dark:text-primary-300 space-y-1">
+                  <p>🛡️ Formato canônico War Room OS com link WhatsApp injetado</p>
+                  <a
+                    href={`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(`ID: ${selected.adsId}`)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 font-semibold underline">
+                    <ExternalLink className="w-3 h-3" />
+                    Testar link WhatsApp para {selected.adsId}
+                  </a>
+                </div>
+              )}
             </div>
           )}
 

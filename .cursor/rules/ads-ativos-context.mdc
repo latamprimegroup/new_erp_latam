@@ -1,0 +1,143 @@
+---
+description: Contexto War Room OS — regras de negócio, terminologia e arquitetura da Ads Ativos. Aplicar sempre ao trabalhar em qualquer módulo do ERP.
+globs:
+  - "src/**/*.ts"
+  - "src/**/*.tsx"
+  - "prisma/**/*.prisma"
+alwaysApply: true
+---
+
+# War Room OS — Ads Ativos: Contexto e Regras de Negócio
+
+## Identidade do Sistema
+
+O sistema é o **War Room OS da Ads Ativos** — um ERP vertical de AdTech para gestão de infraestrutura de tráfego pago em escala (1.000+ produtores). Atua como motor de distribuição de ativos digitais: contas de anúncio, perfis, BMs, proxies, software e infraestrutura.
+
+## Terminologia Obrigatória
+
+| Termo técnico | Significado |
+|---|---|
+| **Ativo** | Unidade individual rastreável (conta Google Ads, perfil Meta, BM, proxy, etc.) |
+| **Safra** | Ano de criação do ativo (ex.: 🍷 Safra 2019 = conta criada em 2019) |
+| **DNA / Fonte** | Origem do ativo — mascarada para uso externo (ex.: "G2 Prime", "Meta Select") |
+| **Aquecida** | Status EM OPERAÇÃO — ativo em uso ativo, com histórico de gasto |
+| **Nicho** | Vertical de mercado (Imobiliária, iGaming, Health, etc.) — **nunca exposto externamente** |
+| **Authority Tag** | Versão mascarada do nicho para catálogo público (ex.: "Real Estate Authority") |
+| **Carimbo** | Processo de registro e vinculação do ativo a um produtor |
+| **Célula** | Grupo de produtores por nicho (ex.: Célula Google G2, Célula Meta Business) |
+| **ID Público** | Formato AA-[CATEGORIA][ANO]-[SEQUENCIAL] — ex.: AA-CONT-000001 |
+| **ID Real** | ID original da plataforma (ex.: 863-498-6283) — **apenas uso interno PURCHASING/ADMIN** |
+| **Floor Price** | Preço mínimo de venda = costPrice * (1 + minMarginPct/100) |
+
+## Emojis Padrão do Sistema
+
+```
+🛰️  — Infraestrutura / rastreamento
+🧬  — DNA / Fonte / origem
+🛡️  — Proteção / white label / compliance
+🍷  — Safra / ano de criação
+⚡  — ID da conta / identificação
+💎  — Diamond Class (gasto alto)
+🥇  — Gold Class
+🥈  — Silver Class
+✅  — Status OK / aprovado
+🔐  — Acesso restrito / confidencial
+```
+
+## Regras de Segregação (White Label Total)
+
+1. **Fornecedor NUNCA exposto** na UI de venda ou catálogo público — usar `vendorId` internamente, `vendorRef` apenas para PURCHASING/ADMIN.
+2. **Custo NUNCA visível** para COMMERCIAL, DELIVERER ou FINANCE — apenas ADMIN e PURCHASING veem `costPrice`.
+3. **ID Real NUNCA no catálogo** — sempre usar o ID público gerado (`adsId` no formato AA-xxx).
+4. **Nicho mascarado** — no catálogo externo, substituir nicho por Authority Tag (ver `nichoToAuthorityTag` em `src/lib/asset-parser.ts`).
+5. **rawData** é campo ultra-restrito — apenas PURCHASING e DELIVERER pós-pagamento.
+
+## Arquitetura de Roles
+
+```
+ADMIN        → vê tudo (custo, fornecedor, ID real, margens)
+PURCHASING   → gestão de estoque + fornecedores + custo
+COMMERCIAL   → catálogo público + preço de venda + vender ativo
+FINANCE      → relatórios financeiros sem dados de fornecedor
+DELIVERER    → credenciais pós-venda (rawData liberado)
+PRODUCTION_MANAGER → RMA + ativos atribuídos + operação
+PRODUCER     → apenas próprios ativos
+```
+
+## Campos `specs` (JSON flexível no modelo Asset)
+
+O campo `specs` é o repositório de metadados mascarados do ativo. Chaves padronizadas:
+
+```typescript
+type AssetSpecs = {
+  // Classificação de gasto
+  spendClass?: 'HS' | 'MS' | 'LS' | 'DS'  // Diamond, Gold, Silver, Dollar
+  spendBRL?: number    // Gasto histórico em BRL
+  spendUSD?: number    // Gasto histórico em USD
+  currency?: string    // 'BRL' | 'USD'
+
+  // Metadados do ativo
+  year?: number           // Safra (ano de criação)
+  nicho?: string          // Nicho ORIGINAL — uso interno apenas
+  paymentType?: 'Manual' | 'Auto'  // Tipo de pagamento configurado
+  verificacao?: boolean   // Verificação de identidade OK
+  docStatus?: 'Pendente' | 'CNH Enviada' | 'CNH Validada'
+
+  // IDs internos
+  realId?: string         // ID original da plataforma (ex.: 863-498-6283)
+  platform?: string       // google_ads | meta | tiktok | etc.
+
+  // Copy / catálogo
+  faturamento?: string    // 'CNPJ' | 'CPF' | 'OK'
+  authorityTag?: string   // Authority Tag pré-calculada
+}
+```
+
+## Cálculo de Margem
+
+Regra padrão de pricing:
+- **Margem mínima:** 40% → `salePrice = costPrice * 1.40`
+- **Margem sugerida:** 50% → `salePrice = costPrice * 1.50`
+- **Margem máxima:** 60% → `salePrice = costPrice * 1.60`
+
+O campo `markupPct` armazena o markup aplicado; `floorPrice` é o preço mínimo.
+
+## Auto-tag CNH
+
+Quando `specs.docStatus` for `'CNH Enviada'` ou `'CNH Validada'`, a tag `cnh-validada` deve ser inserida automaticamente no campo `tags` do ativo.
+
+## Formato de Catálogo War Room VIP
+
+Template canônico para WhatsApp/Telegram:
+
+```
+🛡️ CONTA GOOGLE ADS COM GASTOS - ADS ATIVOS
+⚡ ID DA CONTA: [adsId]
+🧬 DNA / FONTE: [subCategory] (Nicho: [authorityTag])
+💰 GASTOS: [spendBRL formatado]
+🍷 ANO: [year]
+✅ STATUS: EM OPERAÇÃO (AQUECIDA)
+✅ NICHO: [authorityTag]
+✅ ANO: [year]
+✅ FATURAMENTO: OK
+✅ PAG: [paymentType]
+⚙️ PAGAMENTO: [paymentType] | VERIFICAÇÃO: OK
+👉 CONSULTAR VALOR
+```
+
+Link WhatsApp injeta o ID: `https://wa.me/{WHATSAPP}?text=ID%3A%20{adsId}`
+
+## Smart Import — Formato de Texto
+
+Parser para cadastro rápido por texto bruto do fornecedor:
+
+```
+ID: 863-498-6283 Gasto: 238k Nicho: Imobiliaria Ano: 2012 Pag: Manual
+```
+
+Regex de extração:
+- `ID:\s*([\d\-]+)`
+- `Gastos?:\s*(\d+(?:\.\d+)?k?)`
+- `Nicho:\s*([^\d][^\n]*?)(?=\s+(?:Ano|Pag|$))`
+- `Ano:\s*(\d{4})`
+- `Pag(?:amento)?:\s*(Manual|Auto)`

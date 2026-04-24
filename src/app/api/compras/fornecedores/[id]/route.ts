@@ -38,11 +38,37 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json(vendor)
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.role || !COMPRAS_WRITE_ROLES.includes(session.user.role))
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
+  // ?permanent=1 → exclui permanentemente (ADMIN only)
+  const { searchParams } = new URL(req.url)
+  const permanent = searchParams.get('permanent') === '1'
+
+  if (permanent) {
+    if (session.user.role !== 'ADMIN')
+      return NextResponse.json({ error: 'Exclusão permanente: apenas ADMIN' }, { status: 403 })
+
+    // Verifica se tem ativos ou pedidos vinculados
+    const vendor = await prisma.vendor.findUnique({
+      where: { id: params.id },
+      select: { _count: { select: { assets: true, purchaseOrders: true } } },
+    })
+    if (!vendor) return NextResponse.json({ error: 'Fornecedor não encontrado' }, { status: 404 })
+
+    if (vendor._count.assets > 0 || vendor._count.purchaseOrders > 0) {
+      return NextResponse.json({
+        error: `Não é possível excluir: fornecedor possui ${vendor._count.assets} ativo(s) e ${vendor._count.purchaseOrders} pedido(s) vinculado(s). Archive-o em vez de excluir.`,
+      }, { status: 409 })
+    }
+
+    await prisma.vendor.delete({ where: { id: params.id } })
+    return NextResponse.json({ ok: true, deleted: true })
+  }
+
+  // Sem ?permanent → arquiva (soft delete)
   await prisma.vendor.update({ where: { id: params.id }, data: { active: false } })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, archived: true })
 }

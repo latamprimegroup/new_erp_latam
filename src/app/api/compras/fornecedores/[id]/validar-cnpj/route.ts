@@ -87,8 +87,11 @@ export async function POST(req: globalThis.Request, { params }: { params: { id: 
     }
 
     const data = await response.json() as BrasilApiCnpj
-    const isActive = data.situacao_cadastral === '02' // 02 = Ativa
-    const situacao = data.descricao_situacao_cadastral ?? 'Desconhecida'
+    // Código '02' = ATIVA na Receita Federal
+    const isActive = data.situacao_cadastral === '02'
+    // Normaliza para maiúsculas sem acentos para comparação segura
+    const situacaoRaw = data.descricao_situacao_cadastral ?? 'Desconhecida'
+    const situacao    = situacaoRaw.toUpperCase().trim()
 
     // ── Atualiza fornecedor com resultado da validação ────────────────────
     const updatedContact = {
@@ -144,10 +147,10 @@ export async function POST(req: globalThis.Request, { params }: { params: { id: 
       porte:           data.porte,
       capitalSocial:   data.capital_social,
       socios:          socios || null,
-      alert:           isActive
+      alert: isActive
         ? null
-        : `⚠️ CNPJ ${situacao} — Bloqueie o pagamento até regularização.`,
-      paymentBlocked:  !isActive,
+        : `⚠️ CNPJ com situação "${situacao}" na Receita Federal — pagamento suspenso até regularização.`,
+      paymentBlocked: !isActive,
     })
 
   } catch (err) {
@@ -159,15 +162,20 @@ export async function POST(req: globalThis.Request, { params }: { params: { id: 
       })
       if (r2.ok) {
         const d2 = await r2.json() as { status: string; situacao: string; nome: string; fantasia?: string }
-        const active = d2.status === 'OK' && d2.situacao === 'ATIVA'
+        // ReceitaWS: status='OK' + situacao='ATIVA' = empresa ativa
+        const active   = d2.status === 'OK' && d2.situacao?.toUpperCase().trim() === 'ATIVA'
+        const situacao2 = d2.situacao?.toUpperCase().trim() ?? 'Desconhecida'
         return NextResponse.json({
-          valid:        active,
-          cnpj:         formatCnpj(cnpjClean),
-          status:       d2.situacao,
-          razaoSocial:  d2.nome,
-          nomeFantasia: d2.fantasia || null,
-          source:       'ReceitaWS (fallback)',
+          valid:          active,
+          cnpj:           formatCnpj(cnpjClean),
+          status:         situacao2,
+          razaoSocial:    d2.nome,
+          nomeFantasia:   d2.fantasia || null,
+          source:         'ReceitaWS (fallback)',
           paymentBlocked: !active,
+          alert: active
+            ? null
+            : `⚠️ CNPJ com situação "${situacao2}" na Receita Federal — pagamento suspenso até regularização.`,
         })
       }
     } catch { /* ignore fallback error */ }

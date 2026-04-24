@@ -39,6 +39,8 @@ const confirmRowSchema = z.object({
   faturamento:    z.string().nullable().optional(),
   verificacao:    z.string().nullable().optional(),
   aquecimento:    z.string().nullable().optional(),
+  pagamento:      z.string().nullable().optional(),
+  realId:         z.string().nullable().optional(),
   tags:           z.string().optional(),
   suggestedPrice: z.number().min(0),
   /** Sobrescreve o ID gerado pelo parser (edição manual) */
@@ -145,6 +147,8 @@ export async function POST(req: globalThis.Request) {
             faturamento: row.faturamento,
             verificacao: row.verificacao,
             aquecimento: row.aquecimento,
+            pagamento:   row.pagamento,
+            realId:      row.realId ?? undefined,
           }
 
           const asset = await prisma.asset.create({

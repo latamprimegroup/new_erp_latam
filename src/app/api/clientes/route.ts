@@ -15,9 +15,12 @@ const createSchema = z.object({
   email:                z.string().email().max(255),
   phone:                z.string().max(30).optional().nullable(),
   whatsapp:             z.string().max(30).optional().nullable(),
-  taxId:                z.string().max(32).optional().nullable(),
+  taxId:                z.string().max(50).optional().nullable(),
+  country:              z.string().max(10).optional().nullable(),
   companyName:          z.string().max(200).optional().nullable(),
   jobTitle:             z.string().max(120).optional().nullable(),
+  instagramHandle:      z.string().max(64).optional().nullable(),
+  whatsappGroupLink:    z.string().max(512).optional().nullable(),
   operationNiche:       z.string().max(48).optional().nullable(),
   leadAcquisitionSource:z.string().max(64).optional().nullable(),
   clientStatus:         z.enum(['ATIVO', 'INATIVO', 'BLOQUEADO']).default('ATIVO'),
@@ -88,9 +91,12 @@ export async function POST(req: Request) {
         clientStatus:          data.clientStatus,
         preferredCurrency:     data.preferredCurrency,
         whatsapp:              data.whatsapp ?? null,
+        country:               data.country ?? null,
         taxId:                 data.taxId ?? null,
         companyName:           data.companyName ?? null,
         jobTitle:              data.jobTitle ?? null,
+        instagramHandle:       data.instagramHandle ?? null,
+        whatsappGroupLink:     data.whatsappGroupLink ?? null,
         operationNiche:        data.operationNiche ?? null,
         leadAcquisitionSource: data.leadAcquisitionSource ?? null,
         commercialNotes:       data.commercialNotes ?? null,
@@ -115,7 +121,7 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'FINANCE']
+  const roles = ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }

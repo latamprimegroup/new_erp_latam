@@ -16,10 +16,15 @@ type Ticket = {
   withinWarranty: boolean; warrantyDays: number; hoursAfterDelivery: number | null
   isVendorFault: boolean; replacementCost: number | null; vendorCreditAmount: number | null
   extendedWarranty: boolean; openedAt: string; approvedAt: string | null; resolvedAt: string | null
-  originalAsset: { adsId: string; displayName: string; category: string }
+  originalAsset: { adsId: string; displayName: string; category: string } | null
   replacementAsset: { adsId: string; displayName: string } | null
-  vendor: { id: string; name: string; rating: number; suspended: boolean }
+  vendor: { id: string; name: string; rating: number; suspended: boolean } | null
   openedBy: { name: string | null }
+  // Campos manuais
+  suspendedAccountRaw?: string | null
+  replacementAccountRaw?: string | null
+  clientCodeRaw?: string | null
+  accountTypeRaw?: string | null
 }
 
 type VendorQA = {
@@ -71,41 +76,38 @@ const REASON_LABELS: Record<string, string> = {
 // Formulário de abertura de ticket
 // ─────────────────────────────────────────────────────────────────────────────
 
-function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
-  const [adsId,    setAdsId]    = useState('')
-  const [assetId,  setAssetId]  = useState('')
-  const [assetInfo, setAssetInfo] = useState<{ displayName: string; vendorName: string } | null>(null)
-  const [looking,  setLooking]  = useState(false)
-  const [reason,   setReason]   = useState('CHECKPOINT')
-  const [detail,   setDetail]   = useState('')
-  const [extended, setExtended] = useState(false)
-  const [saving,   setSaving]   = useState(false)
-  const [error,    setError]    = useState('')
+const ACCOUNT_TYPES = [
+  { value: 'BR_MANUAL',  label: 'BR Manual (G2 Manual)' },
+  { value: 'BR_AUTO',    label: 'BR Automática (G2 Auto)' },
+  { value: 'USD_AUTO',   label: 'USD Automático' },
+  { value: 'EUR_AUTO',   label: 'EURO Automático' },
+]
 
-  const lookupAsset = async () => {
-    if (!adsId.trim()) return
-    setLooking(true); setError(''); setAssetInfo(null); setAssetId('')
-    const r = await fetch(`/api/compras/ativos?search=${encodeURIComponent(adsId.trim())}&limit=1`)
-    if (r.ok) {
-      const j = await r.json()
-      const a = j.assets?.[0] ?? j[0]
-      if (a) {
-        setAssetId(a.id)
-        setAssetInfo({ displayName: a.displayName, vendorName: a.vendor?.name ?? '—' })
-      } else {
-        setError('Ativo não encontrado. Verifique o ID.')
-      }
-    }
-    setLooking(false)
-  }
+function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
+  const [suspendedId,    setSuspendedId]    = useState('')
+  const [replacementId,  setReplacementId]  = useState('')
+  const [clientCode,     setClientCode]     = useState('')
+  const [accountType,    setAccountType]    = useState('BR_MANUAL')
+  const [reason,         setReason]         = useState('ACCOUNT_SUSPENDED')
+  const [detail,         setDetail]         = useState('')
+  const [saving,         setSaving]         = useState(false)
+  const [error,          setError]          = useState('')
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!assetId) { setError('Localize o ativo antes de abrir o ticket.'); return }
+    if (!suspendedId.trim()) { setError('Informe o ID da conta suspensa.'); return }
     setSaving(true); setError('')
     const r = await fetch('/api/rma', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ originalAssetId: assetId, reason, reasonDetail: detail || undefined, extendedWarranty: extended }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        suspendedAccountRaw:   suspendedId.trim(),
+        replacementAccountRaw: replacementId.trim() || undefined,
+        clientCodeRaw:         clientCode.trim() || undefined,
+        accountTypeRaw:        accountType,
+        reason,
+        reasonDetail: detail || undefined,
+      }),
     })
     if (r.ok) { onSaved() }
     else {
@@ -116,68 +118,102 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
   }
 
   return (
-    <form onSubmit={submit} className="rounded-2xl border border-primary-200 bg-primary-50 dark:bg-primary-950/10 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-sm flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-primary-500" />Abrir Ticket de RMA</h3>
-        <button type="button" onClick={onCancel}><X className="w-4 h-4 text-zinc-400" /></button>
-      </div>
+    <form onSubmit={submit} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-ads-dark-card shadow-lg p-5 space-y-4">
 
-      {/* Busca de ativo por ID */}
-      <div className="flex gap-2">
-        <input value={adsId} onChange={(e) => setAdsId(e.target.value.toUpperCase())}
-          placeholder="ID Ads Ativos (ex: AA-G12-HS-001)" className="input-field flex-1 text-sm font-mono" />
-        <button type="button" onClick={lookupAsset} disabled={looking || !adsId.trim()} className="btn-secondary text-sm px-4">
-          {looking ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Buscar'}
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-base text-zinc-800 dark:text-zinc-100">🛡️ Registrar Troca / Reposição</h3>
+        <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors">
+          <X className="w-4 h-4 text-zinc-400" />
         </button>
       </div>
 
-      {/* Info do ativo */}
-      {assetInfo && (
-        <div className="rounded-xl bg-green-50 border border-green-200 px-3 py-2 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-          <div className="text-xs">
-            <p className="font-bold text-green-700">{assetInfo.displayName}</p>
-            <p className="text-green-600">Fornecedor: {assetInfo.vendorName}</p>
-          </div>
-        </div>
+      {error && (
+        <p className="text-xs text-red-600 font-semibold bg-red-50 dark:bg-red-950/20 border border-red-200 px-3 py-2 rounded-lg">
+          ⚠️ {error}
+        </p>
       )}
 
-      {error && <p className="text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+      {/* Grid de campos */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-      {/* Motivo */}
-      <div className="grid grid-cols-2 gap-3">
+        {/* ID da Conta Suspensa */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+            🔴 ID da Conta Suspensa <span className="text-red-500">*</span>
+          </label>
+          <input
+            value={suspendedId}
+            onChange={(e) => setSuspendedId(e.target.value)}
+            placeholder="Ex: 603-322-2709 ou AA-G21-100"
+            className="input-field w-full font-mono text-sm"
+            required
+          />
+        </div>
+
+        {/* Tipo de Conta */}
         <div>
-          <label className="block text-xs font-bold mb-1">Motivo da Falha</label>
-          <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field text-sm">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Tipo de Conta</label>
+          <select value={accountType} onChange={(e) => setAccountType(e.target.value)} className="input-field w-full text-sm">
+            {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+
+        {/* Código do Cliente */}
+        <div>
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Código do Cliente</label>
+          <input
+            value={clientCode}
+            onChange={(e) => setClientCode(e.target.value.toUpperCase())}
+            placeholder="Ex: C273"
+            className="input-field w-full font-mono text-sm"
+          />
+        </div>
+
+        {/* Motivo da Suspensão */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Motivo da Suspensão</label>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field w-full text-sm">
             {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
-        <div className="flex items-end">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={extended} onChange={(e) => setExtended(e.target.checked)}
-              className="w-4 h-4 accent-primary-600" />
-            <div>
-              <p className="text-xs font-bold">Garantia Estendida</p>
-              <p className="text-[10px] text-zinc-400">Cliente comprou 30 dias</p>
-            </div>
+
+        {/* Detalhes */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Detalhes (opcional)</label>
+          <textarea
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            rows={2}
+            placeholder="Descreva o problema..."
+            className="input-field w-full text-sm resize-none"
+          />
+        </div>
+
+        {/* ID da Conta Reposta */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+            🟢 ID da Conta Reposta <span className="text-zinc-400 font-normal">(opcional — preencha após enviar)</span>
           </label>
+          <input
+            value={replacementId}
+            onChange={(e) => setReplacementId(e.target.value)}
+            placeholder="Ex: 712-400-1234 ou AA-G21-101"
+            className="input-field w-full font-mono text-sm"
+          />
         </div>
       </div>
 
-      <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={2}
-        placeholder="Detalhes adicionais (opcional)..." className="input-field text-sm resize-none" />
-
-      {reason === 'BAN' && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-          ⚠️ Banimento pode ser resultado de <strong>uso indevido do cliente</strong>. A troca <strong>não</strong> será automaticamente imputada ao fornecedor — requer análise do Admin.
-        </div>
-      )}
-
-      <div className="flex justify-end gap-2">
+      {/* Botões */}
+      <div className="flex justify-end gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800">
         <button type="button" onClick={onCancel} className="btn-secondary text-sm">Cancelar</button>
-        <button type="submit" disabled={saving || !assetId} className="btn-primary text-sm flex items-center gap-1.5">
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-          Abrir Ticket
+        <button
+          type="submit"
+          disabled={saving || !suspendedId.trim()}
+          className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🛡️'}
+          {saving ? 'Registrando...' : 'Registrar Troca'}
         </button>
       </div>
     </form>
@@ -188,7 +224,7 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
 // Card de Ticket
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TicketCard({ ticket, onAction }: { ticket: Ticket; onAction: () => void }) {
+function TicketCard({ ticket, onAction, producerView = false }: { ticket: Ticket; onAction: () => void; producerView?: boolean }) {
   const [open, setOpen] = useState(false)
   const [acting, setAct] = useState(false)
   const sc = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.OPEN
@@ -210,13 +246,18 @@ function TicketCard({ ticket, onAction }: { ticket: Ticket; onAction: () => void
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-mono text-zinc-400">{ticket.ticketNumber}</p>
-          <p className="text-sm font-bold truncate">{ticket.originalAsset?.displayName}</p>
+          <p className="text-sm font-bold truncate">
+            {ticket.originalAsset?.displayName ?? ticket.suspendedAccountRaw ?? '—'}
+          </p>
+          {ticket.clientCodeRaw && (
+            <p className="text-[10px] text-zinc-400 font-mono">Cliente: {ticket.clientCodeRaw}</p>
+          )}
         </div>
         <div className="text-right shrink-0 text-xs">
-          <p className={`font-bold ${ticket.withinWarranty ? 'text-green-600' : 'text-amber-600'}`}>
-            {ticket.withinWarranty ? '✅ Dentro' : '⚠️ Fora'} da garantia
-          </p>
           <p className="text-zinc-400">{REASON_LABELS[ticket.reason]}</p>
+          {ticket.accountTypeRaw && (
+            <p className="text-[10px] font-mono text-zinc-500">{ticket.accountTypeRaw.replace('_', ' ')}</p>
+          )}
         </div>
         {open ? <ChevronUp className="w-4 h-4 text-zinc-300 shrink-0" /> : <ChevronDown className="w-4 h-4 text-zinc-300 shrink-0" />}
       </button>
@@ -224,54 +265,87 @@ function TicketCard({ ticket, onAction }: { ticket: Ticket; onAction: () => void
       {open && (
         <div className="px-4 pb-4 space-y-3 border-t border-zinc-50 dark:border-zinc-800 pt-3">
           <div className="grid sm:grid-cols-3 gap-2 text-xs">
-            <div><span className="text-zinc-400">Ativo Original:</span><p className="font-mono font-bold">{ticket.originalAsset?.adsId}</p></div>
-            <div><span className="text-zinc-400">Fornecedor:</span><p className="font-bold">{ticket.vendor?.name}</p></div>
-            <div><span className="text-zinc-400">Culpa do Fornecedor:</span><p className={`font-bold ${ticket.isVendorFault ? 'text-red-600' : 'text-amber-600'}`}>{ticket.isVendorFault ? 'Sim' : 'Não (analisar)'}</p></div>
+            <div>
+              <span className="text-zinc-400">🔴 Conta Suspensa:</span>
+              <p className="font-mono font-bold">{ticket.originalAsset?.adsId ?? ticket.suspendedAccountRaw ?? '—'}</p>
+            </div>
+            {ticket.replacementAccountRaw && (
+              <div>
+                <span className="text-zinc-400">🟢 Conta Reposta:</span>
+                <p className="font-mono font-bold">{ticket.replacementAccountRaw}</p>
+              </div>
+            )}
+            {ticket.clientCodeRaw && (
+              <div><span className="text-zinc-400">Cliente:</span><p className="font-bold font-mono">{ticket.clientCodeRaw}</p></div>
+            )}
+            {ticket.accountTypeRaw && (
+              <div><span className="text-zinc-400">Tipo:</span><p className="font-bold">{ticket.accountTypeRaw.replace('_', ' ')}</p></div>
+            )}
+            {!producerView && ticket.vendor && <div><span className="text-zinc-400">Fornecedor:</span><p className="font-bold">{ticket.vendor?.name}</p></div>}
+            {!producerView && <div><span className="text-zinc-400">Culpa do Fornecedor:</span><p className={`font-bold ${ticket.isVendorFault ? 'text-red-600' : 'text-amber-600'}`}>{ticket.isVendorFault ? 'Sim' : 'Não (analisar)'}</p></div>}
             {ticket.hoursAfterDelivery != null && <div><span className="text-zinc-400">Tempo até falha:</span><p className="font-bold">{ticket.hoursAfterDelivery}h após entrega</p></div>}
-            {ticket.replacementCost != null && <div><span className="text-zinc-400">Custo da Reposição:</span><p className="font-bold text-red-600">{BRL(ticket.replacementCost)}</p></div>}
-            {ticket.vendorCreditAmount != null && ticket.vendorCreditAmount > 0 && <div><span className="text-zinc-400">Crédito vs Fornecedor:</span><p className="font-bold text-green-600">{BRL(ticket.vendorCreditAmount)}</p></div>}
+            {!producerView && ticket.replacementCost != null && <div><span className="text-zinc-400">Custo da Reposição:</span><p className="font-bold text-red-600">{BRL(ticket.replacementCost)}</p></div>}
+            {!producerView && ticket.vendorCreditAmount != null && ticket.vendorCreditAmount > 0 && <div><span className="text-zinc-400">Crédito vs Fornecedor:</span><p className="font-bold text-green-600">{BRL(ticket.vendorCreditAmount)}</p></div>}
           </div>
 
           {ticket.replacementAsset && (
             <div className="rounded-lg bg-green-50 dark:bg-green-950/10 border border-green-200 px-3 py-2 text-xs">
-              <p className="font-bold text-green-700">Reposição reservada: {ticket.replacementAsset.adsId} — {ticket.replacementAsset.displayName}</p>
+              <p className="font-bold text-green-700">
+                {producerView ? '✅ Reposição em andamento' : `Reposição reservada: ${ticket.replacementAsset.adsId} — ${ticket.replacementAsset.displayName}`}
+              </p>
             </div>
           )}
 
           {ticket.reasonDetail && <p className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 rounded-lg">{ticket.reasonDetail}</p>}
 
-          {/* Ações por status */}
-          <div className="flex gap-2 flex-wrap">
-            {ticket.status === 'OPEN' && (
-              <>
-                <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
-                  {acting ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}Aprovar Troca
+          {/* Produtor vê só status — ações de aprovação são exclusivas de Compras/Admin */}
+          {producerView ? (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>
+                {ticket.status === 'OPEN' && 'Ticket aberto — aguardando análise do setor de Compras'}
+                {ticket.status === 'UNDER_REVIEW' && '🔍 Em análise pelo Admin'}
+                {ticket.status === 'APPROVED' && '✅ Aprovado — reposição sendo processada'}
+                {ticket.status === 'REPLACEMENT_SENT' && '🚀 Reposição enviada ao cliente'}
+                {ticket.status === 'CLOSED' && '✔️ Ticket encerrado'}
+                {ticket.status === 'REJECTED' && '❌ Ticket rejeitado — entre em contato com o Admin'}
+                {ticket.status === 'CREDITED' && '💰 Creditado ao fornecedor'}
+              </span>
+            </div>
+          ) : (
+            /* Ações por status — apenas Compras/Admin */
+            <div className="flex gap-2 flex-wrap">
+              {ticket.status === 'OPEN' && (
+                <>
+                  <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+                    {acting ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}Aprovar Troca
+                  </button>
+                  <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 text-red-600">
+                    <X className="w-3 h-3" />Rejeitar
+                  </button>
+                </>
+              )}
+              {ticket.status === 'UNDER_REVIEW' && (
+                <>
+                  <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5">Aprovar (Admin)</button>
+                  <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 text-red-600">Rejeitar</button>
+                </>
+              )}
+              {ticket.status === 'APPROVED' && (
+                <button onClick={() => act('SEND_REPLACEMENT')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />Marcar Reposição Enviada
                 </button>
-                <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 text-red-600">
-                  <X className="w-3 h-3" />Rejeitar
+              )}
+              {ticket.status === 'REPLACEMENT_SENT' && (
+                <button onClick={() => act('CLOSE')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5">Fechar Ticket</button>
+              )}
+              {ticket.status === 'CLOSED' && ticket.isVendorFault && (
+                <button onClick={() => act('CREDIT')} disabled={acting} className="text-xs px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-bold">
+                  <DollarSign className="w-3 h-3 inline mr-1" />Emitir Crédito vs Fornecedor
                 </button>
-              </>
-            )}
-            {ticket.status === 'UNDER_REVIEW' && (
-              <>
-                <button onClick={() => act('APPROVE')} disabled={acting} className="btn-primary text-xs px-3 py-1.5">Aprovar (Admin)</button>
-                <button onClick={() => act('REJECT')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5 text-red-600">Rejeitar</button>
-              </>
-            )}
-            {ticket.status === 'APPROVED' && (
-              <button onClick={() => act('SEND_REPLACEMENT')} disabled={acting} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" />Marcar Reposição Enviada
-              </button>
-            )}
-            {ticket.status === 'REPLACEMENT_SENT' && (
-              <button onClick={() => act('CLOSE')} disabled={acting} className="btn-secondary text-xs px-3 py-1.5">Fechar Ticket</button>
-            )}
-            {ticket.status === 'CLOSED' && ticket.isVendorFault && (
-              <button onClick={() => act('CREDIT')} disabled={acting} className="text-xs px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-bold">
-                <DollarSign className="w-3 h-3 inline mr-1" />Emitir Crédito vs Fornecedor
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -461,7 +535,10 @@ function DREPanel() {
 
 type SubTab = 'tickets' | 'qa' | 'dre'
 
+const PRODUCER_ROLES = ['PRODUCER', 'PRODUCTION_MANAGER']
+
 export function RMATab({ userRole }: { userRole: string }) {
+  const isProducerView = PRODUCER_ROLES.includes(userRole)
   const [subTab, setSubTab] = useState<SubTab>('tickets')
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
@@ -478,10 +555,13 @@ export function RMATab({ userRole }: { userRole: string }) {
 
   useEffect(() => { if (subTab === 'tickets') loadTickets() }, [subTab, loadTickets])
 
+  // Produtores só vêem tickets — QA e DRE são exclusivos de Compras/Admin
   const SUB_TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
     { id: 'tickets', label: 'Tickets de Troca',       icon: <ShieldAlert className="w-3.5 h-3.5" /> },
-    { id: 'qa',      label: 'QA de Fornecedores',     icon: <BarChart2 className="w-3.5 h-3.5" />   },
-    { id: 'dre',     label: 'Impacto DRE',            icon: <TrendingDown className="w-3.5 h-3.5" /> },
+    ...(!isProducerView ? [
+      { id: 'qa'  as SubTab, label: 'QA de Fornecedores', icon: <BarChart2 className="w-3.5 h-3.5" /> },
+      { id: 'dre' as SubTab, label: 'Impacto DRE',        icon: <TrendingDown className="w-3.5 h-3.5" /> },
+    ] : []),
   ]
 
   const openTickets   = tickets.filter((t) => ['OPEN', 'UNDER_REVIEW', 'APPROVED'].includes(t.status)).length
@@ -499,7 +579,7 @@ export function RMATab({ userRole }: { userRole: string }) {
           {openTickets > 0 && (
             <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold">{openTickets} aberto{openTickets > 1 ? 's' : ''}</span>
           )}
-          {pendingTotal > 0 && (
+          {pendingTotal > 0 && !isProducerView && (
             <span className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold">{BRL(pendingTotal)} em créditos</span>
           )}
           {subTab === 'tickets' && (
@@ -548,7 +628,7 @@ export function RMATab({ userRole }: { userRole: string }) {
             </div>
           ) : (
             <div className="space-y-2">
-              {tickets.map((t) => <TicketCard key={t.id} ticket={t} onAction={loadTickets} />)}
+              {tickets.map((t) => <TicketCard key={t.id} ticket={t} onAction={loadTickets} producerView={isProducerView} />)}
             </div>
           )}
         </div>

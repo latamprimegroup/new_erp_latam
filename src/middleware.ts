@@ -39,18 +39,21 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/ceo':     ['ADMIN'],
   '/dashboard/socio':   ['ADMIN'],
   '/api/socio':         ['ADMIN'],
-  '/api/rma':           ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER'],
-  '/dashboard/compras': ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER'],
+  '/dashboard/producao/trocas': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/api/rma':           ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/compras': ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCTION_MANAGER'],
   '/dashboard/financeiro': ['ADMIN', 'FINANCE'],
   '/dashboard/saques': ['ADMIN', 'FINANCE'],
   '/dashboard/metas': ['ADMIN', 'PRODUCER'],
   '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
-  '/dashboard/admin/inventario-express': ['ADMIN', 'PRODUCTION_MANAGER'],
-  '/dashboard/admin/rma':               ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/admin/inventario-express':  ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/admin/rma':                ['ADMIN', 'PRODUCTION_MANAGER'],
+  '/dashboard/admin/entrada-mercadoria': ['ADMIN', 'PRODUCTION_MANAGER', 'PURCHASING'],
   '/dashboard/admin/delivery-dashboard': ['ADMIN', 'DELIVERER', 'COMMERCIAL'],
   '/dashboard/admin': ['ADMIN'],
   '/dashboard/admin/config': ['ADMIN'],
   '/dashboard/admin/contas-ofertadas': ['ADMIN'],
+  '/dashboard/admin/clientes': ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'FINANCE', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/admin/contestacoes': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/tickets': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/solicitacoes': ['ADMIN', 'COMMERCIAL'],
@@ -71,6 +74,17 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/gtm-conversao': [
     'ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'MANAGER', 'PLUG_PLAY',
   ],
+  // ── Rotas sem guard explícito (auditoria 22/04/2026) ─────────────────────────
+  // ads-tracker contém S2S postbacks, domínios, UTMs — restrito a ADMIN
+  '/dashboard/ads-tracker': ['ADMIN'],
+  // intelligence-leads: dados de leads para marketing
+  '/dashboard/intelligence-leads': ['ADMIN', 'COMMERCIAL'],
+  // onboarding: fluxo de entrada de clientes
+  '/dashboard/onboarding': ['ADMIN', 'COMMERCIAL', 'DELIVERER'],
+  // sugestões: todos os colaboradores internos
+  '/dashboard/sugestoes': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL'],
+  // perfil: qualquer usuário autenticado (herdaria /dashboard, mas explicitado)
+  '/dashboard/perfil': ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER', 'COMMERCIAL', 'CLIENT', 'MANAGER', 'PLUG_PLAY'],
 }
 
 function getRolesForPath(pathname: string): string[] | null {

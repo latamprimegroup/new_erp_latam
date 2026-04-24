@@ -1,9 +1,42 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Upload, Download, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react'
+import { Upload, Download, CheckCircle2, XCircle, Loader2, AlertTriangle, Zap, ChevronDown, ChevronUp } from 'lucide-react'
 
 type Vendor = { id: string; name: string; category: string }
+
+// ─── Smart Import ─────────────────────────────────────────────────────────────
+
+type SmartParsed = {
+  realId?: string; gasto?: string; spendBRL?: number; nicho?: string
+  ano?: number; paymentType?: string
+}
+
+function parseSmartText(text: string): SmartParsed {
+  const t = text.trim()
+  const result: SmartParsed = {}
+
+  const idMatch  = t.match(/ID[:\s]+([0-9][\d\-]{4,})/i)
+  if (idMatch) result.realId = idMatch[1].trim()
+
+  const gastMatch = t.match(/Gastos?[:\s]+([\d]+(?:[.,]\d+)?k?)/i)
+  if (gastMatch) {
+    const raw = gastMatch[1].toLowerCase().replace(',', '.')
+    result.gasto = raw
+    result.spendBRL = raw.endsWith('k') ? parseFloat(raw) * 1000 : parseFloat(raw)
+  }
+
+  const nichoMatch = t.match(/Nicho[:\s]+([^\d][^\n\r]*?)(?=\s+(?:Ano|Pag|Gasto|$))/i)
+  if (nichoMatch) result.nicho = nichoMatch[1].trim()
+
+  const anoMatch = t.match(/Ano[:\s]+(\d{4})/i)
+  if (anoMatch) result.ano = parseInt(anoMatch[1])
+
+  const pagMatch = t.match(/Pag(?:amento)?[:\s]+(Manual|Auto)/i)
+  if (pagMatch) result.paymentType = pagMatch[1]
+
+  return result
+}
 
 type ParsedRow = {
   category: string; subCategory: string; vendorId: string; vendorName: string
@@ -56,6 +89,62 @@ export function BulkImportTab() {
   const [result, setResult]     = useState<{ created: number; failed: number; total: number; errors: {row:number;error:string}[] } | null>(null)
   const fileRef                 = useRef<HTMLInputElement>(null)
 
+  // Smart Import
+  const [showSmart, setShowSmart]         = useState(true)
+  const [smartText, setSmartText]         = useState('')
+  const [smartParsed, setSmartParsed]     = useState<SmartParsed | null>(null)
+  const [smartVendorId, setSmartVendorId] = useState('')
+  const [smartCategory, setSmartCategory] = useState('CONTAS')
+  const [smartCostPrice, setSmartCostPrice] = useState('')
+  const [smartSalePrice, setSmartSalePrice] = useState('')
+  const [smartDisplayName, setSmartDisplayName] = useState('')
+  const [smartImporting, setSmartImporting] = useState(false)
+  const [smartResult, setSmartResult]     = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const handleSmartParse = () => {
+    const parsed = parseSmartText(smartText)
+    setSmartParsed(parsed)
+    if (parsed.ano)   setSmartDisplayName(`${smartCategory} — ${parsed.nicho ?? 'Multi-nicho'} ${parsed.ano}`)
+  }
+
+  const handleSmartImport = async () => {
+    if (!smartVendorId || !smartCostPrice || !smartSalePrice || !smartDisplayName) {
+      setSmartResult({ ok: false, msg: 'Preencha fornecedor, custo, venda e nome comercial.' }); return
+    }
+    setSmartImporting(true)
+    const specs: Record<string, unknown> = {}
+    if (smartParsed?.ano)         specs.year        = smartParsed.ano
+    if (smartParsed?.nicho)       specs.nicho       = smartParsed.nicho
+    if (smartParsed?.paymentType) specs.paymentType = smartParsed.paymentType
+    if (smartParsed?.spendBRL)    specs.spendBRL    = smartParsed.spendBRL
+    if (smartParsed?.realId)      specs.realId      = smartParsed.realId
+
+    const tags = [
+      smartParsed?.nicho ? smartParsed.nicho.toLowerCase().replace(/\s+/g, '-') : null,
+      smartParsed?.paymentType?.toLowerCase() ?? null,
+      smartParsed?.ano ? `safra-${smartParsed.ano}` : null,
+    ].filter(Boolean).join(',')
+
+    const r = await fetch('/api/compras/ativos', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category: smartCategory, vendorId: smartVendorId,
+        costPrice: parseFloat(smartCostPrice), salePrice: parseFloat(smartSalePrice),
+        displayName: smartDisplayName, tags: tags || undefined,
+        specs: Object.keys(specs).length ? specs : undefined,
+      }),
+    })
+    if (r.ok) {
+      const j = await r.json() as { adsId?: string }
+      setSmartResult({ ok: true, msg: `Ativo ${j.adsId ?? ''} cadastrado com sucesso!` })
+      setSmartText(''); setSmartParsed(null); setSmartDisplayName(''); setSmartCostPrice(''); setSmartSalePrice('')
+    } else {
+      const e = await r.json().catch(() => ({})) as { error?: string }
+      setSmartResult({ ok: false, msg: e.error ?? 'Erro ao cadastrar.' })
+    }
+    setSmartImporting(false)
+  }
+
   useEffect(() => {
     fetch('/api/compras/fornecedores?limit=200').then((r) => r.json()).then((j) => setVendors(j.vendors ?? []))
   }, [])
@@ -105,14 +194,115 @@ export function BulkImportTab() {
 
   return (
     <div className="space-y-5 max-w-4xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-bold">Importação em Lote</h2>
-          <p className="text-sm text-zinc-500">Faça upload de um CSV com até 2.000 ativos de uma vez</p>
-        </div>
-        <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
-          <Download className="w-4 h-4" />Baixar Template
+
+      {/* ── Smart Import ─────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-primary-200 bg-primary-50 dark:bg-primary-950/10 overflow-hidden">
+        <button
+          onClick={() => setShowSmart((v) => !v)}
+          className="w-full flex items-center justify-between p-4 text-left">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-primary-600" />
+            <div>
+              <p className="font-bold text-sm">⚡ Cadastro Rápido por Texto (Smart Import)</p>
+              <p className="text-xs text-zinc-500">Cole o texto bruto do fornecedor — o sistema preenche os campos automaticamente</p>
+            </div>
+          </div>
+          {showSmart ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
         </button>
+
+        {showSmart && (
+          <div className="border-t border-primary-200 p-4 space-y-4">
+            <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 p-3 text-xs text-zinc-500 font-mono">
+              Ex: <strong>ID: 863-498-6283 Gasto: 238k Nicho: Imobiliaria Ano: 2012 Pag: Manual</strong>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold">Texto do fornecedor</label>
+              <textarea
+                value={smartText}
+                onChange={(e) => setSmartText(e.target.value)}
+                placeholder="Cole aqui o texto bruto do fornecedor..."
+                rows={3}
+                className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary-300"
+              />
+              <button onClick={handleSmartParse} disabled={!smartText.trim()}
+                className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-bold hover:bg-primary-700 disabled:opacity-40 transition-colors">
+                🔍 Analisar Texto
+              </button>
+            </div>
+
+            {smartParsed && (
+              <div className="space-y-3">
+                {/* Preview dos campos parseados */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { label: '⚡ ID Real', value: smartParsed.realId ?? '—' },
+                    { label: '💰 Gasto', value: smartParsed.spendBRL ? `R$${smartParsed.spendBRL.toLocaleString('pt-BR')}` : '—' },
+                    { label: '🏭 Nicho', value: smartParsed.nicho ?? '—' },
+                    { label: '🍷 Safra', value: smartParsed.ano ? String(smartParsed.ano) : '—' },
+                    { label: '💳 Pag.', value: smartParsed.paymentType ?? '—' },
+                  ].map((f) => (
+                    <div key={f.label} className={`rounded-lg border p-2 text-center ${f.value !== '—' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20' : 'border-zinc-200 bg-zinc-50 dark:bg-zinc-800/30'}`}>
+                      <p className="text-[10px] text-zinc-500 font-semibold">{f.label}</p>
+                      <p className={`text-xs font-bold truncate ${f.value !== '—' ? 'text-emerald-700' : 'text-zinc-400'}`}>{f.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Campos a completar */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Categoria *</label>
+                    <select value={smartCategory} onChange={(e) => setSmartCategory(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300">
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Fornecedor *</label>
+                    <select value={smartVendorId} onChange={(e) => setSmartVendorId(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300">
+                      <option value="">Selecionar...</option>
+                      {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Custo (R$) *</label>
+                    <input type="number" step="0.01" min="0" value={smartCostPrice}
+                      onChange={(e) => setSmartCostPrice(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                      placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Preço Venda (R$) *</label>
+                    <input type="number" step="0.01" min="0" value={smartSalePrice}
+                      onChange={(e) => setSmartSalePrice(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                      placeholder="0.00" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold mb-1">Nome Comercial *</label>
+                    <input value={smartDisplayName} onChange={(e) => setSmartDisplayName(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                      placeholder="Ex: Gold Account — Imobiliária 2012" />
+                  </div>
+                </div>
+
+                <button onClick={handleSmartImport} disabled={smartImporting}
+                  className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                  {smartImporting ? <><Loader2 className="w-4 h-4 animate-spin" />Cadastrando...</> : <><Zap className="w-4 h-4" />Cadastrar Ativo</>}
+                </button>
+
+                {smartResult && (
+                  <div className={`rounded-xl border p-3 flex items-center gap-2 text-sm ${smartResult.ok ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
+                    {smartResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                    {smartResult.msg}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Coluna de fornecedores disponíveis */}

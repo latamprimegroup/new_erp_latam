@@ -108,7 +108,8 @@ export function AssetIntakeTab() {
           spendClass:     row.spendClass, platform:    row.platform,
           year:           row.year, rawNiche:     row.rawNiche,
           faturamento:    row.faturamento, verificacao: row.verificacao,
-          aquecimento:    row.aquecimento, tags:        row.tags,
+          aquecimento:    row.aquecimento, pagamento:   row.pagamento,
+          realId:         row.realId,      tags:        row.tags,
           suggestedPrice: row.suggestedPrice, credentials: row.credentials,
         })),
       }),
@@ -233,24 +234,40 @@ export function AssetIntakeTab() {
                 </div>
               )}
 
+              {/* Contador + scroll hint */}
+              <div className="flex items-center gap-3 text-xs text-zinc-500">
+                <span className="font-bold text-zinc-700 dark:text-zinc-300">{rows.length} ativo{rows.length !== 1 ? 's' : ''} prontos para importar</span>
+                {rows.length > 10 && <span className="text-zinc-400">↕ role para ver todos</span>}
+              </div>
+
               {/* Tabela de revisão */}
-              <div className="overflow-x-auto -mx-2">
+              <div className="overflow-x-auto -mx-2 max-h-[480px] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-700">
                 <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-zinc-500 font-semibold bg-zinc-50 dark:bg-zinc-800/50">
+                  <thead className="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-800">
+                    <tr className="text-left text-xs text-zinc-500 font-semibold">
+                      <th className="px-3 py-2">#</th>
+                      <th className="px-3 py-2">ID Real</th>
                       <th className="px-3 py-2">ID Gerado</th>
                       <th className="px-3 py-2">Nome Comercial</th>
+                      <th className="px-3 py-2">Nicho</th>
                       <th className="px-3 py-2">Gasto</th>
                       <th className="px-3 py-2">Tier</th>
                       <th className="px-3 py-2">Ano</th>
                       <th className="px-3 py-2">Fat.</th>
-                      <th className="px-3 py-2">Preço Sugerido</th>
+                      <th className="px-3 py-2">Pag.</th>
+                      <th className="px-3 py-2">Preço Sug.</th>
                       <th className="px-3 py-2">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                     {rows.map((row, idx) => (
                       <tr key={idx} className={`hover:bg-zinc-50 dark:hover:bg-zinc-900/50 ${row.warnings.length > 0 ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''}`}>
+                        <td className="px-3 py-2 text-zinc-400 text-xs font-semibold">{idx + 1}</td>
+                        <td className="px-3 py-2">
+                          <span className="font-mono text-[10px] text-amber-700 dark:text-amber-400">
+                            {row.realId ?? '—'}
+                          </span>
+                        </td>
                         <td className="px-3 py-2">
                           {editingIdx === idx
                             ? <input defaultValue={row.customAdsId ?? row.adsId} onBlur={(e) => updateRow(idx, 'customAdsId', e.target.value)} className="input-field text-xs font-mono w-36 py-1" autoFocus />
@@ -266,9 +283,10 @@ export function AssetIntakeTab() {
                             : <span className="font-medium text-xs">{row.displayName}</span>
                           }
                         </td>
+                        <td className="px-3 py-2 text-xs text-zinc-500 max-w-[100px] truncate" title={row.rawNiche}>{row.rawNiche}</td>
                         <td className="px-3 py-2 text-xs whitespace-nowrap">
                           <span className={row.currency === 'USD' ? 'text-green-600 font-semibold' : ''}>
-                            {row.currency === 'USD' ? '$' : 'R$'}{(row.spendValue / 1000).toFixed(0)}k
+                            {row.currency === 'USD' ? '$' : 'R$'}{row.spendValue >= 1000 ? `${(row.spendValue / 1000).toFixed(0)}k` : row.spendValue}
                           </span>
                         </td>
                         <td className="px-3 py-2">
@@ -276,6 +294,7 @@ export function AssetIntakeTab() {
                         </td>
                         <td className="px-3 py-2 text-xs text-zinc-500">{row.year ?? '—'}</td>
                         <td className="px-3 py-2 text-xs">{row.faturamento ?? '—'}</td>
+                        <td className="px-3 py-2 text-xs">{row.pagamento ?? '—'}</td>
                         <td className="px-3 py-2 text-xs font-semibold text-primary-600">
                           {editingIdx === idx
                             ? <input type="number" defaultValue={row.suggestedPrice} onBlur={(e) => updateRow(idx, 'suggestedPrice', parseFloat(e.target.value))} className="input-field text-xs w-24 py-1" />

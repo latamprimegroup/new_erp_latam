@@ -10,7 +10,7 @@ import {
   ArrowRight, Layers, Zap, ShieldCheck, Upload,
   RefreshCw, Trophy, Ban, Image as ImageIcon,
   Database, Mail, Building2, CreditCard,
-  Rocket, ShieldAlert,
+  Rocket, ShieldAlert, ClipboardList, Search, ShoppingCart,
 } from 'lucide-react'
 import { AdsCoreGerenteInventoryBar } from '../ads-core/AdsCoreGerenteInventoryBar'
 
@@ -56,10 +56,6 @@ const MODULES_PRODUCAO = [
   { href: '/dashboard/producao/metrics',     icon: TrendingUp,    label: 'Métricas de Produção',  sublabel: 'Aprovações, metas e reprovações',     color: 'from-teal-500 to-cyan-600',      priority: true  },
 ]
 
-const MODULES_OPERACIONAL = [
-  { href: '/dashboard/admin/inventario-express', icon: Rocket,      label: 'Inventário Express',  sublabel: 'Lançamento em massa de contas no estoque', color: 'from-primary-500 to-blue-600',   priority: true  },
-  { href: '/dashboard/admin/rma',                icon: ShieldAlert,  label: 'Suporte & RMA',        sublabel: 'Reposições, garantia e analytics de perdas', color: 'from-violet-500 to-purple-600',  priority: true  },
-]
 
 const MODULES_CORE = [
   { href: '/dashboard/ads-core/bi',                  icon: BarChart3,    label: 'Dashboard BI',           sublabel: 'Pipeline, ranking e reprovações',     color: 'from-blue-500 to-indigo-600',    priority: true  },
@@ -184,22 +180,6 @@ export function GerenteProducaoHub() {
         <SectionTitle>Ações Rápidas</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <QuickActionCard
-            href="/dashboard/admin/inventario-express"
-            icon={<Rocket className="w-5 h-5 text-blue-600" />}
-            iconBg="bg-blue-100 dark:bg-blue-900/40"
-            title="Inventário Express"
-            desc="Lançar contas em massa no estoque"
-            color="blue"
-          />
-          <QuickActionCard
-            href="/dashboard/admin/rma"
-            icon={<ShieldAlert className="w-5 h-5 text-violet-600" />}
-            iconBg="bg-violet-100 dark:bg-violet-900/40"
-            title="Suporte & RMA"
-            desc="Reposições, garantia e alertas de abuso"
-            color="violet"
-          />
-          <QuickActionCard
             href="/dashboard/ads-core/rg-abastecimento"
             icon={<Upload className="w-5 h-5 text-teal-600" />}
             iconBg="bg-teal-100 dark:bg-teal-900/40"
@@ -234,11 +214,173 @@ export function GerenteProducaoHub() {
         </div>
       </section>
 
-      {/* ── Estoque & Reposição ────────────────────────────────────────────── */}
+      {/* ── Controle de Estoque ────────────────────────────────────────────── */}
       <section>
-        <SectionTitle>Estoque &amp; Suporte</SectionTitle>
+        <SectionTitle>Controle de Estoque de Contas</SectionTitle>
+
+        {/* Fluxo visual */}
+        <div className="mb-4 rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-3">
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-2">Entenda o fluxo</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+            <div className="flex flex-col gap-1 shrink-0">
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold shrink-0">A</span>
+                Time produziu contas
+              </span>
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold shrink-0">B</span>
+                Compra de fornecedor
+              </span>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <div className="flex flex-col gap-1 shrink-0">
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-[10px] shrink-0">1</span>
+                Inventário Express
+              </span>
+              <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[10px] shrink-0">2</span>
+                Entrada de Mercadoria
+              </span>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold shrink-0">3</span>
+              Entra no estoque
+            </span>
+            <ArrowRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <span className="flex items-center gap-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold shrink-0">4</span>
+              Auditoria <span className="font-normal text-zinc-500">(confere divergências)</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Inventário Express — PRODUÇÃO INTERNA */}
+          <StockCard
+            href="/dashboard/admin/inventario-express"
+            icon={<Rocket className="w-6 h-6 text-white" />}
+            gradient="from-blue-500 to-blue-700"
+            badge="PRODUÇÃO INTERNA"
+            badgeColor="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+            title="Inventário Express"
+            subtitle="Contas criadas pelo time"
+            description="O produtor terminou de criar contas Google/Meta? Use aqui para registrar em massa no sistema com ID, tipo, configuração e nome do produtor responsável."
+            tipIcon={<Rocket className="w-3.5 h-3.5" />}
+            tip="Para: contas que o time criou internamente"
+          />
+
+          {/* Entrada de Mercadoria — COMPRAS EXTERNAS */}
+          <StockCard
+            href="/dashboard/compras"
+            icon={<ShoppingCart className="w-6 h-6 text-white" />}
+            gradient="from-emerald-500 to-teal-600"
+            badge="SETOR DE COMPRAS"
+            badgeColor="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+            title="Entrada de Mercadoria"
+            subtitle="BMs, Perfis, Páginas e mais"
+            description="Comprou BMs, perfis, páginas, proxies ou outros ativos de um fornecedor? O lançamento é feito pelo setor de compras — acesse o painel de Supply Chain."
+            tipIcon={<ShoppingCart className="w-3.5 h-3.5" />}
+            tip="Gerenciado pelo: Setor de Compras"
+          />
+
+          {/* Auditoria de Estoque — CONFERÊNCIA */}
+          <StockCard
+            href="/dashboard/ads-core/inventario"
+            icon={<Search className="w-6 h-6 text-white" />}
+            gradient="from-purple-500 to-purple-700"
+            badge="AUDITORIA"
+            badgeColor="bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
+            title="Auditoria de Estoque"
+            subtitle="Conferir e corrigir divergências"
+            description="Compare o que o sistema registra com o que realmente existe. Detecta perdas, extravios e erros de lançamento. Gera alertas ao CEO quando há divergência crítica."
+            tipIcon={<ClipboardList className="w-3.5 h-3.5" />}
+            tip="Para: verificar se o estoque físico bate com o sistema"
+          />
+        </div>
+      </section>
+
+      {/* ── Trocas & Reposição ────────────────────────────────────────────── */}
+      <section>
+        <SectionTitle>Trocas &amp; Reposição de Contas</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {MODULES_OPERACIONAL.map((mod) => <ModuleCard key={mod.href} mod={mod} />)}
+
+          {/* Card principal — acesso direto */}
+          <Link
+            href="/dashboard/admin/rma"
+            className="group relative overflow-hidden rounded-xl border-2 border-violet-200 dark:border-violet-800 bg-white dark:bg-ads-dark-card hover:shadow-lg hover:-translate-y-0.5 transition-all p-5 flex flex-col gap-4"
+          >
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center">
+                <ShieldAlert className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
+                OPERACIONAL
+              </span>
+            </div>
+            <div>
+              <p className="font-bold text-zinc-900 dark:text-zinc-100 mb-0.5">Trocas &amp; Reposição de Contas</p>
+              <p className="text-xs text-zinc-500 font-medium mb-3">Fluxo completo de troca quando conta falha após entrega</p>
+              <div className="space-y-1.5">
+                {[
+                  { step: '1', label: 'Abrir ticket com o cliente e a conta com problema' },
+                  { step: '2', label: 'Selecionar conta substituta do estoque disponível' },
+                  { step: '3', label: 'Confirmar — saída automática do estoque' },
+                  { step: '4', label: 'Ver resumo do mês: quantas trocas, quais motivos' },
+                ].map((s) => (
+                  <div key={s.step} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                    <span className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 flex items-center justify-center font-bold text-[10px] shrink-0">{s.step}</span>
+                    <span>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-auto flex items-center justify-between">
+              <span className="text-[11px] text-zinc-400 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+                Estoque sai automaticamente ao resolver
+              </span>
+              <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-violet-500 group-hover:translate-x-1 transition-all" />
+            </div>
+          </Link>
+
+          {/* Painel lateral — o que o gerente vê */}
+          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 p-5 space-y-4">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">O que você vê neste módulo</p>
+            <div className="space-y-3">
+              {[
+                {
+                  icon: <ClipboardList className="w-4 h-4 text-violet-500" />,
+                  title: 'Fila de Tickets',
+                  desc: 'Todos os tickets abertos, filtrados por status. Clique em um para agir.',
+                },
+                {
+                  icon: <RefreshCw className="w-4 h-4 text-emerald-500" />,
+                  title: 'Selecionar Conta Substituta',
+                  desc: 'Escolhe do estoque disponível. Ao resolver, o sistema dá a saída sozinho.',
+                },
+                {
+                  icon: <BarChart3 className="w-4 h-4 text-blue-500" />,
+                  title: 'Resumo do Mês',
+                  desc: 'Quantas trocas, resolvidas, pendentes e motivos mais comuns.',
+                },
+              ].map((item) => (
+                <div key={item.title} className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0">
+                    {item.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{item.title}</p>
+                    <p className="text-xs text-zinc-500 leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              ⚡ Analytics de perdas e detecção de abusos são visíveis apenas pelo Admin/CEO.
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -441,6 +583,38 @@ function ResourceCard({
         <p className="text-xs text-zinc-500 leading-relaxed">{desc}</p>
       </div>
       <ArrowRight className="w-4 h-4 text-zinc-300 shrink-0 self-center ml-auto group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
+    </Link>
+  )
+}
+
+function StockCard({
+  href, icon, gradient, badge, badgeColor, title, subtitle, description, tipIcon, tip,
+}: {
+  href: string; icon: React.ReactNode; gradient: string; badge: string; badgeColor: string
+  title: string; subtitle: string; description: string; tipIcon: React.ReactNode; tip: string
+}) {
+  return (
+    <Link href={href} className="group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-ads-dark-card hover:shadow-lg hover:-translate-y-0.5 transition-all p-5 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0`}>
+          {icon}
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${badgeColor}`}>
+          {badge}
+        </span>
+      </div>
+      <div>
+        <p className="font-bold text-zinc-900 dark:text-zinc-100 mb-0.5">{title}</p>
+        <p className="text-xs text-zinc-500 font-medium mb-2">{subtitle}</p>
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{description}</p>
+      </div>
+      <div className="mt-auto flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+          {tipIcon}
+          <span>{tip}</span>
+        </div>
+        <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-primary-500 group-hover:translate-x-1 transition-all" />
+      </div>
     </Link>
   )
 }

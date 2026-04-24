@@ -45,10 +45,14 @@ export async function GET(req: Request) {
   if (status)   where.status   = status
   if (vendorId && hasSensitive) where.vendorId = vendorId
   if (q) {
+    // Normaliza: remove traços/espaços para buscar ID Google Ads (603-322-2709 → 6033222709)
+    const qDigits = q.replace(/[-\s]/g, '')
     where.OR = [
-      { adsId:       { contains: q } },
-      { displayName: { contains: q } },
-      { tags:        { contains: q } },
+      { adsId:                { contains: q } },
+      { displayName:          { contains: q } },
+      { tags:                 { contains: q } },
+      { googleAdsCustomerId:  { contains: q } },
+      ...(qDigits !== q ? [{ googleAdsCustomerId: { contains: qDigits } }] : []),
     ]
   }
 
@@ -79,12 +83,41 @@ export async function GET(req: Request) {
     session.user.role,
   )
 
+  // Resumo financeiro — apenas para quem tem dados sensíveis
+  let summary: Record<string, number> | null = null
+  if (hasSensitive) {
+    const [avail, sold] = await Promise.all([
+      prisma.asset.aggregate({
+        _sum:   { costPrice: true, salePrice: true },
+        _count: { id: true },
+        where:  { status: 'AVAILABLE' },
+      }),
+      prisma.asset.aggregate({
+        _sum:   { costPrice: true, salePrice: true },
+        _count: { id: true },
+        where:  { status: 'SOLD' },
+      }),
+    ])
+    const availCost = Number(avail._sum.costPrice ?? 0)
+    const availSale = Number(avail._sum.salePrice ?? 0)
+    summary = {
+      availableCount:      avail._count.id,
+      availableCostTotal:  availCost,
+      availableSaleTotal:  availSale,
+      availableMargin:     availSale - availCost,
+      availableMarginPct:  availSale > 0 ? Math.round(((availSale - availCost) / availSale) * 100) : 0,
+      soldCount:           sold._count.id,
+      soldRevenue:         Number(sold._sum.salePrice ?? 0),
+    }
+  }
+
   return NextResponse.json({
     assets: masked,
     total,
     page,
-    pages: Math.ceil(total / limit),
+    pages:    Math.ceil(total / limit),
     byStatus: Object.fromEntries(byStatus.map((b) => [b.status, b._count])),
+    summary,
   })
 }
 

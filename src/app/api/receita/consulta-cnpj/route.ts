@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'PRODUCER', 'FINANCE']
+  const roles = ['ADMIN', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE', 'DELIVERER']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }

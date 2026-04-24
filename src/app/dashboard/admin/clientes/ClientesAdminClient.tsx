@@ -56,6 +56,7 @@ type Client = {
   instagramHandle?: string | null
   facebookUrl?: string | null
   linkedinUrl?: string | null
+  whatsappGroupLink?: string | null
   telegramUsername?: string | null
   // Financeiro
   creditLimit?: number | null
@@ -120,16 +121,47 @@ function churnBadge(risk?: string | null) {
   )
 }
 
+// ─── Países com ISO, DDI e label do Tax ID ────────────────────────────────────
+
+const COUNTRIES = [
+  { code: 'BR', name: 'Brasil 🇧🇷',          ddi: '+55', taxLabel: 'CPF / CNPJ',           taxPlaceholder: '000.000.000-00 ou CNPJ' },
+  { code: 'US', name: 'Estados Unidos 🇺🇸',   ddi: '+1',  taxLabel: 'EIN / SSN / Tax ID',   taxPlaceholder: 'XX-XXXXXXX' },
+  { code: 'PT', name: 'Portugal 🇵🇹',          ddi: '+351', taxLabel: 'NIF',                 taxPlaceholder: '123456789' },
+  { code: 'ES', name: 'Espanha 🇪🇸',           ddi: '+34', taxLabel: 'NIF / VAT',            taxPlaceholder: 'ESX1234567X' },
+  { code: 'GB', name: 'Reino Unido 🇬🇧',       ddi: '+44', taxLabel: 'UTR / VAT Number',     taxPlaceholder: 'GB123456789' },
+  { code: 'DE', name: 'Alemanha 🇩🇪',          ddi: '+49', taxLabel: 'Steuernummer / VAT',   taxPlaceholder: 'DE123456789' },
+  { code: 'FR', name: 'França 🇫🇷',            ddi: '+33', taxLabel: 'SIRET / TVA',          taxPlaceholder: 'FR12345678901' },
+  { code: 'IT', name: 'Itália 🇮🇹',            ddi: '+39', taxLabel: 'P.IVA / CF',           taxPlaceholder: 'IT12345678901' },
+  { code: 'MX', name: 'México 🇲🇽',            ddi: '+52', taxLabel: 'RFC',                  taxPlaceholder: 'XAXX010101000' },
+  { code: 'AR', name: 'Argentina 🇦🇷',         ddi: '+54', taxLabel: 'CUIT / CUIL',          taxPlaceholder: '20-12345678-9' },
+  { code: 'CO', name: 'Colômbia 🇨🇴',          ddi: '+57', taxLabel: 'NIT',                  taxPlaceholder: '123456789-0' },
+  { code: 'CL', name: 'Chile 🇨🇱',             ddi: '+56', taxLabel: 'RUT',                  taxPlaceholder: '12.345.678-9' },
+  { code: 'AE', name: 'Emirados Árabes 🇦🇪',   ddi: '+971', taxLabel: 'TRN',                 taxPlaceholder: '100123456700003' },
+  { code: 'CA', name: 'Canadá 🇨🇦',            ddi: '+1',  taxLabel: 'BN / SIN',            taxPlaceholder: '123456789' },
+  { code: 'AU', name: 'Austrália 🇦🇺',         ddi: '+61', taxLabel: 'ABN / TFN',            taxPlaceholder: '51 824 753 556' },
+  { code: 'OTHER', name: 'Outro país 🌍',      ddi: '+',   taxLabel: 'Tax ID / VAT / Doc',   taxPlaceholder: 'Número de identificação' },
+] as const
+
+type CountryCode = typeof COUNTRIES[number]['code']
+
+function getCountry(code: string) {
+  return COUNTRIES.find((c) => c.code === code) ?? COUNTRIES[COUNTRIES.length - 1]
+}
+
 // ─── Tipos do formulário de cadastro ─────────────────────────────────────────
 
 type CreateForm = {
   name: string
   email: string
   phone: string
+  ddi: string
   whatsapp: string
   taxId: string
+  country: string
   companyName: string
   jobTitle: string
+  instagramHandle: string
+  whatsappGroupLink: string
   operationNiche: string
   leadAcquisitionSource: string
   clientStatus: 'ATIVO' | 'INATIVO' | 'BLOQUEADO'
@@ -139,9 +171,10 @@ type CreateForm = {
 }
 
 const EMPTY_CREATE: CreateForm = {
-  name: '', email: '', phone: '', whatsapp: '', taxId: '', companyName: '',
-  jobTitle: '', operationNiche: '', leadAcquisitionSource: '', clientStatus: 'ATIVO',
-  preferredCurrency: 'BRL', commercialNotes: '', segmentationTags: [],
+  name: '', email: '', phone: '', ddi: '+55', whatsapp: '', taxId: '', country: 'BR',
+  companyName: '', jobTitle: '', instagramHandle: '', whatsappGroupLink: '',
+  operationNiche: '', leadAcquisitionSource: '',
+  clientStatus: 'ATIVO', preferredCurrency: 'BRL', commercialNotes: '', segmentationTags: [],
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -200,7 +233,7 @@ export function ClientesAdminClient() {
       const res = await fetch(`/api/clientes?${params}`)
       if (!res.ok) throw new Error('Erro ao carregar')
       const data = await res.json()
-      setClients(data.clients)
+      setClients(data.clients ?? [])
       setTotal(data.total)
       setPages(data.pages)
     } catch {
@@ -366,7 +399,8 @@ export function ClientesAdminClient() {
     const errs: Record<string, string> = {}
     if (!createForm.name.trim() || createForm.name.trim().length < 2) errs.name = 'Nome obrigatório (mín. 2 caracteres)'
     if (!createForm.email.trim() || !/^[^@]+@[^@]+\.[^@]+$/.test(createForm.email)) errs.email = 'E-mail inválido'
-    if (createForm.taxId) {
+    // Validação de Tax ID apenas para Brasil (CPF/CNPJ); outros países aceitam qualquer formato
+    if (createForm.country === 'BR' && createForm.taxId) {
       const digits = createForm.taxId.replace(/\D/g, '')
       if (digits.length !== 0 && digits.length !== 11 && digits.length !== 14) errs.taxId = 'CPF (11 dígitos) ou CNPJ (14 dígitos)'
     }
@@ -384,11 +418,14 @@ export function ClientesAdminClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...createForm,
-          phone: createForm.phone || null,
-          whatsapp: createForm.whatsapp || null,
+          phone: createForm.phone ? `${createForm.ddi}${createForm.phone.replace(/\D/g, '')}` : null,
+          whatsapp: createForm.whatsapp ? `${createForm.ddi}${createForm.whatsapp.replace(/\D/g, '')}` : null,
+          country: createForm.country || null,
           taxId: createForm.taxId || null,
           companyName: createForm.companyName || null,
           jobTitle: createForm.jobTitle || null,
+          instagramHandle: createForm.instagramHandle || null,
+          whatsappGroupLink: createForm.whatsappGroupLink || null,
           operationNiche: createForm.operationNiche || null,
           leadAcquisitionSource: createForm.leadAcquisitionSource || null,
           commercialNotes: createForm.commercialNotes || null,
@@ -692,18 +729,38 @@ export function ClientesAdminClient() {
                       />
                       {createErrors.email && <p className="text-xs text-red-500 mt-1">{createErrors.email}</p>}
                     </div>
+                    {/* País — controla label do Tax ID e DDI do telefone */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">🌍 País do Cliente</label>
+                      <select
+                        value={createForm.country}
+                        onChange={(e) => {
+                          const c = getCountry(e.target.value)
+                          setCreateForm((f) => ({ ...f, country: e.target.value, ddi: c.ddi }))
+                        }}
+                        className="input-field w-full"
+                      >
+                        {COUNTRIES.map((c) => (
+                          <option key={c.code} value={c.code}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tax ID dinâmico por país */}
                     <div>
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">CPF / CNPJ</label>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        {getCountry(createForm.country).taxLabel}
+                      </label>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           value={createForm.taxId}
                           onChange={(e) => setCreateForm((f) => ({ ...f, taxId: e.target.value }))}
                           className={`input-field flex-1 ${createErrors.taxId ? 'border-red-400' : ''}`}
-                          placeholder="000.000.000-00 ou CNPJ"
-                          maxLength={18}
+                          placeholder={getCountry(createForm.country).taxPlaceholder}
+                          maxLength={50}
                         />
-                        {createForm.taxId.replace(/\D/g, '').length === 14 && (
+                        {createForm.country === 'BR' && createForm.taxId.replace(/\D/g, '').length === 14 && (
                           <button
                             type="button"
                             onClick={() => {
@@ -713,10 +770,7 @@ export function ClientesAdminClient() {
                                 .then(r => r.json())
                                 .then(d => {
                                   if (d.razaoSocial) {
-                                    setCreateForm(f => ({
-                                      ...f,
-                                      companyName: d.razaoSocial || f.companyName,
-                                    }))
+                                    setCreateForm(f => ({ ...f, companyName: d.razaoSocial || f.companyName }))
                                     showToast('success', `Empresa: ${d.razaoSocial}`)
                                   } else {
                                     showToast('error', d.error || 'CNPJ não encontrado')
@@ -735,25 +789,44 @@ export function ClientesAdminClient() {
                       </div>
                       {createErrors.taxId && <p className="text-xs text-red-500 mt-1">{createErrors.taxId}</p>}
                     </div>
+
+                    {/* WhatsApp com DDI */}
                     <div>
                       <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">WhatsApp</label>
-                      <input
-                        type="text"
-                        value={createForm.whatsapp}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, whatsapp: e.target.value }))}
-                        className="input-field w-full"
-                        placeholder="(11) 99999-9999"
-                      />
+                      <div className="flex gap-1">
+                        <select
+                          value={createForm.ddi}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, ddi: e.target.value }))}
+                          className="input-field w-24 shrink-0 text-xs"
+                        >
+                          {COUNTRIES.filter((c) => c.code !== 'OTHER').map((c) => (
+                            <option key={c.code} value={c.ddi}>{c.ddi} {c.code}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={createForm.whatsapp}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, whatsapp: e.target.value }))}
+                          className="input-field flex-1"
+                          placeholder="(11) 99999-9999"
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Será salvo em formato E.164: {createForm.ddi}{createForm.whatsapp.replace(/\D/g,'') || 'XXXXXXXXXX'}</p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Telefone</label>
-                      <input
-                        type="text"
-                        value={createForm.phone}
-                        onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))}
-                        className="input-field w-full"
-                        placeholder="(11) 3333-4444"
-                      />
+                      <div className="flex gap-1">
+                        <span className="input-field w-16 shrink-0 text-xs flex items-center justify-center bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                          {createForm.ddi}
+                        </span>
+                        <input
+                          type="text"
+                          value={createForm.phone}
+                          onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))}
+                          className="input-field flex-1"
+                          placeholder="(11) 3333-4444"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Empresa / Nome Fantasia</label>
@@ -775,6 +848,50 @@ export function ClientesAdminClient() {
                         placeholder="Ex: Gestor de Tráfego"
                       />
                     </div>
+
+                    {/* Instagram */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        <span className="inline-flex items-center gap-1">
+                          <Instagram className="w-3.5 h-3.5 text-pink-500" /> Instagram
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.instagramHandle}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, instagramHandle: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="@usuario"
+                      />
+                    </div>
+
+                    {/* Grupo WhatsApp */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-green-500 text-xs">💬</span> Link do Grupo WhatsApp
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.whatsappGroupLink}
+                        onChange={(e) => setCreateForm((f) => ({ ...f, whatsappGroupLink: e.target.value }))}
+                        className="input-field w-full"
+                        placeholder="https://chat.whatsapp.com/..."
+                      />
+                    </div>
+
+                    {/* Código do cliente — preview */}
+                    {nextClientCode && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                          <span className="inline-flex items-center gap-1"><Hash className="w-3.5 h-3.5 text-primary-500" /> Código do Cliente (gerado automaticamente)</span>
+                        </label>
+                        <div className="input-field w-full bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 font-mono text-sm cursor-not-allowed select-none">
+                          {nextClientCode}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1132,6 +1249,13 @@ export function ClientesAdminClient() {
                         onChange={(v) => setEditForm((f) => ({ ...f, facebookUrl: v }))}
                         placeholder="https://facebook.com/..."
                       />
+                      <div className="col-span-2">
+                        <FormFieldIcon label="💬 Grupo WhatsApp" icon={<></>} editing={editing}
+                          value={editing ? editForm.whatsappGroupLink ?? '' : (selectedClient.whatsappGroupLink ?? '—')}
+                          onChange={(v) => setEditForm((f) => ({ ...f, whatsappGroupLink: v }))}
+                          placeholder="https://chat.whatsapp.com/..."
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -1328,95 +1452,102 @@ export function ClientesAdminClient() {
 // ─── Componente: Card de Cliente (LTV View) ───────────────────────────────────
 
 function ClientCard({ client, onClick }: { client: Client; onClick: () => void }) {
-  const ltv = client.metrics?.ltvReal
-  const churnRisk = client.metrics?.churnRisk
-  const stars = client.trustLevelStars ?? 0
+  const ltv        = client.metrics?.ltvReal
+  const churnRisk  = client.metrics?.churnRisk
+  const stars      = client.trustLevelStars ?? 0
+  const tags       = parseTags(client.segmentationTags)
+  const displayName = client.user.name ?? client.companyName ?? client.user.email.split('@')[0]
+  const company    = client.companyName ?? client.operationNiche
+
+  const statusColor = client.clientStatus === 'ATIVO'
+    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+    : client.clientStatus === 'INATIVO'
+    ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400'
+    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="text-left w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card hover:border-primary-400 hover:shadow-md transition-all p-4 group"
+      className="text-left w-full h-full flex flex-col rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card hover:border-primary-400 hover:shadow-lg transition-all p-4 group"
     >
-      {/* Topo: avatar + status */}
+      {/* ── Topo: avatar + nome + status ─────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-sm shrink-0">
-            {(client.user.name ?? client.user.email)[0].toUpperCase()}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-sm shrink-0 uppercase">
+            {displayName[0]}
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">{client.user.name ?? '—'}</p>
-            <p className="text-xs text-zinc-400 truncate">{client.user.email}</p>
+            <p className="font-semibold text-sm leading-tight line-clamp-1 text-zinc-800 dark:text-zinc-100">
+              {displayName}
+            </p>
+            <p className="text-[11px] text-zinc-400 truncate">{client.user.email}</p>
           </div>
         </div>
-        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-          client.clientStatus === 'ATIVO' ? 'bg-green-100 text-green-800' :
-          client.clientStatus === 'INATIVO' ? 'bg-zinc-200 text-zinc-500' :
-          'bg-red-100 text-red-800'
-        }`}>
+        <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusColor}`}>
           {client.clientStatus}
         </span>
       </div>
 
-      {/* LTV */}
-      <div className="bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-lg p-2.5 mb-3">
-        <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">LTV Real</p>
-        <p className="text-lg font-bold text-primary-700 dark:text-primary-300">
-          {ltv != null ? Number(ltv).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
-        </p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[10px] text-zinc-500">{client.totalAccountsBought} contas</span>
-          {churnBadge(churnRisk)}
+      {/* ── Empresa / nicho ───────────────────────────────────────────────────── */}
+      {company && (
+        <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400 mb-2 min-w-0">
+          <Building2 className="w-3 h-3 shrink-0 text-zinc-400" />
+          <span className="truncate">{company}</span>
+        </div>
+      )}
+
+      {/* ── LTV + Contas ──────────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-zinc-100 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-800/40 px-3 py-2 mb-3 flex items-center justify-between gap-2">
+        <div>
+          <p className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Faturamento Total</p>
+          <p className={`text-base font-black leading-tight ${ltv && Number(ltv) > 0 ? 'text-green-600 dark:text-green-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+            {ltv != null && Number(ltv) > 0
+              ? Number(ltv).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+              : 'Sem compras'}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Contas</p>
+          <p className="text-base font-black text-zinc-700 dark:text-zinc-300">{client.totalAccountsBought ?? 0}</p>
         </div>
       </div>
 
-      {/* Código + Empresa + nicho */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
+      {/* ── Spacer para empurrar rodapé para baixo ────────────────────────────── */}
+      <div className="flex-1" />
+
+      {/* ── Rodapé: código + churn + tags ────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 flex-wrap">
         {client.clientCode && (
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 text-[10px] font-bold text-primary-700 dark:text-primary-300 font-mono">
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 text-[10px] font-bold text-primary-700 dark:text-primary-300 font-mono">
             <Hash className="w-2.5 h-2.5" />{client.clientCode}
           </span>
         )}
-        {(client.companyName || client.operationNiche) && (
-          <div className="flex items-center gap-1 text-xs text-zinc-500">
-            <Building2 className="w-3 h-3 shrink-0" />
-            <span className="truncate">{client.companyName ?? client.operationNiche}</span>
+        {churnBadge(churnRisk)}
+        {stars > 0 && (
+          <div className="flex items-center gap-0.5">
+            {Array.from({ length: stars }).map((_, i) => (
+              <Star key={i} className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+            ))}
           </div>
         )}
+        {tags.slice(0, 2).map((tag) => {
+          const cfg = tagConfig(tag)
+          return (
+            <span key={tag} className={`px-1.5 py-0.5 rounded-full text-[10px] border font-medium ${cfg.color}`}>
+              {cfg.label}
+            </span>
+          )
+        })}
+        {tags.length > 2 && (
+          <span className="text-[10px] text-zinc-400">+{tags.length - 2}</span>
+        )}
+        {client.riskBlockCheckout && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-red-600">
+            <Shield className="w-2.5 h-2.5" /> Bloqueado
+          </span>
+        )}
       </div>
-
-      {/* Estrelas de confiança */}
-      {stars > 0 && (
-        <div className="flex items-center gap-0.5 mb-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Star key={i} className={`w-3 h-3 ${i < stars ? 'text-amber-400 fill-amber-400' : 'text-zinc-200 dark:text-zinc-700'}`} />
-          ))}
-        </div>
-      )}
-
-      {/* Tags */}
-      {parseTags(client.segmentationTags).length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {parseTags(client.segmentationTags).slice(0, 3).map((tag) => {
-            const cfg = tagConfig(tag)
-            return (
-              <span key={tag} className={`px-1.5 py-0.5 rounded-full text-[10px] border font-medium ${cfg.color}`}>
-                {cfg.label}
-              </span>
-            )
-          })}
-          {parseTags(client.segmentationTags).length > 3 && (
-            <span className="text-[10px] text-zinc-400">+{parseTags(client.segmentationTags).length - 3}</span>
-          )}
-        </div>
-      )}
-
-      {/* Bloqueado */}
-      {client.riskBlockCheckout && (
-        <div className="mt-2 flex items-center gap-1 text-red-600 text-[10px] font-semibold">
-          <Shield className="w-3 h-3" /> Bloqueado antifraude
-        </div>
-      )}
     </button>
   )
 }
