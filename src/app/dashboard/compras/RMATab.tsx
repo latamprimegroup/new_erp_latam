@@ -85,16 +85,21 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
   const lookupAsset = async () => {
     if (!adsId.trim()) return
     setLooking(true); setError(''); setAssetInfo(null); setAssetId('')
-    const r = await fetch(`/api/compras/ativos?search=${encodeURIComponent(adsId.trim())}&limit=1`)
+    // Remove prefixos comuns que o usuário pode digitar ("ID G2:", "ID:", etc.)
+    const clean = adsId.trim().replace(/^id\s*(g\d+)?[:\s]*/i, '').replace(/[-\s]/g, '-').trim()
+    const r = await fetch(`/api/compras/ativos?q=${encodeURIComponent(clean)}&limit=5`)
     if (r.ok) {
       const j = await r.json()
-      const a = j.assets?.[0] ?? j[0]
+      const assets: { id: string; displayName: string; vendor?: { name: string } }[] = j.assets ?? j ?? []
+      const a = assets[0]
       if (a) {
         setAssetId(a.id)
         setAssetInfo({ displayName: a.displayName, vendorName: a.vendor?.name ?? '—' })
       } else {
-        setError('Ativo não encontrado. Verifique o ID.')
+        setError('Ativo não encontrado. Verifique o ID no formato AA-G12-HS-001 ou pelo número da conta Google.')
       }
+    } else {
+      setError('Erro ao consultar ativo. Tente novamente.')
     }
     setLooking(false)
   }
@@ -138,7 +143,7 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
           <input
             value={adsId}
             onChange={(e) => setAdsId(e.target.value.toUpperCase())}
-            placeholder="Ex: AA-G12-HS-001"
+            placeholder="ID Ads Ativos (AA-G12-001) ou ID Google Ads (603-322-2709)"
             className="input-field flex-1 text-sm font-mono"
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupAsset() } }}
           />
@@ -162,7 +167,7 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
             </div>
           </div>
         ) : !error && (
-          <p className="text-[11px] text-zinc-400 pl-1">Digite o ID público do ativo (ex: AA-G12-HS-001) e clique em Buscar</p>
+          <p className="text-[11px] text-zinc-400 pl-1">Use o ID Ads Ativos (AA-G12-001) <strong>ou</strong> o número da conta Google (603-322-2709) e clique em Buscar</p>
         )}
 
         {error && (

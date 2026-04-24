@@ -45,10 +45,14 @@ export async function GET(req: Request) {
   if (status)   where.status   = status
   if (vendorId && hasSensitive) where.vendorId = vendorId
   if (q) {
+    // Normaliza: remove traços/espaços para buscar ID Google Ads (603-322-2709 → 6033222709)
+    const qDigits = q.replace(/[-\s]/g, '')
     where.OR = [
-      { adsId:       { contains: q } },
-      { displayName: { contains: q } },
-      { tags:        { contains: q } },
+      { adsId:                { contains: q } },
+      { displayName:          { contains: q } },
+      { tags:                 { contains: q } },
+      { googleAdsCustomerId:  { contains: q } },
+      ...(qDigits !== q ? [{ googleAdsCustomerId: { contains: qDigits } }] : []),
     ]
   }
 
