@@ -56,7 +56,7 @@ export async function GET(req: globalThis.Request) {
   const netMargin   = grossMargin - netCost // Lucro real após custo de garantia
 
   // Busca nomes dos vendors para o breakdown
-  const vendorIds   = vendorBreakdown.map((v) => v.vendorId)
+  const vendorIds   = vendorBreakdown.map((v) => v.vendorId).filter((id): id is string => id !== null)
   const vendorNames = vendorIds.length > 0
     ? await prisma.vendor.findMany({ where: { id: { in: vendorIds } }, select: { id: true, name: true } })
     : []
@@ -116,7 +116,7 @@ export async function GET(req: globalThis.Request) {
     },
     vendorBreakdown: vendorBreakdown.map((v) => ({
       vendorId:      v.vendorId,
-      vendorName:    nameMap[v.vendorId] ?? v.vendorId,
+      vendorName:    v.vendorId ? (nameMap[v.vendorId] ?? v.vendorId) : '—',
       rmaCount:      v._count,
       warrantyCost:  Number(v._sum.replacementCost    ?? 0),
       vendorCredits: Number(v._sum.vendorCreditAmount ?? 0),

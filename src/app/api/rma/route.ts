@@ -107,20 +107,14 @@ export async function POST(req: globalThis.Request) {
 
   const searchId = suspendedAccountRaw ?? originalAssetId
   if (searchId) {
-    const clean = searchId.replace(/[-\s]/g, '')
     asset = await prisma.asset.findFirst({
       where: {
         OR: [
           { id: searchId },
           { adsId: { contains: searchId } },
-          { googleAdsCustomerId: { contains: searchId } },
-          { googleAdsCustomerId: { contains: clean } },
         ],
       },
-      include: {
-        vendor: true,
-        salesOrders: { where: { status: 'DELIVERED' }, orderBy: { deliveredAt: 'desc' }, take: 1 },
-      },
+      include: { vendor: true },
     })
     if (asset) {
       resolvedAssetId = asset.id
@@ -129,8 +123,7 @@ export async function POST(req: globalThis.Request) {
   }
 
   // Garantia e timing
-  const deliveredOrder     = asset?.salesOrders?.[0] ?? null
-  const deliveredAt        = deliveredOrder?.deliveredAt ?? asset?.deliveredAt ?? null
+  const deliveredAt        = asset?.deliveredAt ?? null
   const warrantyDays       = extendedWarranty ? 30 : (asset ? (WARRANTY_DAYS[asset.category] ?? 7) : 7)
   const hoursAfterDelivery = deliveredAt
     ? Math.round((Date.now() - new Date(deliveredAt).getTime()) / 3600_000)
