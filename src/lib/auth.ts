@@ -72,7 +72,7 @@ export const authOptions: NextAuthOptions = {
         let user: {
           id: string; email: string; name: string | null; role: string;
           photo: string | null; passwordHash: string | null; languageCode: string | null;
-          cargo: string | null; leaderId: string | null;
+          cargo?: string | null; leaderId?: string | null;
           status: string;
         } | null
 
@@ -82,10 +82,20 @@ export const authOptions: NextAuthOptions = {
             select: {
               id: true, email: true, name: true, role: true,
               photo: true, passwordHash: true, languageCode: true,
-              cargo: true, leaderId: true,
               status: true,
             },
           })
+          // Campos de hierarquia comercial — carregados separadamente para
+          // não bloquear login caso as colunas ainda não existam no banco de produção.
+          if (user) {
+            const extra = await prisma.user.findUnique({
+              where: { id: user.id },
+              select: { cargo: true, leaderId: true },
+            }).catch(() => null)
+            if (extra) {
+              user = { ...user, cargo: extra.cargo, leaderId: extra.leaderId }
+            }
+          }
         } catch (dbErr) {
           console.error('[auth] Erro de conexão com o banco de dados:', dbErr)
           throw new Error('Serviço temporariamente indisponível. Tente novamente em alguns instantes.')
