@@ -1452,95 +1452,102 @@ export function ClientesAdminClient() {
 // ─── Componente: Card de Cliente (LTV View) ───────────────────────────────────
 
 function ClientCard({ client, onClick }: { client: Client; onClick: () => void }) {
-  const ltv = client.metrics?.ltvReal
-  const churnRisk = client.metrics?.churnRisk
-  const stars = client.trustLevelStars ?? 0
+  const ltv        = client.metrics?.ltvReal
+  const churnRisk  = client.metrics?.churnRisk
+  const stars      = client.trustLevelStars ?? 0
+  const tags       = parseTags(client.segmentationTags)
+  const displayName = client.user.name ?? client.companyName ?? client.user.email.split('@')[0]
+  const company    = client.companyName ?? client.operationNiche
+
+  const statusColor = client.clientStatus === 'ATIVO'
+    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+    : client.clientStatus === 'INATIVO'
+    ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400'
+    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="text-left w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card hover:border-primary-400 hover:shadow-md transition-all p-4 group"
+      className="text-left w-full h-full flex flex-col rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-ads-dark-card hover:border-primary-400 hover:shadow-lg transition-all p-4 group"
     >
-      {/* Topo: avatar + status */}
+      {/* ── Topo: avatar + nome + status ─────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-sm shrink-0">
-            {(client.user.name ?? client.user.email)[0].toUpperCase()}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-sm shrink-0 uppercase">
+            {displayName[0]}
           </div>
           <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">{client.user.name ?? '—'}</p>
-            <p className="text-xs text-zinc-400 truncate">{client.user.email}</p>
+            <p className="font-semibold text-sm leading-tight line-clamp-1 text-zinc-800 dark:text-zinc-100">
+              {displayName}
+            </p>
+            <p className="text-[11px] text-zinc-400 truncate">{client.user.email}</p>
           </div>
         </div>
-        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-          client.clientStatus === 'ATIVO' ? 'bg-green-100 text-green-800' :
-          client.clientStatus === 'INATIVO' ? 'bg-zinc-200 text-zinc-500' :
-          'bg-red-100 text-red-800'
-        }`}>
+        <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusColor}`}>
           {client.clientStatus}
         </span>
       </div>
 
-      {/* LTV */}
-      <div className="bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-lg p-2.5 mb-3">
-        <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">LTV Real</p>
-        <p className="text-lg font-bold text-primary-700 dark:text-primary-300">
-          {ltv != null ? Number(ltv).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
-        </p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[10px] text-zinc-500">{client.totalAccountsBought} contas</span>
-          {churnBadge(churnRisk)}
+      {/* ── Empresa / nicho ───────────────────────────────────────────────────── */}
+      {company && (
+        <div className="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400 mb-2 min-w-0">
+          <Building2 className="w-3 h-3 shrink-0 text-zinc-400" />
+          <span className="truncate">{company}</span>
+        </div>
+      )}
+
+      {/* ── LTV + Contas ──────────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-zinc-100 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-800/40 px-3 py-2 mb-3 flex items-center justify-between gap-2">
+        <div>
+          <p className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Faturamento Total</p>
+          <p className={`text-base font-black leading-tight ${ltv && Number(ltv) > 0 ? 'text-green-600 dark:text-green-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+            {ltv != null && Number(ltv) > 0
+              ? Number(ltv).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+              : 'Sem compras'}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Contas</p>
+          <p className="text-base font-black text-zinc-700 dark:text-zinc-300">{client.totalAccountsBought ?? 0}</p>
         </div>
       </div>
 
-      {/* Código + Empresa + nicho */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
+      {/* ── Spacer para empurrar rodapé para baixo ────────────────────────────── */}
+      <div className="flex-1" />
+
+      {/* ── Rodapé: código + churn + tags ────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 flex-wrap">
         {client.clientCode && (
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 text-[10px] font-bold text-primary-700 dark:text-primary-300 font-mono">
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-primary-50 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-700 text-[10px] font-bold text-primary-700 dark:text-primary-300 font-mono">
             <Hash className="w-2.5 h-2.5" />{client.clientCode}
           </span>
         )}
-        {(client.companyName || client.operationNiche) && (
-          <div className="flex items-center gap-1 text-xs text-zinc-500">
-            <Building2 className="w-3 h-3 shrink-0" />
-            <span className="truncate">{client.companyName ?? client.operationNiche}</span>
+        {churnBadge(churnRisk)}
+        {stars > 0 && (
+          <div className="flex items-center gap-0.5">
+            {Array.from({ length: stars }).map((_, i) => (
+              <Star key={i} className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+            ))}
           </div>
         )}
+        {tags.slice(0, 2).map((tag) => {
+          const cfg = tagConfig(tag)
+          return (
+            <span key={tag} className={`px-1.5 py-0.5 rounded-full text-[10px] border font-medium ${cfg.color}`}>
+              {cfg.label}
+            </span>
+          )
+        })}
+        {tags.length > 2 && (
+          <span className="text-[10px] text-zinc-400">+{tags.length - 2}</span>
+        )}
+        {client.riskBlockCheckout && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-red-600">
+            <Shield className="w-2.5 h-2.5" /> Bloqueado
+          </span>
+        )}
       </div>
-
-      {/* Estrelas de confiança */}
-      {stars > 0 && (
-        <div className="flex items-center gap-0.5 mb-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Star key={i} className={`w-3 h-3 ${i < stars ? 'text-amber-400 fill-amber-400' : 'text-zinc-200 dark:text-zinc-700'}`} />
-          ))}
-        </div>
-      )}
-
-      {/* Tags */}
-      {parseTags(client.segmentationTags).length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {parseTags(client.segmentationTags).slice(0, 3).map((tag) => {
-            const cfg = tagConfig(tag)
-            return (
-              <span key={tag} className={`px-1.5 py-0.5 rounded-full text-[10px] border font-medium ${cfg.color}`}>
-                {cfg.label}
-              </span>
-            )
-          })}
-          {parseTags(client.segmentationTags).length > 3 && (
-            <span className="text-[10px] text-zinc-400">+{parseTags(client.segmentationTags).length - 3}</span>
-          )}
-        </div>
-      )}
-
-      {/* Bloqueado */}
-      {client.riskBlockCheckout && (
-        <div className="mt-2 flex items-center gap-1 text-red-600 text-[10px] font-semibold">
-          <Shield className="w-3 h-3" /> Bloqueado antifraude
-        </div>
-      )}
     </button>
   )
 }
