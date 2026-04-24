@@ -7,6 +7,10 @@ export default async function CommercialOxygenPage() {
   const session = await getServerSession(authOptions)
   if (!session) redirect('/login')
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) redirect('/dashboard')
+  const cargoUpper = (session.user?.cargo || '').toUpperCase()
+  if (['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(cargoUpper)) {
+    redirect('/dashboard/commercial/manager')
+  }
 
   return (
     <div className="space-y-6">

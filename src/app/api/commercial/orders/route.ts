@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isCommercialManager } from '@/lib/commercial-hierarchy'
 
 const GATEKEEPER = ['AWAITING_PAYMENT', 'PENDING', 'APPROVED'] as const
 
@@ -12,13 +13,18 @@ export async function GET(req: NextRequest) {
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
+  const isCommercialManagerView = isCommercialManager(session.user)
+  const isSeller = session.user?.role === 'COMMERCIAL' && !isCommercialManagerView
 
   const { searchParams } = new URL(req.url)
   const tab = searchParams.get('tab') || 'gatekeeper'
 
   if (tab === 'gatekeeper') {
     const queue = await prisma.order.findMany({
-      where: { status: { in: [...GATEKEEPER] } },
+      where: {
+        status: { in: [...GATEKEEPER] },
+        ...(isSeller ? { sellerId: session.user.id } : {}),
+      },
       include: {
         client: {
           select: {
@@ -35,6 +41,10 @@ export async function GET(req: NextRequest) {
   }
 
   const recent = await prisma.order.findMany({
+    where: {
+      ...(isSeller ? { sellerId: session.user.id } : {}),
+      ...(isCommercialManagerView ? { OR: [{ seller: { leaderId: session.user.id } }, { sellerId: session.user.id }] } : {}),
+    },
     include: {
       client: {
         select: { id: true, user: { select: { name: true, email: true, phone: true } } },

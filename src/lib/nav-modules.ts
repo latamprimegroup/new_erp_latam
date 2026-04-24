@@ -197,6 +197,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
+    href: '/dashboard/commercial/manager',
+    label: 'Head of Sales',
+    roles: ['ADMIN', 'COMMERCIAL'],
+    icon: 'Target',
+    group: 'Comercial',
+  },
+  {
     href: '/dashboard/roi-crm',
     label: 'ROI & CRM',
     roles: ['ADMIN', 'COMMERCIAL'],
@@ -604,7 +611,13 @@ export const MODULES_PLUGPLAY: NavItem[] = [
   { href: '/dashboard/sugestoes?tipo=sistema', label: 'Sugerir Melhoria', roles: ['PLUG_PLAY'], icon: 'Lightbulb', group: 'Geral' },
 ]
 
-export function getModulesForRole(role?: string): NavItem[] {
+function isCommercialManagerCargo(cargo?: string | null): boolean {
+  const c = (cargo || '').trim().toUpperCase()
+  if (!c) return false
+  return c.includes('GERENTE') || c.includes('HEAD')
+}
+
+export function getModulesForRole(role?: string, cargo?: string | null): NavItem[] {
   const list =
     role === 'CLIENT'
       ? MODULES_CLIENTE
@@ -613,5 +626,10 @@ export function getModulesForRole(role?: string): NavItem[] {
         : role === 'PLUG_PLAY'
           ? MODULES_PLUGPLAY
           : MODULES_ERP
-  return list.filter((m) => !role || m.roles.includes(role))
+
+  const roleFiltered = list.filter((m) => !role || m.roles.includes(role))
+  if (role !== 'COMMERCIAL') return roleFiltered
+
+  const canSeeManagerModule = isCommercialManagerCargo(cargo)
+  return roleFiltered.filter((m) => canSeeManagerModule || m.href !== '/dashboard/commercial/manager')
 }
