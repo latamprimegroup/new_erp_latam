@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { COMPRAS_WRITE_ROLES } from '@/lib/asset-privacy'
+import { canManageCommercialTeam } from '@/lib/commercial-hierarchy'
 
 const editSchema = z.object({
   displayName:  z.string().min(2).max(200).optional(),
@@ -24,7 +25,11 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ) {
   const session = await getServerSession(authOptions)
-  if (!session?.user?.role || !COMPRAS_WRITE_ROLES.includes(session.user.role))
+  const canManagerMarkup = Boolean(
+    session?.user?.role &&
+    canManageCommercialTeam(session.user.role, session.user.cargo)
+  )
+  if (!session?.user?.role || (!COMPRAS_WRITE_ROLES.includes(session.user.role) && !canManagerMarkup))
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
 
   const asset = await prisma.asset.findUnique({ where: { id: params.id } })
@@ -43,6 +48,13 @@ export async function PATCH(
   const data: Record<string, unknown> = {}
 
   for (const [k, v] of Object.entries(publicFields)) {
+    if (
+      canManagerMarkup &&
+      !COMPRAS_WRITE_ROLES.includes(session.user.role) &&
+      !['salePrice'].includes(k)
+    ) {
+      continue
+    }
     if (v !== undefined) data[k] = v
   }
 

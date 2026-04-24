@@ -156,6 +156,7 @@ export async function sendUtmifyConversion(params: {
   adsId:       string
   displayName: string
   amountBrl:   number
+  netProfitBrl?: number
   paidAt:      Date
   createdAt:   Date
   buyer: {
@@ -175,7 +176,10 @@ export async function sendUtmifyConversion(params: {
   // Taxa de gateway estimada: 0,99% + R$0,49 (PIX Inter)
   const totalCents   = Math.round(params.amountBrl * 100)
   const gatewayFee   = Math.round(totalCents * 0.0099 + 49)
-  const netCents     = totalCents - gatewayFee
+  // userCommissionInCents na Utmify representa lucro líquido real quando informado.
+  const netCents     = params.netProfitBrl != null
+    ? Math.max(0, Math.round(params.netProfitBrl * 100))
+    : totalCents - gatewayFee
 
   const order: UtmifyOrder = {
     orderId:       params.checkoutId,

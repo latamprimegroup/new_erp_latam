@@ -31,6 +31,8 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/base': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/vendas': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/commercial/seller': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/commercial/manager': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/roi-crm': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/entregas': ['ADMIN', 'DELIVERER'],
   '/dashboard/entregas-grupos': ['ADMIN', 'DELIVERER', 'COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER'],
@@ -43,6 +45,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/api/rma':           ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER'],
   '/dashboard/compras': ['ADMIN', 'PURCHASING', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCTION_MANAGER'],
   '/dashboard/financeiro': ['ADMIN', 'FINANCE'],
+  '/dashboard/financeiro/alfredo-fast-entry': ['ADMIN', 'FINANCE'],
   '/dashboard/saques': ['ADMIN', 'FINANCE'],
   '/dashboard/metas': ['ADMIN', 'PRODUCER'],
   '/dashboard/relatorios': ['ADMIN', 'COMMERCIAL', 'FINANCE'],
@@ -128,6 +131,25 @@ const dashboardAuth = withAuth(
         if (userRole === 'PLUG_PLAY')      return NextResponse.redirect(new URL('/dashboard/plugplay', req.url))
         if (userRole === 'FINANCE')        return NextResponse.redirect(new URL('/dashboard/financeiro', req.url))
         return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
+
+      // RBAC por cargo dentro do Comercial:
+      // vendedor não acessa área de gerente.
+      const userCargo = (req.nextauth.token?.cargo as string | undefined)?.toUpperCase()
+      if (
+        pathname.startsWith('/dashboard/commercial/manager') &&
+        userRole === 'COMMERCIAL' &&
+        !['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(userCargo || '')
+      ) {
+        return NextResponse.redirect(new URL('/dashboard/commercial/seller', req.url))
+      }
+
+      if (
+        pathname === '/dashboard/commercial' &&
+        userRole === 'COMMERCIAL' &&
+        !['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(userCargo || '')
+      ) {
+        return NextResponse.redirect(new URL('/dashboard/commercial/seller', req.url))
       }
     }
 

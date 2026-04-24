@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calcularMetasMensais } from '@/lib/metas-globais'
+import { isCommercialManager } from '@/lib/commercial-hierarchy'
 
 const PAID_REVENUE = ['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED'] as const
 
@@ -28,6 +29,7 @@ export async function GET() {
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
+  const isSalesManager = session.user?.role === 'ADMIN' || isCommercialManager(session.user)
 
   const now = new Date()
   const day24h = new Date(now.getTime() - 24 * 60 * 60 * 1000)
@@ -44,24 +46,34 @@ export async function GET() {
   const [
     agg24h,
     paidCount24h,
+    quickAgg24h,
+    quickPaidCount24h,
     aggCalendarDay,
     paidCountCalendarDay,
+    quickAggCalendarDay,
+    quickPaidCountCalendarDay,
     aggMonth,
     paidCountMonth,
+    quickAggMonth,
+    quickPaidCountMonth,
     churnClients,
     metas,
     inventoryByType,
     inventoryByPlatformType,
     salesWeekCount,
+    quickSalesWeekCount,
     metaFaturamentoMes,
     upsellStockMin,
     upsellSalesMax,
     upsellPct,
     ordersCreated30d,
     ordersPaid30d,
+    quickCreated30d,
+    quickPaid30d,
     leads30d,
     leadsConverted30d,
     pedidosPendentes,
+    quickPendingCheckouts,
     ticketPorAccountType,
     sellerTotals,
     tintimWebhookHits30d,
@@ -81,6 +93,19 @@ export async function GET() {
         paidAt: { gte: day24h, lte: now },
       },
     }),
+    prisma.quickSaleCheckout.aggregate({
+      where: {
+        status: 'PAID',
+        paidAt: { gte: day24h, lte: now },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.quickSaleCheckout.count({
+      where: {
+        status: 'PAID',
+        paidAt: { gte: day24h, lte: now },
+      },
+    }),
     prisma.order.aggregate({
       where: {
         status: { in: [...PAID_REVENUE] },
@@ -91,6 +116,19 @@ export async function GET() {
     prisma.order.count({
       where: {
         status: { in: [...PAID_REVENUE] },
+        paidAt: { gte: startOfCalendarDay, lte: now },
+      },
+    }),
+    prisma.quickSaleCheckout.aggregate({
+      where: {
+        status: 'PAID',
+        paidAt: { gte: startOfCalendarDay, lte: now },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.quickSaleCheckout.count({
+      where: {
+        status: 'PAID',
         paidAt: { gte: startOfCalendarDay, lte: now },
       },
     }),
@@ -104,6 +142,19 @@ export async function GET() {
     prisma.order.count({
       where: {
         status: { in: [...PAID_REVENUE] },
+        paidAt: { gte: startOfMonth, lte: endOfMonth },
+      },
+    }),
+    prisma.quickSaleCheckout.aggregate({
+      where: {
+        status: 'PAID',
+        paidAt: { gte: startOfMonth, lte: endOfMonth },
+      },
+      _sum: { totalAmount: true },
+    }),
+    prisma.quickSaleCheckout.count({
+      where: {
+        status: 'PAID',
         paidAt: { gte: startOfMonth, lte: endOfMonth },
       },
     }),
@@ -130,6 +181,12 @@ export async function GET() {
         paidAt: { gte: weekAgo },
       },
     }),
+    prisma.quickSaleCheckout.count({
+      where: {
+        status: 'PAID',
+        paidAt: { gte: weekAgo, lte: now },
+      },
+    }),
     getSettingNumber('commercial_meta_faturamento_mensal', 250_000),
     getSettingNumber('commercial_upsell_stock_min', 100),
     getSettingNumber('commercial_upsell_sales_week_max', 10),
@@ -146,12 +203,27 @@ export async function GET() {
         status: { in: [...PAID_REVENUE] },
       },
     }),
+    prisma.quickSaleCheckout.count({
+      where: {
+        createdAt: { gte: thirtyDaysAgo },
+        status: { not: 'CANCELLED' },
+      },
+    }),
+    prisma.quickSaleCheckout.count({
+      where: {
+        paidAt: { gte: thirtyDaysAgo },
+        status: 'PAID',
+      },
+    }),
     prisma.commercialLead.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
     prisma.commercialLead.count({
       where: { createdAt: { gte: thirtyDaysAgo }, convertedClientId: { not: null } },
     }),
     prisma.order.count({
       where: { status: { in: [...GATE_PENDING] } },
+    }),
+    prisma.quickSaleCheckout.count({
+      where: { status: 'PENDING' },
     }),
     prisma.order.groupBy({
       by: ['accountType'],
@@ -167,7 +239,10 @@ export async function GET() {
       where: {
         status: { in: [...PAID_REVENUE] },
         paidAt: { gte: startOfMonth, lte: endOfMonth },
-        sellerId: { not: null },
+        sellerId: {
+          ...(isSalesManager ? {} : { equals: session.user.id }),
+          not: null,
+        },
       },
       _sum: { value: true },
       _count: { id: true },
@@ -215,13 +290,21 @@ export async function GET() {
       ? Math.round((tintimSales30d / tintimTintimLeadEvents30d) * 1000) / 10
       : null
 
-  const faturamento24h = Number(agg24h._sum.value ?? 0)
-  const ticketMedio24h = paidCount24h > 0 ? faturamento24h / paidCount24h : 0
-  const faturamentoDiaCalendario = Number(aggCalendarDay._sum.value ?? 0)
+  const faturamento24h =
+    Number(agg24h._sum.value ?? 0) + Number(quickAgg24h._sum.totalAmount ?? 0)
+  const pedidosPagos24hTotal = paidCount24h + quickPaidCount24h
+  const ticketMedio24h = pedidosPagos24hTotal > 0 ? faturamento24h / pedidosPagos24hTotal : 0
+  const faturamentoDiaCalendario =
+    Number(aggCalendarDay._sum.value ?? 0) + Number(quickAggCalendarDay._sum.totalAmount ?? 0)
+  const pedidosPagosDiaCalendarioTotal = paidCountCalendarDay + quickPaidCountCalendarDay
   const ticketMedioDiaCalendario =
-    paidCountCalendarDay > 0 ? faturamentoDiaCalendario / paidCountCalendarDay : 0
-  const faturamentoMes = Number(aggMonth._sum.value ?? 0)
-  const ticketMedioMes = paidCountMonth > 0 ? faturamentoMes / paidCountMonth : 0
+    pedidosPagosDiaCalendarioTotal > 0
+      ? faturamentoDiaCalendario / pedidosPagosDiaCalendarioTotal
+      : 0
+  const faturamentoMes =
+    Number(aggMonth._sum.value ?? 0) + Number(quickAggMonth._sum.totalAmount ?? 0)
+  const pedidosPagosMesTotal = paidCountMonth + quickPaidCountMonth
+  const ticketMedioMes = pedidosPagosMesTotal > 0 ? faturamentoMes / pedidosPagosMesTotal : 0
   const progressMetaFaturamento =
     metaFaturamentoMes > 0 ? Math.min(100, Math.round((faturamentoMes / metaFaturamentoMes) * 100)) : 0
 
@@ -257,8 +340,12 @@ export async function GET() {
     .sort((a, b) => b.faturamento - a.faturamento)
     .slice(0, 12)
 
+  const ordersCreated30dTotal = ordersCreated30d + quickCreated30d
+  const ordersPaid30dTotal = ordersPaid30d + quickPaid30d
   const taxaConversaoPedido30d =
-    ordersCreated30d > 0 ? Math.round((ordersPaid30d / ordersCreated30d) * 1000) / 10 : 0
+    ordersCreated30dTotal > 0
+      ? Math.round((ordersPaid30dTotal / ordersCreated30dTotal) * 1000) / 10
+      : 0
   const taxaConversaoLeads30d =
     leads30d > 0 ? Math.round((leadsConverted30d / leads30d) * 1000) / 10 : null
 
@@ -269,16 +356,19 @@ export async function GET() {
     inventoryByType.find((r) => r.type?.toUpperCase() === 'USD')?._count.id ?? 0
 
   const upsellAlerts: string[] = []
-  if (stockBrlCount >= upsellStockMin && salesWeekCount < upsellSalesMax) {
+  const salesWeekCountTotal = salesWeekCount + quickSalesWeekCount
+  if (stockBrlCount >= upsellStockMin && salesWeekCountTotal < upsellSalesMax) {
     upsellAlerts.push(
-      `BRL: estoque alto (${stockBrlCount} disponíveis) e poucas vendas na semana (${salesWeekCount}). Sugestão: ofereça ${upsellPct}% OFF para queima hoje.`
+      `BRL: estoque alto (${stockBrlCount} disponíveis) e poucas vendas na semana (${salesWeekCountTotal}). Sugestão: ofereça ${upsellPct}% OFF para queima hoje.`
     )
   }
-  if (stockUsdCount >= upsellStockMin && salesWeekCount < upsellSalesMax) {
+  if (stockUsdCount >= upsellStockMin && salesWeekCountTotal < upsellSalesMax) {
     upsellAlerts.push(
-      `USD: estoque alto (${stockUsdCount} disponíveis) e poucas vendas na semana (${salesWeekCount}). Sugestão: ofereça ${upsellPct}% OFF em contas USD.`
+      `USD: estoque alto (${stockUsdCount} disponíveis) e poucas vendas na semana (${salesWeekCountTotal}). Sugestão: ofereça ${upsellPct}% OFF em contas USD.`
     )
   }
+
+  const pedidosPendentesTotal = pedidosPendentes + quickPendingCheckouts
 
   const inventoryReady = inventoryByPlatformType.map((r) => ({
     platform: PLATFORM_LABELS[r.platform] || r.platform,
@@ -290,22 +380,22 @@ export async function GET() {
 
   return NextResponse.json({
     faturamento24h,
-    pedidosPagos24h: paidCount24h,
+    pedidosPagos24h: pedidosPagos24hTotal,
     faturamentoDiaCalendario,
-    pedidosPagosDiaCalendario: paidCountCalendarDay,
+    pedidosPagosDiaCalendario: pedidosPagosDiaCalendarioTotal,
     ticketMedioDiaCalendario,
     ticketMedio24h,
     ticketMedioMes,
     faturamentoMes,
-    pedidosPagosMes: paidCountMonth,
-    pedidosPendentes,
+    pedidosPagosMes: pedidosPagosMesTotal,
+    pedidosPendentes: pedidosPendentesTotal,
     churnClientes30d: churnClients,
     taxaConversaoPedido30d,
     taxaConversaoLeads30d,
     leadsFunil30d: leads30d,
     leadsConvertidos30d: leadsConverted30d,
-    pedidosIniciados30d: ordersCreated30d,
-    pedidosPagos30d: ordersPaid30d,
+    pedidosIniciados30d: ordersCreated30dTotal,
+    pedidosPagos30d: ordersPaid30dTotal,
     forecastFimMes,
     diasNoMes,
     diaAtual,
@@ -323,7 +413,7 @@ export async function GET() {
       byType: inventoryByType.map((r) => ({ type: r.type, count: r._count.id })),
       byPlatformType: inventoryReady,
     },
-    vendasPagasUltimos7Dias: salesWeekCount,
+    vendasPagasUltimos7Dias: salesWeekCountTotal,
     upsellAlerts,
     tintimTintim: {
       webhookHits30d: tintimWebhookHits30d,

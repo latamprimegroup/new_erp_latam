@@ -389,6 +389,138 @@ export async function notifyAdminsSaleCompleted(
   }
 }
 
+export async function notifyAdminsQuickSaleApproved(opts: {
+  checkoutId: string
+  buyerName: string
+  listingTitle: string
+  quantity: number
+  totalAmount: number
+}): Promise<void> {
+  const adminIds = await getAdminIds()
+  const title = '💰 Venda rápida aprovada'
+  const body = `${opts.quantity}x ${opts.listingTitle} • ${opts.buyerName} • ${opts.totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+  const link = '/dashboard/compras'
+
+  for (const id of adminIds) {
+    await notify({
+      userId: id,
+      title,
+      message: body,
+      link,
+      channels: ['IN_APP'],
+    })
+    await sendPush({
+      userId: id,
+      title,
+      body,
+      link,
+      tag: 'venda-rapida',
+      data: { checkoutId: opts.checkoutId, quantity: opts.quantity },
+    })
+  }
+}
+
+export async function notifyProductionManagerStockSold(opts: {
+  assetId: string
+  niche: string
+  listingTitle?: string | null
+}): Promise<void> {
+  const managers = await prisma.user.findMany({
+    where: { role: { in: ['PRODUCTION_MANAGER', 'ADMIN'] } },
+    select: { id: true },
+  })
+  const title = 'Reposição necessária de estoque'
+  const message = `Ativo ${opts.assetId} vendido.${opts.listingTitle ? ` Produto: ${opts.listingTitle}.` : ''} Repor no nicho ${opts.niche}.`
+  const link = '/dashboard/estoque'
+
+  for (const u of managers) {
+    await notify({ userId: u.id, title, message, link, channels: ['IN_APP'] })
+    await sendPush({
+      userId: u.id,
+      title: '📦 Reposição de estoque',
+      body: message,
+      link,
+      tag: 'stock-reposition',
+      data: { assetId: opts.assetId, niche: opts.niche },
+    })
+  }
+}
+
+export async function notifySellerCommissionUnlocked(opts: {
+  sellerId: string
+  orderId: string
+  publicId: string
+  saleAmount: number
+  commissionAmount: number
+  remainingForTarget: number
+}): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: opts.sellerId },
+    select: { id: true },
+  })
+  if (!user) return
+
+  const title = '🚀 VENDA REALIZADA!'
+  const message = `ID: ${opts.publicId} | Valor: ${opts.saleAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | Sua Comissão: ${opts.commissionAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Faltam ${Math.max(0, opts.remainingForTarget).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} para liberar saques de comissão no mês.`
+  const link = '/dashboard/financeiro?tab=comissoes'
+
+  await notify({
+    userId: user.id,
+    title,
+    message,
+    link,
+    channels: ['IN_APP', 'WHATSAPP'],
+    type: 'SELLER_SALE_CONFIRMED',
+    priority: 'HIGH',
+  })
+}
+
+export async function notifyAdminProfitSaleSummary(opts: {
+  orderId: string
+  publicId: string
+  sellerName: string
+  grossAmount: number
+  supplierCost: number
+  sellerCommission: number
+  managerCommission: number
+  netProfit: number
+  utmifySynced: boolean
+}): Promise<void> {
+  const adminIds = await getAdminIds()
+  const title = '🛡️ ADS ATIVOS - VENDA CONFIRMADA!'
+  const message = [
+    `💰 Bruto: ${opts.grossAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+    `👤 Vendedor: ${opts.sellerName}`,
+    `📉 Custo Ativo: ${opts.supplierCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+    `💸 Comissão Vendedor: ${opts.sellerCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+    `💸 Comissão Gerente: ${opts.managerCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+    `💎 LUCRO LÍQUIDO: ${opts.netProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+    `✅ Status Utmify: ${opts.utmifySynced ? 'Sincronizado' : 'Pendente'}`,
+    `Pedido: ${opts.publicId}`,
+  ].join('\n')
+  const link = '/dashboard/financeiro?tab=overview'
+
+  for (const id of adminIds) {
+    await notify({
+      userId: id,
+      title,
+      message,
+      link,
+      channels: ['IN_APP'],
+      type: 'ADMIN_SALE_PROFIT_SUMMARY',
+      priority: 'HIGH',
+    })
+    await sendPush({
+      userId: id,
+      title,
+      body: `Lucro líquido ${opts.netProfit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} • ${opts.sellerName}`,
+      link,
+      tag: 'sale-profit-summary',
+      data: { orderId: opts.orderId, publicId: opts.publicId },
+    })
+  }
+}
+
 export async function notifyAdminsGuardPolicyPageChanged(
   changePercent: number,
   sourceUrl: string,

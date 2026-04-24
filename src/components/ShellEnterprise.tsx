@@ -40,7 +40,7 @@ export function ShellEnterprise({
   user,
   children,
 }: {
-  user: { name?: string | null; email?: string | null; role?: string }
+  user: { name?: string | null; email?: string | null; role?: string; cargo?: string | null }
   children: React.ReactNode
 }) {
   const { t } = useDashboardI18n()
@@ -48,12 +48,12 @@ export function ShellEnterprise({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const modules = getModulesForRole(user.role)
+  const modules = getModulesForRole(user.role, user.cargo)
 
   return (
     <div className="min-h-screen flex bg-ads-grey-pale dark:bg-ads-navy">
       {user.role === 'CLIENT' ? <ClientPatenteLevelUp /> : null}
-      <CommandPalette userRole={user.role} />
+      <CommandPalette userRole={user.role} userCargo={user.cargo ?? null} />
 
       {/* Sidebar: light = fundo claro | dark = navy + quarter-circle */}
       <aside

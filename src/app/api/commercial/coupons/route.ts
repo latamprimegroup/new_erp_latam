@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
+import { canManageCommercialTeam } from '@/lib/commercial-hierarchy'
 
 const createSchema = z.object({
   code: z.string().min(2).max(40),
@@ -36,6 +37,24 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = createSchema.parse(await req.json())
+    if (
+      session.user.role === 'COMMERCIAL' &&
+      !canManageCommercialTeam(session.user.role, session.user.cargo) &&
+      body.percentOff > 0
+    ) {
+      const maxDiscountSetting = await prisma.systemSetting.findUnique({
+        where: { key: 'commercial_manager_max_discount_pct' },
+        select: { value: true },
+      })
+      const maxDiscountPct = Number.parseFloat(maxDiscountSetting?.value ?? '15')
+      if (body.percentOff > maxDiscountPct) {
+        return NextResponse.json(
+          { error: `Desconto acima do limite autorizado (${maxDiscountPct}%). Solicite aprovação do gerente.` },
+          { status: 403 }
+        )
+      }
+    }
+
     const code = body.code.trim().toUpperCase()
     const row = await prisma.commercialCoupon.create({
       data: {

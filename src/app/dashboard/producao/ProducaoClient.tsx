@@ -89,6 +89,7 @@ type Account = {
   proxyNote?: string | null
   proxyConfigured?: boolean
   cnpjPdfUrl?: string | null
+  passwordPlain?: string | null
   // Melhoria 15/04/2026 — Checkpoint de Auditoria
   productionCost?: number | null
   warmupStatus?: 'NORMAL' | 'WARM_UP' | 'READY_TO_SCALE' | 'FLAGGED' | null
@@ -304,6 +305,7 @@ export function ProducaoClient() {
   })
   const [cnpjPdfFile, setCnpjPdfFile] = useState<File | null>(null)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+  const [copiedQuickAction, setCopiedQuickAction] = useState<string | null>(null)
   const [nowTick, setNowTick] = useState(() => new Date())
   const [duplicateBanner, setDuplicateBanner] = useState<string | null>(null)
   const [pdfRenameBanner, setPdfRenameBanner] = useState<string | null>(null)
@@ -328,6 +330,7 @@ export function ProducaoClient() {
     email: '',
     cnpj: '',
     password: '',
+    currentPassword: '',
     productionNiche: 'OTHER' as string,
     verificationGoal: 'G2_AND_ADVERTISER' as string,
     primaryDomain: '',
@@ -452,6 +455,25 @@ export function ProducaoClient() {
       window.setTimeout(() => setCopiedRowId(null), 2000)
     } catch {
       alert('Não foi possível copiar. Selecione o texto manualmente.')
+    }
+  }
+
+  function cnpjPdfDownloadUrl(accountId: string): string {
+    const path = `/api/producao/${accountId}/arquivo/cnpj-pdf?download=1`
+    if (typeof window === 'undefined') return path
+    return `${window.location.origin}${path}`
+  }
+
+  async function copyQuickValue(value: string, successMessage: string, actionKey: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedQuickAction(actionKey)
+      window.setTimeout(() => {
+        setCopiedQuickAction((prev) => (prev === actionKey ? null : prev))
+      }, 2000)
+      setToast({ kind: 'success', message: successMessage })
+    } catch {
+      setToast({ kind: 'error', message: 'Não foi possível copiar. Tente novamente.' })
     }
   }
 
@@ -836,6 +858,7 @@ export function ProducaoClient() {
       email: account.email || '',
       cnpj: account.cnpj || '',
       password: '',
+      currentPassword: account.passwordPlain || '',
       productionNiche: account.productionNiche || 'OTHER',
       verificationGoal: account.verificationGoal || 'G2_AND_ADVERTISER',
       primaryDomain: account.primaryDomain || '',
@@ -2303,6 +2326,66 @@ export function ProducaoClient() {
                               <span className="text-xs text-gray-500">Domínio principal</span>
                               <p>{a.primaryDomain || '—'}</p>
                             </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Senha atual</span>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-mono break-all">
+                                  {a.passwordPlain?.trim() ? a.passwordPlain : '—'}
+                                </p>
+                                {a.passwordPlain?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        a.passwordPlain || '',
+                                        'Senha copiada para a área de transferência.',
+                                        `dados-senha-${a.id}`
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    {copiedQuickAction === `dados-senha-${a.id}` ? 'Copiado!' : 'Copiar senha'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Cartão CNPJ</span>
+                              {a.cnpjPdfUrl ? (
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPdfPreviewId(a.id)}
+                                    className="btn-secondary text-xs"
+                                  >
+                                    Visualizar PDF
+                                  </button>
+                                  <a
+                                    href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`}
+                                    className="btn-secondary text-xs"
+                                  >
+                                    Baixar cartão CNPJ
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        cnpjPdfDownloadUrl(a.id),
+                                        'Link do cartão CNPJ copiado para a área de transferência.',
+                                        `dados-link-${a.id}`
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    {copiedQuickAction === `dados-link-${a.id}` ? 'Copiado!' : 'Copiar link'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <p>—</p>
+                              )}
+                            </div>
                             <div className="sm:col-span-2 flex gap-2 pt-2">
                               <button
                                 type="button"
@@ -2386,10 +2469,30 @@ export function ProducaoClient() {
 
                         {editKind === 'approved-review' && editTab === 'senha' && (
                           <div className="max-w-md space-y-3">
-                            <p className="text-xs text-gray-500">
-                              A senha não pode ser exibida (armazenada com hash). Defina uma nova para substituir a
-                              anterior.
-                            </p>
+                            <div className="rounded border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-2">
+                              <p className="text-[11px] text-gray-500">Senha atual</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-mono text-sm break-all">
+                                  {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
+                                </p>
+                                {editForm.currentPassword?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        editForm.currentPassword,
+                                        'Senha copiada para a área de transferência.',
+                                        `approved-senha-${a.id}`
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    {copiedQuickAction === `approved-senha-${a.id}` ? 'Copiado!' : 'Copiar senha'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                             <div className="flex gap-2">
                               <input
                                 type={editPasswordVisible ? 'text' : 'password'}
@@ -2408,6 +2511,39 @@ export function ProducaoClient() {
                                 {editPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
                             </div>
+                            {a.cnpjPdfUrl ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPdfPreviewId(a.id)}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Ver cartão CNPJ
+                                </button>
+                                <a
+                                  href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Baixar cartão CNPJ
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    copyQuickValue(
+                                      cnpjPdfDownloadUrl(a.id),
+                                      'Link do cartão CNPJ copiado para a área de transferência.',
+                                      `approved-link-${a.id}`
+                                    )
+                                  }
+                                  className="btn-secondary text-xs"
+                                >
+                                  <Copy className="w-3 h-3 inline mr-1" />
+                                  {copiedQuickAction === `approved-link-${a.id}` ? 'Copiado!' : 'Copiar link'}
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
+                            )}
                             <div className="flex gap-2 pt-1">
                               <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm">
                                 Atualizar senha
@@ -2458,9 +2594,30 @@ export function ProducaoClient() {
                         </div>
                         {editTab === 'senha' ? (
                           <div className="max-w-md space-y-2">
-                            <p className="text-xs text-gray-500">
-                              Digite uma nova senha para substituir a anterior. O armazenamento é em hash (bcrypt).
-                            </p>
+                            <div className="rounded border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-2">
+                              <p className="text-[11px] text-gray-500">Senha atual</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-mono text-sm break-all">
+                                  {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
+                                </p>
+                                {editForm.currentPassword?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        editForm.currentPassword,
+                                        'Senha copiada para a área de transferência.',
+                                        `full-senha-${a.id}`
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    {copiedQuickAction === `full-senha-${a.id}` ? 'Copiado!' : 'Copiar senha'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                             <div className="flex gap-2">
                               <input
                                 type={editPasswordVisible ? 'text' : 'password'}
@@ -2479,6 +2636,39 @@ export function ProducaoClient() {
                                 {editPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
                             </div>
+                            {a.cnpjPdfUrl ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPdfPreviewId(a.id)}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Ver cartão CNPJ
+                                </button>
+                                <a
+                                  href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Baixar cartão CNPJ
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    copyQuickValue(
+                                      cnpjPdfDownloadUrl(a.id),
+                                      'Link do cartão CNPJ copiado para a área de transferência.',
+                                      `full-link-${a.id}`
+                                    )
+                                  }
+                                  className="btn-secondary text-xs"
+                                >
+                                  <Copy className="w-3 h-3 inline mr-1" />
+                                  {copiedQuickAction === `full-link-${a.id}` ? 'Copiado!' : 'Copiar link'}
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
+                            )}
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">

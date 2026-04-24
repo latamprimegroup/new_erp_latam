@@ -10,7 +10,7 @@ const ROLES = ['ADMIN', 'PRODUCER', 'PRODUCTION_MANAGER']
 /**
  * GET — PDF do cartão CNPJ em modo inline (preview no navegador, sem download forçado).
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   if (!session.user?.role || !ROLES.includes(session.user.role)) {
@@ -33,10 +33,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const fullPath = join(process.cwd(), 'uploads', account.cnpjPdfUrl)
     const buf = await readFile(fullPath)
+    const { searchParams } = new URL(req.url)
+    const download = searchParams.get('download') === '1'
     return new NextResponse(buf, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': 'inline; filename="cartao-cnpj.pdf"',
+        'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="cartao-cnpj.pdf"`,
         'Cache-Control': 'private, max-age=3600',
       },
     })

@@ -18,7 +18,7 @@ export async function GET() {
 
   const entries = await prisma.financialEntry.findMany({
     where: {
-      category: 'COMISSOES_VENDEDORES',
+      category: { in: ['COMISSOES_VENDEDORES', 'COMISSAO_GERENTE'] },
       entryStatus: { in: ['PENDING', 'PAID'] },
     },
     orderBy: [{ entryStatus: 'asc' }, { date: 'desc' }],
