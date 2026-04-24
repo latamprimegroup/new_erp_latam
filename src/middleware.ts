@@ -31,6 +31,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/base': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/vendas': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/commercial/seller': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial/manager': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/roi-crm': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/entregas': ['ADMIN', 'DELIVERER'],
@@ -139,7 +140,15 @@ const dashboardAuth = withAuth(
         userRole === 'COMMERCIAL' &&
         !['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(userCargo || '')
       ) {
-        return NextResponse.redirect(new URL('/dashboard/commercial', req.url))
+        return NextResponse.redirect(new URL('/dashboard/commercial/seller', req.url))
+      }
+
+      if (
+        pathname === '/dashboard/commercial' &&
+        userRole === 'COMMERCIAL' &&
+        !['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(userCargo || '')
+      ) {
+        return NextResponse.redirect(new URL('/dashboard/commercial/seller', req.url))
       }
     }
 

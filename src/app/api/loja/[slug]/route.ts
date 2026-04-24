@@ -5,7 +5,9 @@
 import { NextResponse } from 'next/server'
 import { z }           from 'zod'
 import { randomUUID }  from 'crypto'
+import { getServerSession } from 'next-auth/next'
 import { prisma }      from '@/lib/prisma'
+import { authOptions } from '@/lib/auth'
 import { generatePixCharge } from '@/lib/inter/client'
 import { sendUtmifyPixGerado } from '@/lib/utmify'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
@@ -117,6 +119,13 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   } = parsed.data
   const waE164   = whatsapp.startsWith('+') ? whatsapp : `+${whatsapp}`
   const cpfClean = cpf.replace(/\D/g, '')
+  const session = await getServerSession(authOptions).catch(() => null)
+  const checkoutSellerId =
+    session?.user?.role === 'COMMERCIAL' || session?.user?.role === 'ADMIN'
+      ? session.user.id
+      : null
+  const checkoutManagerId =
+    session?.user?.role === 'COMMERCIAL' ? session.user.leaderId ?? null : null
 
   const totalAmount = Number(listing.pricePerUnit) * qty
   const txid        = randomUUID().replace(/-/g, '').slice(0, 35)
@@ -182,6 +191,8 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           pixQrCode:        pixData.qrCodeBase64,
           expiresAt:        pixData.expiresAt,
           reservedAssetIds: assetIds,
+          sellerId:         checkoutSellerId,
+          managerId:        checkoutManagerId,
           utmSource:        utm_source   ?? null,
           utmMedium:        utm_medium   ?? null,
           utmCampaign:      utm_campaign ?? null,

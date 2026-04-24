@@ -197,6 +197,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
+    href: '/dashboard/commercial/seller',
+    label: 'Mesa do Vendedor',
+    roles: ['ADMIN', 'COMMERCIAL'],
+    icon: 'ShoppingCart',
+    group: 'Comercial',
+  },
+  {
     href: '/dashboard/commercial/manager',
     label: 'Head of Sales',
     roles: ['ADMIN', 'COMMERCIAL'],
@@ -614,7 +621,7 @@ export const MODULES_PLUGPLAY: NavItem[] = [
 function isCommercialManagerCargo(cargo?: string | null): boolean {
   const c = (cargo || '').trim().toUpperCase()
   if (!c) return false
-  return c.includes('GERENTE') || c.includes('HEAD')
+  return c.includes('GERENTE') || c.includes('HEAD') || c === 'MANAGER'
 }
 
 export function getModulesForRole(role?: string, cargo?: string | null): NavItem[] {
@@ -631,5 +638,12 @@ export function getModulesForRole(role?: string, cargo?: string | null): NavItem
   if (role !== 'COMMERCIAL') return roleFiltered
 
   const canSeeManagerModule = isCommercialManagerCargo(cargo)
-  return roleFiltered.filter((m) => canSeeManagerModule || m.href !== '/dashboard/commercial/manager')
+  return roleFiltered.filter((m) => {
+    if (canSeeManagerModule) {
+      return m.href !== '/dashboard/commercial/seller'
+    }
+    if (m.href === '/dashboard/commercial') return false
+    if (m.href === '/dashboard/commercial/manager') return false
+    return true
+  })
 }

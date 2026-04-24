@@ -9,7 +9,7 @@ export default async function CommercialManagerPage() {
   if (!session) redirect('/login')
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) redirect('/dashboard')
   if (!canManageCommercialTeam(session.user?.role, session.user?.cargo)) {
-    redirect('/dashboard/commercial')
+    redirect('/dashboard/commercial/seller')
   }
 
   return (
