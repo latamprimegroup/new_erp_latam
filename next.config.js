@@ -3,6 +3,12 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   fallbacks: { document: '/~offline' },
+  // Força o SW a activar imediatamente e limpar caches antigos a cada novo deploy
+  skipWaiting: true,
+  clientsClaim: true,
+  reloadOnOnline: true,
+  // Cache pages com NetworkFirst para garantir conteúdo sempre actualizado
+  runtimeCaching: [],
 })
 
 /** @type {import('next').NextConfig} */
