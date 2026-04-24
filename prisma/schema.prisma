@@ -4927,6 +4927,14 @@ model FastEntryDraft {
   rawText       String?  @map("raw_text") @db.Text
   /// Indica se foi enviado como imagem (base64 foi processado pela Vision API)
   hadImage      Boolean  @default(false) @map("had_image")
+  /// Canal de origem: MANUAL (tela), WHATSAPP (webhook Evolution), EMAIL (futuro)
+  source        String   @default("MANUAL") @map("source") @db.VarChar(20)
+  /// ID da mensagem WhatsApp (deduplicação)
+  waMessageId   String?  @map("wa_message_id") @db.VarChar(100)
+  /// Número do remetente WhatsApp (E.164)
+  waSender      String?  @map("wa_sender") @db.VarChar(30)
+  /// Nome do remetente (vindo da Evolution API)
+  waSenderName  String?  @map("wa_sender_name") @db.VarChar(100)
 
   // ── Dados extraídos pela ALFREDO IA ──────────────────────────────────────
   extractedAmount      Decimal? @map("extracted_amount")      @db.Decimal(12, 2)
@@ -4959,6 +4967,7 @@ model FastEntryDraft {
   @@index([status, createdAt(sort: Desc)])
   @@index([extractedTransactionId])
   @@index([createdById])
+  @@index([waMessageId])
   @@map("fast_entry_drafts")
 }
 
