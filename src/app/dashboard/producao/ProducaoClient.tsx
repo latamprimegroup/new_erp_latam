@@ -3,7 +3,7 @@
 import { Fragment, useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
-import { Eye, EyeOff, Copy, Check, Search, Pencil, Trash2, Send, FileText, ShieldAlert, ClipboardList } from 'lucide-react'
+import { Eye, EyeOff, Copy, Check, Search, Pencil, Trash2, Send, FileText, ShieldAlert, ClipboardList, Loader2 } from 'lucide-react'
 import { SkeletonCards, SkeletonTable } from '@/components/Skeleton'
 import { ProductionChecklist } from '@/components/producao/ProductionChecklist'
 import { ProductionFeedback } from '@/components/producao/ProductionFeedback'
@@ -304,6 +304,8 @@ export function ProducaoClient() {
     warmupStatus: 'NORMAL' as string,
   })
   const [cnpjPdfFile, setCnpjPdfFile] = useState<File | null>(null)
+  const [editCnpjPdfFile, setEditCnpjPdfFile] = useState<File | null>(null)
+  const [uploadingCnpj, setUploadingCnpj] = useState(false)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
   const [copiedQuickAction, setCopiedQuickAction] = useState<string | null>(null)
   const [nowTick, setNowTick] = useState(() => new Date())
@@ -912,6 +914,27 @@ export function ProducaoClient() {
     }
   }
 
+  async function handleEditCnpjUpload(id: string) {
+    if (!editCnpjPdfFile) return
+    setUploadingCnpj(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', editCnpjPdfFile)
+      const res = await fetch(`/api/producao/${id}/cnpj-pdf`, { method: 'POST', body: fd })
+      if (res.ok) {
+        setEditCnpjPdfFile(null)
+        setToast({ kind: 'success', message: 'Cartão CNPJ enviado com sucesso.' })
+        load()
+      } else {
+        const e = await res.json().catch(() => ({}))
+        setToast({ kind: 'error', message: e.error || 'Erro ao enviar cartão CNPJ.' })
+      }
+    } catch {
+      setToast({ kind: 'error', message: 'Falha de rede ao enviar PDF.' })
+    }
+    setUploadingCnpj(false)
+  }
+
   async function handleSaveEdit() {
     if (!editingId) return
     if (editKind === 'approved-review') {
@@ -998,6 +1021,18 @@ export function ProducaoClient() {
       body: JSON.stringify(payload),
     })
     if (res.ok) {
+      // Se há um PDF novo selecionado, envia junto
+      if (editCnpjPdfFile) {
+        const fd = new FormData()
+        fd.append('file', editCnpjPdfFile)
+        const pdfRes = await fetch(`/api/producao/${editingId}/cnpj-pdf`, { method: 'POST', body: fd })
+        if (pdfRes.ok) {
+          setEditCnpjPdfFile(null)
+          setToast({ kind: 'success', message: 'Conta e cartão CNPJ atualizados.' })
+        } else {
+          setToast({ kind: 'error', message: 'Conta salva, mas erro ao enviar PDF do CNPJ.' })
+        }
+      }
       setEditingId(null)
       setEditKind('full')
       load()
@@ -2542,7 +2577,38 @@ export function ProducaoClient() {
                                 </button>
                               </div>
                             ) : (
-                              <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
+                              <div className="space-y-2">
+                                <p className="text-xs text-amber-600 font-medium">Cartão CNPJ não enviado.</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-dashed border-primary-400 text-xs text-primary-600 cursor-pointer hover:bg-primary-50 dark:hover:bg-primary-950/20 transition-colors">
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {editCnpjPdfFile ? editCnpjPdfFile.name : 'Selecionar PDF'}
+                                    <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setEditCnpjPdfFile(e.target.files?.[0] || null)} />
+                                  </label>
+                                  {editCnpjPdfFile && (
+                                    <button type="button" onClick={() => handleEditCnpjUpload(a.id)} disabled={uploadingCnpj}
+                                      className="btn-primary text-xs flex items-center gap-1">
+                                      {uploadingCnpj ? <><Loader2 className="w-3 h-3 animate-spin" />Enviando...</> : 'Enviar cartão CNPJ'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {a.cnpjPdfUrl && (
+                              <div className="space-y-1">
+                                <p className="text-xs text-gray-500">Substituir cartão CNPJ:</p>
+                                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-dashed border-gray-300 text-xs text-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                                  <FileText className="w-3.5 h-3.5" />
+                                  {editCnpjPdfFile ? editCnpjPdfFile.name : 'Selecionar novo PDF'}
+                                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setEditCnpjPdfFile(e.target.files?.[0] || null)} />
+                                </label>
+                                {editCnpjPdfFile && (
+                                  <button type="button" onClick={() => handleEditCnpjUpload(a.id)} disabled={uploadingCnpj}
+                                    className="btn-primary text-xs flex items-center gap-1">
+                                    {uploadingCnpj ? <><Loader2 className="w-3 h-3 animate-spin" />Enviando...</> : 'Substituir PDF'}
+                                  </button>
+                                )}
+                              </div>
                             )}
                             <div className="flex gap-2 pt-1">
                               <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm">
@@ -2667,7 +2733,36 @@ export function ProducaoClient() {
                                 </button>
                               </div>
                             ) : (
-                              <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
+                              <div className="space-y-2">
+                                <p className="text-xs text-amber-600 font-medium">Cartão CNPJ não enviado.</p>
+                                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-dashed border-primary-400 text-xs text-primary-600 cursor-pointer hover:bg-primary-50 dark:hover:bg-primary-950/20 transition-colors w-fit">
+                                  <FileText className="w-3.5 h-3.5" />
+                                  {editCnpjPdfFile ? editCnpjPdfFile.name : 'Selecionar PDF'}
+                                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setEditCnpjPdfFile(e.target.files?.[0] || null)} />
+                                </label>
+                                {editCnpjPdfFile && (
+                                  <button type="button" onClick={() => handleEditCnpjUpload(a.id)} disabled={uploadingCnpj}
+                                    className="btn-primary text-xs flex items-center gap-1">
+                                    {uploadingCnpj ? <><Loader2 className="w-3 h-3 animate-spin" />Enviando...</> : 'Enviar cartão CNPJ'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {a.cnpjPdfUrl && (
+                              <div className="space-y-1 mt-1">
+                                <p className="text-xs text-gray-500">Substituir PDF:</p>
+                                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-dashed border-gray-300 text-xs text-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors w-fit">
+                                  <FileText className="w-3.5 h-3.5" />
+                                  {editCnpjPdfFile ? editCnpjPdfFile.name : 'Novo PDF'}
+                                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setEditCnpjPdfFile(e.target.files?.[0] || null)} />
+                                </label>
+                                {editCnpjPdfFile && (
+                                  <button type="button" onClick={() => handleEditCnpjUpload(a.id)} disabled={uploadingCnpj}
+                                    className="btn-primary text-xs flex items-center gap-1">
+                                    {uploadingCnpj ? <><Loader2 className="w-3 h-3 animate-spin" />Enviando...</> : 'Substituir'}
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         ) : (
