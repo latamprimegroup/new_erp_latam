@@ -1,8 +1,6 @@
 import { getServerSession } from 'next-auth/next'
 import { authOptions }      from '@/lib/auth'
 import { redirect }         from 'next/navigation'
-import Link                 from 'next/link'
-import { signOut }          from 'next-auth/react'
 import LogoutButton         from './LogoutButton'
 
 export const metadata = { title: 'Aguardando Aprovação — Ads Ativos OS' }
