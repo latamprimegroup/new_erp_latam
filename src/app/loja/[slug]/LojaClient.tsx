@@ -84,9 +84,10 @@ function useCountdown(expiresAt: string | null) {
 interface Props {
   slug:    string
   urlUtms: Record<string, string | undefined>
+  checkoutId?: string
 }
 
-export function LojaClient({ slug, urlUtms }: Props) {
+export function LojaClient({ slug, urlUtms, checkoutId }: Props) {
   const [step, setStep]       = useState<Step>('loading')
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
@@ -141,6 +142,38 @@ export function LojaClient({ slug, urlUtms }: Props) {
       } catch { /* ignora */ }
     }, 5000)
   }, [slug])
+
+  // Restaura checkout existente (link vindo do WhatsApp)
+  useEffect(() => {
+    if (!checkoutId) return
+
+    fetch(`/api/loja/${slug}?checkoutId=${checkoutId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.error) return
+        if (data.status === 'PAID') {
+          setStep('success')
+          return
+        }
+        if (data.pixCopyPaste && data.qrCodeBase64 && data.expiresAt) {
+          setPixData({
+            checkoutId,
+            txid: '',
+            pixCopyPaste: data.pixCopyPaste,
+            qrCodeBase64: data.qrCodeBase64,
+            expiresAt: data.expiresAt,
+            totalAmount: Number(data.totalAmount ?? 0),
+            qty: Number(data.qty ?? 1),
+            title: data.title ?? product?.title ?? 'Checkout PIX',
+          })
+          setStep('pix')
+          startPolling(checkoutId)
+        }
+      })
+      .catch(() => {
+        // não bloqueia fluxo principal se consulta falhar
+      })
+  }, [checkoutId, slug, product?.title, startPolling])
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 

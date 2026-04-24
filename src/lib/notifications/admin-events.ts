@@ -389,6 +389,37 @@ export async function notifyAdminsSaleCompleted(
   }
 }
 
+export async function notifyAdminsQuickSaleApproved(opts: {
+  checkoutId: string
+  buyerName: string
+  listingTitle: string
+  quantity: number
+  totalAmount: number
+}): Promise<void> {
+  const adminIds = await getAdminIds()
+  const title = '💰 Venda rápida aprovada'
+  const body = `${opts.quantity}x ${opts.listingTitle} • ${opts.buyerName} • ${opts.totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+  const link = '/dashboard/compras'
+
+  for (const id of adminIds) {
+    await notify({
+      userId: id,
+      title,
+      message: body,
+      link,
+      channels: ['IN_APP'],
+    })
+    await sendPush({
+      userId: id,
+      title,
+      body,
+      link,
+      tag: 'venda-rapida',
+      data: { checkoutId: opts.checkoutId, quantity: opts.quantity },
+    })
+  }
+}
+
 export async function notifyAdminsGuardPolicyPageChanged(
   changePercent: number,
   sourceUrl: string,

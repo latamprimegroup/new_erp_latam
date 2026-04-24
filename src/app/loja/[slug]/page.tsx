@@ -19,6 +19,8 @@ export default function LojaPage({ params, searchParams }: Props) {
   const utms = Object.fromEntries(
     utmKeys.map((k) => [k, typeof searchParams[k] === 'string' ? searchParams[k] : undefined]),
   ) as Record<string, string | undefined>
+  const initialCheckoutId =
+    typeof searchParams.checkoutId === 'string' ? searchParams.checkoutId : undefined
 
-  return <LojaClient slug={params.slug} urlUtms={utms} />
+  return <LojaClient slug={params.slug} urlUtms={utms} checkoutId={initialCheckoutId} />
 }

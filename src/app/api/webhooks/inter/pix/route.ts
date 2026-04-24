@@ -17,7 +17,7 @@ import { prisma } from '@/lib/prisma'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 import { syncClientLTV } from '@/lib/client-ltv'
-import { notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
+import { notifyAdminsQuickSaleApproved, notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
 import { sendUtmifyConversion } from '@/lib/utmify'
 
 export const runtime = 'nodejs'
@@ -269,6 +269,23 @@ export async function POST(req: NextRequest) {
       })
       checkoutsUpdated++
 
+      // 3a.1. Lança receita no Financeiro (vendas do dia / ERP)
+      await prisma.financialEntry.create({
+        data: {
+          type:          'INCOME',
+          category:      'RECEITA_COMERCIAL',
+          value:         Number(quickCheckout.totalAmount),
+          currency:      'BRL',
+          date:          paidAt,
+          dueDate:       paidAt,
+          paymentDate:   paidAt,
+          entryStatus:   'PAID',
+          paymentMethod: 'PIX',
+          reconciled:    false,
+          description:   `Venda Rápida: ${quickCheckout.listing.title} | Checkout: ${quickCheckout.id} | Cliente: ${quickCheckout.buyerName}`,
+        },
+      }).catch((e) => console.error('[QuickCheckout] Falha ao registrar receita financeira:', e))
+
       // 3b. Marca todos os ativos reservados como SOLD
       if (assetIds.length > 0) {
         await prisma.asset.updateMany({
@@ -316,6 +333,14 @@ export async function POST(req: NextRequest) {
           }
         }).catch((e) => console.error('[Utmify/Quick]', e))
       }
+
+      notifyAdminsQuickSaleApproved({
+        checkoutId:  quickCheckout.id,
+        buyerName:   quickCheckout.buyerName,
+        listingTitle: quickCheckout.listing.title,
+        quantity:    quickCheckout.qty,
+        totalAmount: Number(quickCheckout.totalAmount),
+      }).catch((e) => console.error('[QuickCheckout] Falha ao notificar admins:', e))
 
       // 3d. WhatsApp — entrega automática multi-ativo (fire-and-forget)
       if (!quickCheckout.deliverySent) {
