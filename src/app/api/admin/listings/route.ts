@@ -8,10 +8,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
 
-async function requireAdmin() {
+async function requireAccess() {
   const session = await getServerSession(authOptions)
   if (!session?.user) return null
-  if (!['ADMIN', 'CEO'].includes(session.user.role ?? '')) return null
+  if (!['ADMIN', 'CEO', 'COMMERCIAL'].includes(session.user.role ?? '')) return null
   return session.user
 }
 
@@ -29,7 +29,7 @@ const createSchema = z.object({
 // ─── GET ─────────────────────────────────────────────────────────────────────
 
 export async function GET() {
-  const user = await requireAdmin()
+  const user = await requireAccess()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const listings = await prisma.productListing.findMany({
@@ -86,7 +86,7 @@ function slugify(text: string) {
 }
 
 export async function POST(req: globalThis.Request) {
-  const user = await requireAdmin()
+  const user = await requireAccess()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   let body: unknown

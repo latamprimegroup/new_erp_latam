@@ -13,9 +13,9 @@ export default async function CommercialOxygenPage() {
       <div>
         <h1 className="heading-1">Pulmão Comercial</h1>
         <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 max-w-3xl">
-          KPIs, checkout (confirmar / WhatsApp com log), cupons, rascunho de link de pagamento, CRM com repescagem 15d e
-          ranking, estoque por plataforma, fila de solicitações, log de contatos e Telegram na solicitação do cliente +
-          no PIX confirmado.
+          KPIs, checkout (confirmar / WhatsApp com log), cupons, links de venda rápida com PIX/QR para WhatsApp, rascunho de
+          pagamento, CRM com repescagem 15d e ranking, estoque por plataforma, fila de solicitações, log de contatos e Telegram na
+          solicitação do cliente + no PIX confirmado.
         </p>
       </div>
       <CommercialOxygenClient />
