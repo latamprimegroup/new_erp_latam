@@ -6,11 +6,8 @@ export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
+    // Não passar datasources explicitamente — Prisma lê DATABASE_URL do env automaticamente.
+    // Passar url: undefined causa PrismaClientConstructorValidationError durante o build no Vercel.
   })
 
 // Reutiliza a instância em todos os ambientes (crítico no serverless/Vercel)
