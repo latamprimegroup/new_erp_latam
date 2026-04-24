@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { ReputationCard } from '@/components/dashboard/ReputationCard'
+import { Pencil, Trash2, X, Loader2, Save } from 'lucide-react'
 
 type Client = {
   id: string
@@ -218,6 +219,52 @@ export function VendasClient() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
+
+  // ── Editar / Excluir venda ────────────────────────────────────────────────
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
+  const [editForm, setEditForm] = useState({ product: '', accountType: '', quantity: 1, value: 0, currency: 'BRL', status: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [deletingOrder, setDeletingOrder] = useState<Order | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  function openEdit(o: Order) {
+    setEditingOrder(o)
+    setEditForm({ product: o.product, accountType: o.accountType, quantity: o.quantity, value: Number(o.value), currency: o.currency || 'BRL', status: o.status })
+    setEditError('')
+  }
+
+  async function saveEdit() {
+    if (!editingOrder) return
+    setEditSaving(true); setEditError('')
+    const res = await fetch(`/api/vendas/${editingOrder.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product: editForm.product, accountType: editForm.accountType, quantity: Number(editForm.quantity), value: Number(editForm.value), currency: editForm.currency, status: editForm.status }),
+    })
+    if (res.ok) {
+      setEditingOrder(null)
+      loadOrders()
+    } else {
+      const d = await res.json()
+      setEditError(d.error || 'Erro ao salvar')
+    }
+    setEditSaving(false)
+  }
+
+  async function confirmDelete() {
+    if (!deletingOrder) return
+    setDeleteLoading(true)
+    const res = await fetch(`/api/vendas/${deletingOrder.id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setDeletingOrder(null)
+      loadOrders()
+    } else {
+      const d = await res.json()
+      alert(d.error || 'Erro ao excluir')
+    }
+    setDeleteLoading(false)
+  }
   const [form, setForm] = useState({
     clientId: '',
     country: '',
@@ -687,7 +734,8 @@ export function VendasClient() {
                   <th className="pb-2 pr-4">Garantia</th>
                   <th className="pb-2 pr-4">Status</th>
                   <th className="pb-2 pr-4">Ficha</th>
-                  <th className="pb-2">Vendedor</th>
+                  <th className="pb-2 pr-4">Vendedor</th>
+                  {canCreateOrder && <th className="pb-2"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -728,7 +776,29 @@ export function VendasClient() {
                         War Room
                       </Link>
                     </td>
-                    <td className="py-3">{o.seller?.name || '—'}</td>
+                    <td className="py-3 pr-4">{o.seller?.name || '—'}</td>
+                    {canCreateOrder && (
+                      <td className="py-3">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(o)}
+                            className="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-500 hover:text-blue-700 transition-colors"
+                            title="Editar venda"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingOrder(o)}
+                            className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-400 hover:text-red-600 transition-colors"
+                            title="Excluir venda"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -737,5 +807,88 @@ export function VendasClient() {
         </div>
       </div>
     </div>
+
+    {/* ── Modal de Edição ───────────────────────────────────────────────── */}
+    {editingOrder && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg text-zinc-800 dark:text-zinc-100">✏️ Editar Venda</h3>
+            <button onClick={() => setEditingOrder(null)} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800">
+              <X className="w-4 h-4 text-zinc-400" />
+            </button>
+          </div>
+          <p className="text-xs text-zinc-400 font-mono">ID: {editingOrder.id.slice(0, 8)}</p>
+
+          {editError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg border border-red-200">⚠️ {editError}</p>}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Produto</label>
+              <input value={editForm.product} onChange={(e) => setEditForm(f => ({ ...f, product: e.target.value }))} className="input-field w-full text-sm" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Tipo de Conta</label>
+              <input value={editForm.accountType} onChange={(e) => setEditForm(f => ({ ...f, accountType: e.target.value }))} className="input-field w-full text-sm" placeholder="Ex: BRL MANUAL" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Quantidade</label>
+              <input type="number" min={1} value={editForm.quantity} onChange={(e) => setEditForm(f => ({ ...f, quantity: Number(e.target.value) }))} className="input-field w-full text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Valor (total)</label>
+              <input type="number" min={0} step={0.01} value={editForm.value} onChange={(e) => setEditForm(f => ({ ...f, value: Number(e.target.value) }))} className="input-field w-full text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Moeda</label>
+              <select value={editForm.currency} onChange={(e) => setEditForm(f => ({ ...f, currency: e.target.value }))} className="input-field w-full text-sm">
+                <option value="BRL">BRL — Real</option>
+                <option value="USD">USD — Dólar</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Status</label>
+              <select value={editForm.status} onChange={(e) => setEditForm(f => ({ ...f, status: e.target.value }))} className="input-field w-full text-sm">
+                {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <button onClick={() => setEditingOrder(null)} className="btn-secondary text-sm">Cancelar</button>
+            <button onClick={saveEdit} disabled={editSaving} className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-60">
+              {editSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {editSaving ? 'Salvando...' : 'Salvar alterações'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Modal de Confirmação de Exclusão ─────────────────────────────── */}
+    {deletingOrder && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 text-center">
+          <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto">
+            <Trash2 className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-zinc-800 dark:text-zinc-100">Excluir venda?</h3>
+            <p className="text-sm text-zinc-500 mt-1">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">{deletingOrder.client.user.name || deletingOrder.client.user.email}</span>
+              {' — '}{deletingOrder.product}
+            </p>
+            <p className="text-xs text-red-500 mt-2">Esta ação não pode ser desfeita.</p>
+          </div>
+          <div className="flex gap-2 justify-center">
+            <button onClick={() => setDeletingOrder(null)} className="btn-secondary text-sm px-5">Cancelar</button>
+            <button onClick={confirmDelete} disabled={deleteLoading} className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-60">
+              {deleteLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {deleteLoading ? 'Excluindo...' : 'Sim, excluir'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   )
 }
