@@ -7,6 +7,7 @@ import { syncClientLTV } from '@/lib/client-ltv'
 import { notifyAdminsSaleCompleted } from '@/lib/notifications/admin-events'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
+import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
 
 /** Confirma pagamento manual (S2S / caixa) com auditoria + bridge Oxygen. */
 export async function POST(
@@ -70,6 +71,7 @@ export async function POST(
     platforms
   ).catch(console.error)
   runCommercialOrderPaidBridge(id, 'manual_confirm').catch((e) => console.error('bridge', e))
+  handleSaleToFinancialBridge(id, 'manual_confirm').catch((e) => console.error('financial bridge', e))
 
   return NextResponse.json(updated)
 }

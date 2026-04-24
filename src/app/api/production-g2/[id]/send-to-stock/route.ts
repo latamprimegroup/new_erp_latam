@@ -4,6 +4,7 @@ import { registerG2AssetsConsumed } from '@/lib/g2-agent'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
 import { notifyAdminsStockAdded } from '@/lib/notifications/admin-events'
+import { registerAssetReadyBonus } from '@/lib/incentive-engine'
 
 /**
  * POST - Envia para estoque (apenas se APROVADA)
@@ -127,6 +128,12 @@ export async function POST(
       },
     })
   }
+
+  registerAssetReadyBonus({
+    assetId: result.stockAccountId,
+    referenceType: 'G2',
+    referenceId: id,
+  }).catch((e) => console.error('[Incentive] g2 ready bonus', e))
 
   notifyAdminsStockAdded(g2.codeG2, 'GOOGLE_ADS').catch(console.error)
 

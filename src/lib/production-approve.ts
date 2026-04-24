@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/lib/audit'
 import { notifyAdminsProductionAccountApproved } from '@/lib/notifications/admin-events'
+import { registerProductionReadyBonus } from '@/lib/incentive-engine'
 
 export type ApproveProductionResult =
   | { ok: true; stockAccountId: string }
@@ -55,6 +56,14 @@ export async function approveProductionAccount(
     entityId: id,
     details: { stockAccountId: stock.id },
   })
+
+  await registerProductionReadyBonus({
+    technicianUserId: production.producerId,
+    referenceType: 'PRODUCTION',
+    referenceId: production.id,
+    publicAssetId: stock.id,
+    paidAt: new Date(),
+  }).catch((e) => console.error('[production incentive bonus]', e))
 
   notifyAdminsProductionAccountApproved(production.platform).catch(console.error)
 

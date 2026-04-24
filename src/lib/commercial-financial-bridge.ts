@@ -12,9 +12,7 @@
 import { prisma } from './prisma'
 import { audit } from './audit'
 import { notify } from './notifications'
-
-/** Taxa de comissão padrão caso o vendedor não tenha uma configurada (5%) */
-const DEFAULT_COMMISSION_RATE = 5.0
+import { calculateOrderIncentiveBreakdown } from './incentive-engine'
 
 /** Categorias usadas nos lançamentos automáticos */
 const CATEGORY_RECEITA   = 'RECEITA_COMERCIAL'
@@ -53,6 +51,7 @@ export async function handleSaleToFinancialBridge(
     const clientName = order.client?.user?.name ?? order.client?.user?.email ?? 'Cliente'
     const sellerName = order.seller?.name ?? null
     const originTag  = `comercial_venda_${orderId}`
+    const incentive = await calculateOrderIncentiveBreakdown(orderId)
 
     // ── 1. Lançamento de Receita (Contas a Receber) ──────────────────────────
     const incomeEntry = await prisma.financialEntry.create({
@@ -78,23 +77,21 @@ export async function handleSaleToFinancialBridge(
           .filter(Boolean)
           .join(' | '),
         reconciled: false,
-        netProfit: orderValue,
+        netProfit: incentive.netProfit,
       },
     })
 
     // ── 2. Provisão de Comissão (Contas a Pagar) ─────────────────────────────
     let commissionEntry = null
-    if (order.seller) {
-      const rate        = Number(order.seller.commissionRate ?? DEFAULT_COMMISSION_RATE)
-      const commission  = parseFloat(((orderValue * rate) / 100).toFixed(2))
-
-      if (commission > 0) {
+    if (order.seller && incentive.sellerCommission > 0) {
+      const rate = Number(order.seller.commissionRate ?? 5)
+      if (incentive.sellerCommission > 0) {
         commissionEntry = await prisma.financialEntry.create({
           data: {
             type:        'EXPENSE',
             category:    CATEGORY_COMISSAO,
             costCenter:  order.seller.id,
-            value:       commission,
+            value:       incentive.sellerCommission,
             currency:    order.currency ?? 'BRL',
             date:        new Date(),
             entryStatus: 'PENDING',
@@ -110,6 +107,39 @@ export async function handleSaleToFinancialBridge(
       }
     }
 
+    let managerEntry = null
+    if (incentive.managerCommission > 0 && incentive.managerId) {
+      managerEntry = await prisma.financialEntry.create({
+        data: {
+          type:        'EXPENSE',
+          category:    'COMISSAO_GERENTE',
+          costCenter:  incentive.managerId,
+          value:       incentive.managerCommission,
+          currency:    order.currency ?? 'BRL',
+          date:        new Date(),
+          entryStatus: 'PENDING',
+          orderId:     order.id,
+          description: [
+            `Override gerente comercial`,
+            `Pedido ${orderId}`,
+            `Aguardando pagamento ao gerente`,
+          ].join(' | '),
+          reconciled: false,
+        },
+      })
+    }
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        sellerCommission: incentive.sellerCommission,
+        managerCommission: incentive.managerCommission,
+        supplierCost: incentive.supplierCost,
+        netProfit: incentive.netProfit,
+        sellerMetaUnlocked: incentive.sellerMetaUnlocked,
+      },
+    })
+
     // ── 3. Notificação para time Financeiro ──────────────────────────────────
     const financeUsers = await prisma.user.findMany({
       where: { role: { in: ['FINANCE', 'ADMIN'] } },
@@ -122,7 +152,7 @@ export async function handleSaleToFinancialBridge(
           userId:   u.id,
           type:     'SALE_FINANCIAL_BRIDGE',
           title:    `Nova venda: ${clientCode ?? clientName}`,
-          message:  `R$ ${orderValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} — ${order.product} (${order.quantity} un.)${commissionEntry ? ` | Comissão provisionada` : ''}`,
+          message:  `R$ ${orderValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} — ${order.product} (${order.quantity} un.)${commissionEntry ? ` | Comissão vendedor provisionada` : ''}${managerEntry ? ' | Override gerente provisionado' : ''} | Lucro líquido: R$ ${incentive.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
           link:     `/dashboard/financeiro?tab=conciliacao_vendas`,
           channels: ['IN_APP'],
           priority: 'HIGH',
@@ -140,9 +170,15 @@ export async function handleSaleToFinancialBridge(
         triggeredBy,
         incomeEntryId:     incomeEntry.id,
         commissionEntryId: commissionEntry?.id ?? null,
+        managerEntryId: managerEntry?.id ?? null,
         orderValue,
         clientCode,
         sellerName,
+        sellerCommission: incentive.sellerCommission,
+        managerCommission: incentive.managerCommission,
+        supplierCost: incentive.supplierCost,
+        netProfit: incentive.netProfit,
+        sellerMetaUnlocked: incentive.sellerMetaUnlocked,
       },
     })
 
