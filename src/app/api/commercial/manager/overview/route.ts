@@ -34,33 +34,36 @@ async function getCpaMedioEquipe(opts: {
 }): Promise<number | null> {
   if (opts.sellerIds.length === 0) return null
 
-  const [paidOrders, paidQuick, campaignSpend] = await Promise.all([
-    prisma.order.count({
-      where: {
-        sellerId: { in: opts.sellerIds },
-        paidAt: { gte: opts.start, lte: opts.end },
-        status: { in: [...PAID_STATUSES] },
-      },
-    }),
-    prisma.quickSaleCheckout.count({
-      where: {
-        sellerId: { in: opts.sellerIds },
-        paidAt: { gte: opts.start, lte: opts.end },
-        status: 'PAID',
-      },
-    }),
-    prisma.intelligenceCampaignSpend.aggregate({
-      where: {
-        periodMonth: { gte: opts.start, lte: opts.end },
-      },
-      _sum: { spendBrl: true },
-    }),
-  ])
+  try {
+    const [paidOrders, paidQuick, campaignSpend] = await Promise.all([
+      prisma.order.count({
+        where: {
+          sellerId: { in: opts.sellerIds },
+          paidAt: { gte: opts.start, lte: opts.end },
+          status: { in: [...PAID_STATUSES] },
+        },
+      }),
+      prisma.quickSaleCheckout.count({
+        where: {
+          sellerId: { in: opts.sellerIds },
+          paidAt: { gte: opts.start, lte: opts.end },
+          status: 'PAID',
+        },
+      }),
+      // Tabela opcional — pode não existir ainda em produção
+      prisma.intelligenceCampaignSpend.aggregate({
+        where: { periodMonth: { gte: opts.start, lte: opts.end } },
+        _sum: { spendBrl: true },
+      }).catch(() => ({ _sum: { spendBrl: 0 } })),
+    ])
 
-  const conversions = paidOrders + paidQuick
-  if (conversions === 0) return null
-  const spend = Number(campaignSpend._sum.spendBrl ?? 0)
-  return Math.round((spend / conversions) * 100) / 100
+    const conversions = paidOrders + paidQuick
+    if (conversions === 0) return null
+    const spend = Number(campaignSpend._sum.spendBrl ?? 0)
+    return Math.round((spend / conversions) * 100) / 100
+  } catch {
+    return null
+  }
 }
 
 export const dynamic = 'force-dynamic'

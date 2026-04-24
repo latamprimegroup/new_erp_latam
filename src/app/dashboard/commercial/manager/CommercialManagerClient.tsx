@@ -118,7 +118,8 @@ export function CommercialManagerClient() {
     setLoading(true)
     setErr(null)
     try {
-      const [ov, au, pd, leadsRes, sellersRes] = await Promise.all([
+      // Carrega em paralelo mas tolera falhas individuais
+      const [ovRes, auRes, pdRes, leadsRes, sellersRes] = await Promise.allSettled([
         fetch('/api/commercial/manager/overview').then(safeJson<OverviewPayload>),
         fetch(`/api/commercial/manager/auditoria-vendas${sellerFilter !== 'all' ? `?sellerId=${encodeURIComponent(sellerFilter)}` : ''}`)
           .then(safeJson<{ rows: AuditRow[] }>),
@@ -127,14 +128,38 @@ export function CommercialManagerClient() {
         fetch('/api/commercial/manager/leads/distribuir').then(safeJson<SellersPayload>),
       ])
 
-      setOverview(ov)
-      setAuditRows(au.rows || [])
-      setPayday(pd)
-      setLeads(leadsRes.leads || [])
-      setSellers(sellersRes.sellers || [])
-      setDiscountCapPct(ov.config.maxDiscountPct)
-      if (!targetSellerId && sellersRes.sellers?.[0]) setTargetSellerId(sellersRes.sellers[0].id)
-      if (!leadId && leadsRes.leads?.[0]) setLeadId(leadsRes.leads[0].id)
+      if (ovRes.status === 'fulfilled') {
+        setOverview(ovRes.value)
+        setDiscountCapPct(ovRes.value.config.maxDiscountPct)
+      } else {
+        console.warn('[manager] overview falhou:', ovRes.reason)
+      }
+
+      if (auRes.status === 'fulfilled') {
+        setAuditRows(auRes.value.rows || [])
+      }
+
+      if (pdRes.status === 'fulfilled') {
+        setPayday(pdRes.value)
+      }
+
+      if (leadsRes.status === 'fulfilled') {
+        const ls = leadsRes.value.leads || []
+        setLeads(ls)
+        if (!leadId && ls[0]) setLeadId(ls[0].id)
+      }
+
+      if (sellersRes.status === 'fulfilled') {
+        const ss = sellersRes.value.sellers || []
+        setSellers(ss)
+        if (!targetSellerId && ss[0]) setTargetSellerId(ss[0].id)
+      }
+
+      // Só mostra erro fatal se o overview principal falhar
+      const criticalFailed = ovRes.status === 'rejected'
+      if (criticalFailed) {
+        setErr('Erro ao carregar visão geral. Verifique a ligação e tente novamente.')
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erro ao carregar dashboard do gerente')
     } finally {
