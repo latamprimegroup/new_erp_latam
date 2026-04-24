@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calcularMetasMensais } from '@/lib/metas-globais'
+import { isCommercialManager } from '@/lib/commercial-hierarchy'
 
 const PAID_REVENUE = ['PAID', 'IN_SEPARATION', 'IN_DELIVERY', 'DELIVERED'] as const
 
@@ -28,6 +29,7 @@ export async function GET() {
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
+  const isSalesManager = session.user?.role === 'ADMIN' || isCommercialManager(session.user)
 
   const now = new Date()
   const day24h = new Date(now.getTime() - 24 * 60 * 60 * 1000)
@@ -237,7 +239,10 @@ export async function GET() {
       where: {
         status: { in: [...PAID_REVENUE] },
         paidAt: { gte: startOfMonth, lte: endOfMonth },
-        sellerId: { not: null },
+        sellerId: {
+          ...(isSalesManager ? {} : { equals: session.user.id }),
+          not: null,
+        },
       },
       _sum: { value: true },
       _count: { id: true },

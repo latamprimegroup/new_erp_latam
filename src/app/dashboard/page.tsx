@@ -9,6 +9,13 @@ export default async function DashboardPage() {
   if (session?.user?.role === 'MANAGER') redirect('/dashboard/gestor')
   if (session?.user?.role === 'PLUG_PLAY') redirect('/dashboard/plugplay')
   if (session?.user?.role === 'PRODUCTION_MANAGER') redirect('/dashboard/gerente-producao')
+  const cargoUpper = (session?.user?.cargo || '').toUpperCase()
+  if (
+    session?.user?.role === 'COMMERCIAL' &&
+    ['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(cargoUpper)
+  ) {
+    redirect('/dashboard/commercial/manager')
+  }
 
   const isAdmin = session?.user?.role === 'ADMIN'
   const userName = session?.user?.name || session?.user?.email || 'Usuário'

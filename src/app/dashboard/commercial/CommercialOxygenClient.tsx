@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 import { VendaRapidaTab } from '@/app/dashboard/compras/VendaRapidaTab'
 
@@ -21,6 +22,7 @@ type Stats = {
   diaAtual?: number
   ticketMedioPorLinha?: { accountType: string; pedidos: number; faturamento: number; ticketMedio: number }[]
   performanceVendedoresMes?: { sellerId: string | null; nome: string; faturamento: number; pedidos: number }[]
+  sellerGoalBrl?: number
   churnClientes30d: number
   taxaConversaoPedido30d: number
   taxaConversaoLeads30d: number | null
@@ -185,6 +187,11 @@ async function safeJson(r: Response) {
 }
 
 export function CommercialOxygenClient() {
+  const { data: session } = useSession()
+  const managerCargo = (session?.user?.cargo || '').toUpperCase()
+  const isManagerCargo =
+    session?.user?.role === 'ADMIN' ||
+    ['GERENTE', 'GERENTE_COMERCIAL', 'HEAD_SALES', 'HEAD_OF_SALES', 'MANAGER'].includes(managerCargo)
   const [stats, setStats] = useState<Stats | null>(null)
   const [gate, setGate] = useState<GateOrder[]>([])
   const [crm, setCrm] = useState<CrmRow[]>([])
@@ -406,6 +413,7 @@ export function CommercialOxygenClient() {
       : 0
   const linhas = stats.ticketMedioPorLinha ?? []
   const vendedores = stats.performanceVendedoresMes ?? []
+  const sellerGoal = Number(stats.sellerGoalBrl ?? 30_000)
 
   return (
     <div className="space-y-8">
@@ -534,6 +542,18 @@ export function CommercialOxygenClient() {
         </section>
       )}
 
+      {isManagerCargo ? (
+        <section className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-4">
+          <h2 className="text-lg font-semibold text-indigo-900 dark:text-indigo-100">Área do Gerente Comercial</h2>
+          <p className="text-sm text-indigo-900/80 dark:text-indigo-100/80 mt-1">
+            Gestão de equipe, auditoria de vendas, distribuição de leads e relatório de comissões (payday).
+          </p>
+          <Link href="/dashboard/commercial/manager" className="inline-block mt-3 text-sm underline text-indigo-700 dark:text-indigo-300">
+            Abrir painel gerencial →
+          </Link>
+        </section>
+      ) : null}
+
       <section>
         <h2 className="heading-2 mb-4">Dashboard de vendas</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -657,7 +677,10 @@ export function CommercialOxygenClient() {
           </div>
           <div className="card overflow-x-auto">
             <h3 className="font-semibold text-sm mb-2">Performance de vendedores (mês)</h3>
-            <p className="text-xs text-gray-500 mb-2">Base para comissão / bônus futuro.</p>
+            <p className="text-xs text-gray-500 mb-2">
+              Barra de progresso considera meta mínima de{' '}
+              {(stats.sellerGoalBrl ?? 30000).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.
+            </p>
             {vendedores.length === 0 ? (
               <p className="text-gray-500 text-sm">Nenhuma venda com vendedor atribuído no mês.</p>
             ) : (
@@ -667,6 +690,7 @@ export function CommercialOxygenClient() {
                     <th className="pb-2">Vendedor</th>
                     <th className="pb-2">Pedidos</th>
                     <th className="pb-2">Faturamento</th>
+                    <th className="pb-2">Meta</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -676,6 +700,28 @@ export function CommercialOxygenClient() {
                       <td className="py-2">{v.pedidos}</td>
                       <td className="py-2 font-medium">
                         {v.faturamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="py-2 w-[180px]">
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-gray-500">
+                            {Math.min(
+                              100,
+                              Math.round((v.faturamento / Math.max(1, stats.sellerGoalBrl ?? 30000)) * 100)
+                            )}
+                            %
+                          </p>
+                          <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 rounded-full transition-all"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.round((v.faturamento / Math.max(1, stats.sellerGoalBrl ?? 30000)) * 100)
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ))}

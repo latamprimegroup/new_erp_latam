@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isCommercialManager } from '@/lib/commercial-hierarchy'
 
 const FUNNEL_STEPS = [
   'STEP_1_CAPTURA',
@@ -31,6 +32,15 @@ export async function PATCH(
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+  if (session.user.role === 'COMMERCIAL' && !isCommercialManager(session.user)) {
+    const ownLead = await prisma.commercialLead.findUnique({
+      where: { id: (await params).id },
+      select: { assignedCommercialId: true },
+    })
+    if (!ownLead || ownLead.assignedCommercialId !== session.user.id) {
+      return NextResponse.json({ error: 'Sem permissão para editar lead de outro vendedor' }, { status: 403 })
+    }
   }
 
   const { id } = await params

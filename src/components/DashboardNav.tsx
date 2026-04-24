@@ -13,12 +13,12 @@ export function DashboardNav({
   open,
   onClose,
 }: {
-  user: { name?: string; email?: string; role?: string }
+  user: { name?: string; email?: string; role?: string; cargo?: string | null }
   open?: boolean
   onClose?: () => void
 }) {
   const pathname = usePathname()
-  const visibleModules = getModulesForRole(user.role)
+  const visibleModules = getModulesForRole(user.role, user.cargo)
 
   useEffect(() => {
     if (open && window.innerWidth < 1024) {

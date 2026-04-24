@@ -9,13 +9,14 @@ import { useOptionalDashboardI18n } from '@/contexts/DashboardI18nContext'
 
 type CommandPaletteProps = {
   userRole?: string
+  userCargo?: string | null
 }
 
 function moduleLabel(m: NavItem, t: (k: string) => string): string {
   return m.labelKey ? t(m.labelKey) : m.label
 }
 
-export function CommandPalette({ userRole }: CommandPaletteProps) {
+export function CommandPalette({ userRole, userCargo }: CommandPaletteProps) {
   const router = useRouter()
   const i18n = useOptionalDashboardI18n()
   const t = i18n?.t ?? ((k: string) => k)
@@ -23,7 +24,7 @@ export function CommandPalette({ userRole }: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
 
-  const allModules = getModulesForRole(userRole)
+  const allModules = getModulesForRole(userRole, userCargo)
   const modules = allModules.filter((m) =>
     moduleLabel(m, t).toLowerCase().includes(query.toLowerCase())
   )

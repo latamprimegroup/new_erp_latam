@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next'
 import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { isCommercialManager } from '@/lib/commercial-hierarchy'
 
 const FUNNEL_STEPS = [
   'STEP_1_CAPTURA',
@@ -30,7 +31,9 @@ export async function GET() {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
+  const onlyMyLeads = session.user.role === 'COMMERCIAL' && !isCommercialManager(session.user)
   const leads = await prisma.commercialLead.findMany({
+    where: onlyMyLeads ? { assignedCommercialId: session.user.id } : undefined,
     orderBy: { createdAt: 'desc' },
     take: 200,
     include: {
@@ -38,7 +41,7 @@ export async function GET() {
       convertedClient: { select: { id: true, clientCode: true } },
     },
   })
-  return NextResponse.json(leads)
+  return NextResponse.json({ leads })
 }
 
 export async function POST(req: NextRequest) {
