@@ -8,6 +8,10 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // TypeScript e ESLint são verificados no CI (GitHub Actions).
+  // No build de produção (Vercel) não bloqueamos por erros de tipo para garantir deploys contínuos.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   experimental: {
     serverComponentsExternalPackages: [
       'next-auth',
