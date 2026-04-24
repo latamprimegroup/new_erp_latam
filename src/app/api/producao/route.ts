@@ -356,8 +356,9 @@ export async function POST(req: Request) {
       : data.googleAdsCustomerId || null
 
     let passwordHash: string | null = null
-    if (data.password?.trim()) {
-      passwordHash = await hashProductionAccountPassword(data.password.trim())
+    const passwordPlain = data.password?.trim() || null
+    if (passwordPlain) {
+      passwordHash = await hashProductionAccountPassword(passwordPlain)
     }
 
     const account = await prisma.productionAccount.create({
@@ -370,6 +371,7 @@ export async function POST(req: Request) {
         countryId: data.countryId || null,
         producerId,
         passwordHash,
+        passwordPlain,
         googleAdsCustomerId: googleAdsId || null,
         currency: data.currency || 'BRL',
         a2fCode: data.a2fCode || null,

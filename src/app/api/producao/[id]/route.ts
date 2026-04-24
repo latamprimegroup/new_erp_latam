@@ -129,6 +129,7 @@ export async function PATCH(
           return NextResponse.json({ error: 'Senha muito curta (mínimo 4 caracteres).' }, { status: 400 })
         }
         updateData.passwordHash = await hashProductionAccountPassword(plain)
+        updateData.passwordPlain = plain
       }
       if (Object.keys(updateData).length === 0) {
         return NextResponse.json({ error: 'Nenhum campo para atualizar' }, { status: 400 })
@@ -272,7 +273,9 @@ export async function PATCH(
     }
 
     if (data.password !== undefined && data.password.trim() !== '') {
-      updateData.passwordHash = await hashProductionAccountPassword(data.password.trim())
+      const plain = data.password.trim()
+      updateData.passwordHash = await hashProductionAccountPassword(plain)
+      updateData.passwordPlain = plain
     }
 
     if (Object.keys(updateData).length === 0) {
