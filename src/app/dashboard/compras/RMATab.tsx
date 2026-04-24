@@ -116,68 +116,113 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
   }
 
   return (
-    <form onSubmit={submit} className="rounded-2xl border border-primary-200 bg-primary-50 dark:bg-primary-950/10 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-sm flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-primary-500" />Abrir Ticket de RMA</h3>
-        <button type="button" onClick={onCancel}><X className="w-4 h-4 text-zinc-400" /></button>
-      </div>
+    <form onSubmit={submit} className="rounded-2xl border border-primary-200 bg-white dark:bg-ads-dark-card shadow-lg p-5 space-y-4">
 
-      {/* Busca de ativo por ID */}
-      <div className="flex gap-2">
-        <input value={adsId} onChange={(e) => setAdsId(e.target.value.toUpperCase())}
-          placeholder="ID Ads Ativos (ex: AA-G12-HS-001)" className="input-field flex-1 text-sm font-mono" />
-        <button type="button" onClick={lookupAsset} disabled={looking || !adsId.trim()} className="btn-secondary text-sm px-4">
-          {looking ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Buscar'}
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-base flex items-center gap-2 text-zinc-800 dark:text-zinc-100">
+          🛡️ Abrir Ticket de RMA
+        </h3>
+        <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors">
+          <X className="w-4 h-4 text-zinc-400" />
         </button>
       </div>
 
-      {/* Info do ativo */}
-      {assetInfo && (
-        <div className="rounded-xl bg-green-50 border border-green-200 px-3 py-2 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-          <div className="text-xs">
-            <p className="font-bold text-green-700">{assetInfo.displayName}</p>
-            <p className="text-green-600">Fornecedor: {assetInfo.vendorName}</p>
-          </div>
+      {/* PASSO 1 — Busca do ativo */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="w-5 h-5 rounded-full bg-primary-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">1</span>
+          <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Informe o ID do ativo que teve problema</label>
         </div>
-      )}
-
-      {error && <p className="text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
-
-      {/* Motivo */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-bold mb-1">Motivo da Falha</label>
-          <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field text-sm">
-            {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+        <div className="flex gap-2">
+          <input
+            value={adsId}
+            onChange={(e) => setAdsId(e.target.value.toUpperCase())}
+            placeholder="Ex: AA-G12-HS-001"
+            className="input-field flex-1 text-sm font-mono"
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupAsset() } }}
+          />
+          <button
+            type="button"
+            onClick={lookupAsset}
+            disabled={looking || !adsId.trim()}
+            className="btn-primary text-sm px-5 flex items-center gap-1.5 disabled:opacity-60"
+          >
+            {looking ? <Loader2 className="w-4 h-4 animate-spin" /> : '🔍 Buscar'}
+          </button>
         </div>
-        <div className="flex items-end">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={extended} onChange={(e) => setExtended(e.target.checked)}
-              className="w-4 h-4 accent-primary-600" />
-            <div>
-              <p className="text-xs font-bold">Garantia Estendida</p>
-              <p className="text-[10px] text-zinc-400">Cliente comprou 30 dias</p>
+
+        {/* Resultado da busca */}
+        {assetInfo ? (
+          <div className="rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-3 py-2 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+            <div className="text-xs">
+              <p className="font-bold text-green-700 dark:text-green-400">{assetInfo.displayName}</p>
+              <p className="text-green-600 dark:text-green-500">Fornecedor: {assetInfo.vendorName}</p>
             </div>
-          </label>
-        </div>
+          </div>
+        ) : !error && (
+          <p className="text-[11px] text-zinc-400 pl-1">Digite o ID público do ativo (ex: AA-G12-HS-001) e clique em Buscar</p>
+        )}
+
+        {error && (
+          <p className="text-xs text-red-600 font-semibold bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg">
+            ⚠️ {error}
+          </p>
+        )}
       </div>
 
-      <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={2}
-        placeholder="Detalhes adicionais (opcional)..." className="input-field text-sm resize-none" />
-
-      {reason === 'BAN' && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-          ⚠️ Banimento pode ser resultado de <strong>uso indevido do cliente</strong>. A troca <strong>não</strong> será automaticamente imputada ao fornecedor — requer análise do Admin.
+      {/* PASSO 2 — Detalhes (sempre visível, mas com indicação visual se não buscou ainda) */}
+      <div className={`space-y-3 transition-opacity ${assetId ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+        <div className="flex items-center gap-2">
+          <span className={`w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center shrink-0 ${assetId ? 'bg-primary-600' : 'bg-zinc-300 dark:bg-zinc-600'}`}>2</span>
+          <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Detalhes da falha</label>
+          {!assetId && <span className="text-[10px] text-zinc-400 italic">— busque o ativo primeiro</span>}
         </div>
-      )}
 
-      <div className="flex justify-end gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Motivo da Falha</label>
+            <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field text-sm w-full">
+              {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={extended} onChange={(e) => setExtended(e.target.checked)}
+                className="w-4 h-4 accent-primary-600 shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Garantia Estendida</p>
+                <p className="text-[10px] text-zinc-400">Cliente comprou 30 dias</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Detalhes adicionais (opcional)</label>
+          <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={3}
+            placeholder="Descreva o problema com mais detalhes..." className="input-field text-sm resize-none w-full" />
+        </div>
+
+        {reason === 'BAN' && (
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            ⚠️ Banimento pode ser resultado de <strong>uso indevido do cliente</strong>. A troca <strong>não</strong> será automaticamente imputada ao fornecedor — requer análise do Admin.
+          </div>
+        )}
+      </div>
+
+      {/* Botões */}
+      <div className="flex justify-end gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800">
         <button type="button" onClick={onCancel} className="btn-secondary text-sm">Cancelar</button>
-        <button type="submit" disabled={saving || !assetId} className="btn-primary text-sm flex items-center gap-1.5">
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-          Abrir Ticket
+        <button
+          type="submit"
+          disabled={saving || !assetId}
+          title={!assetId ? 'Busque o ativo primeiro (Passo 1)' : 'Confirmar abertura do ticket'}
+          className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🛡️'}
+          {saving ? 'Abrindo...' : 'Abrir Ticket'}
         </button>
       </div>
     </form>
