@@ -16,10 +16,15 @@ type Ticket = {
   withinWarranty: boolean; warrantyDays: number; hoursAfterDelivery: number | null
   isVendorFault: boolean; replacementCost: number | null; vendorCreditAmount: number | null
   extendedWarranty: boolean; openedAt: string; approvedAt: string | null; resolvedAt: string | null
-  originalAsset: { adsId: string; displayName: string; category: string }
+  originalAsset: { adsId: string; displayName: string; category: string } | null
   replacementAsset: { adsId: string; displayName: string } | null
-  vendor: { id: string; name: string; rating: number; suspended: boolean }
+  vendor: { id: string; name: string; rating: number; suspended: boolean } | null
   openedBy: { name: string | null }
+  // Campos manuais
+  suspendedAccountRaw?: string | null
+  replacementAccountRaw?: string | null
+  clientCodeRaw?: string | null
+  accountTypeRaw?: string | null
 }
 
 type VendorQA = {
@@ -71,46 +76,38 @@ const REASON_LABELS: Record<string, string> = {
 // Formulário de abertura de ticket
 // ─────────────────────────────────────────────────────────────────────────────
 
-function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
-  const [adsId,    setAdsId]    = useState('')
-  const [assetId,  setAssetId]  = useState('')
-  const [assetInfo, setAssetInfo] = useState<{ displayName: string; vendorName: string } | null>(null)
-  const [looking,  setLooking]  = useState(false)
-  const [reason,   setReason]   = useState('CHECKPOINT')
-  const [detail,   setDetail]   = useState('')
-  const [extended, setExtended] = useState(false)
-  const [saving,   setSaving]   = useState(false)
-  const [error,    setError]    = useState('')
+const ACCOUNT_TYPES = [
+  { value: 'BR_MANUAL',  label: 'BR Manual (G2 Manual)' },
+  { value: 'BR_AUTO',    label: 'BR Automática (G2 Auto)' },
+  { value: 'USD_AUTO',   label: 'USD Automático' },
+  { value: 'EUR_AUTO',   label: 'EURO Automático' },
+]
 
-  const lookupAsset = async () => {
-    if (!adsId.trim()) return
-    setLooking(true); setError(''); setAssetInfo(null); setAssetId('')
-    // Remove prefixos comuns que o usuário pode digitar ("ID G2:", "ID:", etc.)
-    const clean = adsId.trim().replace(/^id\s*(g\d+)?[:\s]*/i, '').replace(/[-\s]/g, '-').trim()
-    const r = await fetch(`/api/compras/ativos?q=${encodeURIComponent(clean)}&limit=5`)
-    if (r.ok) {
-      const j = await r.json()
-      const assets: { id: string; displayName: string; vendor?: { name: string } }[] = j.assets ?? j ?? []
-      const a = assets[0]
-      if (a) {
-        setAssetId(a.id)
-        setAssetInfo({ displayName: a.displayName, vendorName: a.vendor?.name ?? '—' })
-      } else {
-        setError('Ativo não encontrado. Verifique o ID no formato AA-G12-HS-001 ou pelo número da conta Google.')
-      }
-    } else {
-      setError('Erro ao consultar ativo. Tente novamente.')
-    }
-    setLooking(false)
-  }
+function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
+  const [suspendedId,    setSuspendedId]    = useState('')
+  const [replacementId,  setReplacementId]  = useState('')
+  const [clientCode,     setClientCode]     = useState('')
+  const [accountType,    setAccountType]    = useState('BR_MANUAL')
+  const [reason,         setReason]         = useState('ACCOUNT_SUSPENDED')
+  const [detail,         setDetail]         = useState('')
+  const [saving,         setSaving]         = useState(false)
+  const [error,          setError]          = useState('')
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!assetId) { setError('Localize o ativo antes de abrir o ticket.'); return }
+    if (!suspendedId.trim()) { setError('Informe o ID da conta suspensa.'); return }
     setSaving(true); setError('')
     const r = await fetch('/api/rma', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ originalAssetId: assetId, reason, reasonDetail: detail || undefined, extendedWarranty: extended }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        suspendedAccountRaw:   suspendedId.trim(),
+        replacementAccountRaw: replacementId.trim() || undefined,
+        clientCodeRaw:         clientCode.trim() || undefined,
+        accountTypeRaw:        accountType,
+        reason,
+        reasonDetail: detail || undefined,
+      }),
     })
     if (r.ok) { onSaved() }
     else {
@@ -121,100 +118,90 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
   }
 
   return (
-    <form onSubmit={submit} className="rounded-2xl border border-primary-200 bg-white dark:bg-ads-dark-card shadow-lg p-5 space-y-4">
+    <form onSubmit={submit} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-ads-dark-card shadow-lg p-5 space-y-4">
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="font-bold text-base flex items-center gap-2 text-zinc-800 dark:text-zinc-100">
-          🛡️ Abrir Ticket de RMA
-        </h3>
+        <h3 className="font-bold text-base text-zinc-800 dark:text-zinc-100">🛡️ Registrar Troca / Reposição</h3>
         <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors">
           <X className="w-4 h-4 text-zinc-400" />
         </button>
       </div>
 
-      {/* PASSO 1 — Busca do ativo */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-primary-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">1</span>
-          <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Informe o ID do ativo que teve problema</label>
-        </div>
-        <div className="flex gap-2">
+      {error && (
+        <p className="text-xs text-red-600 font-semibold bg-red-50 dark:bg-red-950/20 border border-red-200 px-3 py-2 rounded-lg">
+          ⚠️ {error}
+        </p>
+      )}
+
+      {/* Grid de campos */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        {/* ID da Conta Suspensa */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+            🔴 ID da Conta Suspensa <span className="text-red-500">*</span>
+          </label>
           <input
-            value={adsId}
-            onChange={(e) => setAdsId(e.target.value.toUpperCase())}
-            placeholder="ID Ads Ativos (AA-G12-001) ou ID Google Ads (603-322-2709)"
-            className="input-field flex-1 text-sm font-mono"
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupAsset() } }}
+            value={suspendedId}
+            onChange={(e) => setSuspendedId(e.target.value)}
+            placeholder="Ex: 603-322-2709 ou AA-G21-100"
+            className="input-field w-full font-mono text-sm"
+            required
           />
-          <button
-            type="button"
-            onClick={lookupAsset}
-            disabled={looking || !adsId.trim()}
-            className="btn-primary text-sm px-5 flex items-center gap-1.5 disabled:opacity-60"
-          >
-            {looking ? <Loader2 className="w-4 h-4 animate-spin" /> : '🔍 Buscar'}
-          </button>
         </div>
 
-        {/* Resultado da busca */}
-        {assetInfo ? (
-          <div className="rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 px-3 py-2 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-            <div className="text-xs">
-              <p className="font-bold text-green-700 dark:text-green-400">{assetInfo.displayName}</p>
-              <p className="text-green-600 dark:text-green-500">Fornecedor: {assetInfo.vendorName}</p>
-            </div>
-          </div>
-        ) : !error && (
-          <p className="text-[11px] text-zinc-400 pl-1">Use o ID Ads Ativos (AA-G12-001) <strong>ou</strong> o número da conta Google (603-322-2709) e clique em Buscar</p>
-        )}
-
-        {error && (
-          <p className="text-xs text-red-600 font-semibold bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg">
-            ⚠️ {error}
-          </p>
-        )}
-      </div>
-
-      {/* PASSO 2 — Detalhes (sempre visível, mas com indicação visual se não buscou ainda) */}
-      <div className={`space-y-3 transition-opacity ${assetId ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-        <div className="flex items-center gap-2">
-          <span className={`w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center shrink-0 ${assetId ? 'bg-primary-600' : 'bg-zinc-300 dark:bg-zinc-600'}`}>2</span>
-          <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Detalhes da falha</label>
-          {!assetId && <span className="text-[10px] text-zinc-400 italic">— busque o ativo primeiro</span>}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Motivo da Falha</label>
-            <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field text-sm w-full">
-              {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={extended} onChange={(e) => setExtended(e.target.checked)}
-                className="w-4 h-4 accent-primary-600 shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Garantia Estendida</p>
-                <p className="text-[10px] text-zinc-400">Cliente comprou 30 dias</p>
-              </div>
-            </label>
-          </div>
-        </div>
-
+        {/* Tipo de Conta */}
         <div>
-          <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Detalhes adicionais (opcional)</label>
-          <textarea value={detail} onChange={(e) => setDetail(e.target.value)} rows={3}
-            placeholder="Descreva o problema com mais detalhes..." className="input-field text-sm resize-none w-full" />
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Tipo de Conta</label>
+          <select value={accountType} onChange={(e) => setAccountType(e.target.value)} className="input-field w-full text-sm">
+            {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
         </div>
 
-        {reason === 'BAN' && (
-          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-            ⚠️ Banimento pode ser resultado de <strong>uso indevido do cliente</strong>. A troca <strong>não</strong> será automaticamente imputada ao fornecedor — requer análise do Admin.
-          </div>
-        )}
+        {/* Código do Cliente */}
+        <div>
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Código do Cliente</label>
+          <input
+            value={clientCode}
+            onChange={(e) => setClientCode(e.target.value.toUpperCase())}
+            placeholder="Ex: C273"
+            className="input-field w-full font-mono text-sm"
+          />
+        </div>
+
+        {/* Motivo da Suspensão */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Motivo da Suspensão</label>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className="input-field w-full text-sm">
+            {Object.entries(REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+
+        {/* Detalhes */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Detalhes (opcional)</label>
+          <textarea
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            rows={2}
+            placeholder="Descreva o problema..."
+            className="input-field w-full text-sm resize-none"
+          />
+        </div>
+
+        {/* ID da Conta Reposta */}
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+            🟢 ID da Conta Reposta <span className="text-zinc-400 font-normal">(opcional — preencha após enviar)</span>
+          </label>
+          <input
+            value={replacementId}
+            onChange={(e) => setReplacementId(e.target.value)}
+            placeholder="Ex: 712-400-1234 ou AA-G21-101"
+            className="input-field w-full font-mono text-sm"
+          />
+        </div>
       </div>
 
       {/* Botões */}
@@ -222,12 +209,11 @@ function NewTicketForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: (
         <button type="button" onClick={onCancel} className="btn-secondary text-sm">Cancelar</button>
         <button
           type="submit"
-          disabled={saving || !assetId}
-          title={!assetId ? 'Busque o ativo primeiro (Passo 1)' : 'Confirmar abertura do ticket'}
+          disabled={saving || !suspendedId.trim()}
           className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '🛡️'}
-          {saving ? 'Abrindo...' : 'Abrir Ticket'}
+          {saving ? 'Registrando...' : 'Registrar Troca'}
         </button>
       </div>
     </form>
@@ -260,13 +246,18 @@ function TicketCard({ ticket, onAction, producerView = false }: { ticket: Ticket
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-xs font-mono text-zinc-400">{ticket.ticketNumber}</p>
-          <p className="text-sm font-bold truncate">{ticket.originalAsset?.displayName}</p>
+          <p className="text-sm font-bold truncate">
+            {ticket.originalAsset?.displayName ?? ticket.suspendedAccountRaw ?? '—'}
+          </p>
+          {ticket.clientCodeRaw && (
+            <p className="text-[10px] text-zinc-400 font-mono">Cliente: {ticket.clientCodeRaw}</p>
+          )}
         </div>
         <div className="text-right shrink-0 text-xs">
-          <p className={`font-bold ${ticket.withinWarranty ? 'text-green-600' : 'text-amber-600'}`}>
-            {ticket.withinWarranty ? '✅ Dentro' : '⚠️ Fora'} da garantia
-          </p>
           <p className="text-zinc-400">{REASON_LABELS[ticket.reason]}</p>
+          {ticket.accountTypeRaw && (
+            <p className="text-[10px] font-mono text-zinc-500">{ticket.accountTypeRaw.replace('_', ' ')}</p>
+          )}
         </div>
         {open ? <ChevronUp className="w-4 h-4 text-zinc-300 shrink-0" /> : <ChevronDown className="w-4 h-4 text-zinc-300 shrink-0" />}
       </button>
@@ -274,8 +265,23 @@ function TicketCard({ ticket, onAction, producerView = false }: { ticket: Ticket
       {open && (
         <div className="px-4 pb-4 space-y-3 border-t border-zinc-50 dark:border-zinc-800 pt-3">
           <div className="grid sm:grid-cols-3 gap-2 text-xs">
-            <div><span className="text-zinc-400">Ativo Original:</span><p className="font-mono font-bold">{ticket.originalAsset?.adsId}</p></div>
-            {!producerView && <div><span className="text-zinc-400">Fornecedor:</span><p className="font-bold">{ticket.vendor?.name}</p></div>}
+            <div>
+              <span className="text-zinc-400">🔴 Conta Suspensa:</span>
+              <p className="font-mono font-bold">{ticket.originalAsset?.adsId ?? ticket.suspendedAccountRaw ?? '—'}</p>
+            </div>
+            {ticket.replacementAccountRaw && (
+              <div>
+                <span className="text-zinc-400">🟢 Conta Reposta:</span>
+                <p className="font-mono font-bold">{ticket.replacementAccountRaw}</p>
+              </div>
+            )}
+            {ticket.clientCodeRaw && (
+              <div><span className="text-zinc-400">Cliente:</span><p className="font-bold font-mono">{ticket.clientCodeRaw}</p></div>
+            )}
+            {ticket.accountTypeRaw && (
+              <div><span className="text-zinc-400">Tipo:</span><p className="font-bold">{ticket.accountTypeRaw.replace('_', ' ')}</p></div>
+            )}
+            {!producerView && ticket.vendor && <div><span className="text-zinc-400">Fornecedor:</span><p className="font-bold">{ticket.vendor?.name}</p></div>}
             {!producerView && <div><span className="text-zinc-400">Culpa do Fornecedor:</span><p className={`font-bold ${ticket.isVendorFault ? 'text-red-600' : 'text-amber-600'}`}>{ticket.isVendorFault ? 'Sim' : 'Não (analisar)'}</p></div>}
             {ticket.hoursAfterDelivery != null && <div><span className="text-zinc-400">Tempo até falha:</span><p className="font-bold">{ticket.hoursAfterDelivery}h após entrega</p></div>}
             {!producerView && ticket.replacementCost != null && <div><span className="text-zinc-400">Custo da Reposição:</span><p className="font-bold text-red-600">{BRL(ticket.replacementCost)}</p></div>}

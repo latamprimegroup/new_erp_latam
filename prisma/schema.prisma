@@ -4819,14 +4819,24 @@ model RMATicket {
   reason          RMAReason
   reasonDetail    String?     @map("reason_detail") @db.VarChar(1000)
 
-  /// Ativo que falhou
-  originalAssetId String      @map("original_asset_id")
+  /// Ativo que falhou (link para o ativo no sistema — opcional se cadastro manual)
+  originalAssetId String?     @map("original_asset_id")
   /// Ativo reservado para reposição
   replacementAssetId String?  @map("replacement_asset_id")
   /// Ordem de venda original (para buscar dados do cliente)
   originalOrderId String?     @map("original_order_id")
   /// Fornecedor do ativo que falhou
-  vendorId        String      @map("vendor_id")
+  vendorId        String?     @map("vendor_id")
+
+  // ── Campos de registro manual (sem lookup de asset) ──────────────────────
+  /// ID da conta suspensa digitado manualmente (Google Ads ID ou Ads Ativos ID)
+  suspendedAccountRaw  String?  @map("suspended_account_raw")  @db.VarChar(100)
+  /// ID da conta reposta (para controle interno)
+  replacementAccountRaw String? @map("replacement_account_raw") @db.VarChar(100)
+  /// Código do cliente (ex: C273)
+  clientCodeRaw        String?  @map("client_code_raw")         @db.VarChar(20)
+  /// Tipo de conta: BR_MANUAL, BR_AUTO, USD_AUTO, EUR_AUTO
+  accountTypeRaw       String?  @map("account_type_raw")        @db.VarChar(30)
 
   /// Garantia: calculado automaticamente na abertura do ticket
   withinWarranty  Boolean     @map("within_warranty")
@@ -4856,9 +4866,9 @@ model RMATicket {
   /// Flag: ALFREDO IA criou alerta de blacklist para este ticket
   aiAlertSent  Boolean   @default(false) @map("ai_alert_sent")
 
-  originalAsset    Asset     @relation("RMAOriginalAsset",     fields: [originalAssetId],    references: [id])
+  originalAsset    Asset?    @relation("RMAOriginalAsset",     fields: [originalAssetId],    references: [id])
   replacementAsset Asset?    @relation("RMAReplacementAsset",  fields: [replacementAssetId], references: [id])
-  vendor           Vendor    @relation("RMAVendor",            fields: [vendorId],           references: [id])
+  vendor           Vendor?   @relation("RMAVendor",            fields: [vendorId],           references: [id])
   openedBy         User      @relation("RMAOpened",            fields: [openedById],         references: [id])
   approvedBy       User?     @relation("RMAApproved",          fields: [approvedById],       references: [id])
   closedBy         User?     @relation("RMAClosed",            fields: [closedById],         references: [id])
