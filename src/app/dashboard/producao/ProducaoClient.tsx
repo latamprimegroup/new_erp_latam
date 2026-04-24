@@ -457,6 +457,21 @@ export function ProducaoClient() {
     }
   }
 
+  function cnpjPdfDownloadUrl(accountId: string): string {
+    const path = `/api/producao/${accountId}/arquivo/cnpj-pdf?download=1`
+    if (typeof window === 'undefined') return path
+    return `${window.location.origin}${path}`
+  }
+
+  async function copyQuickValue(value: string, successMessage: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setToast({ kind: 'success', message: successMessage })
+    } catch {
+      setToast({ kind: 'error', message: 'Não foi possível copiar. Tente novamente.' })
+    }
+  }
+
   async function loadStock() {
     setLoadingStock(true)
     const [dispRes, emailsAv, cnpjsAv, perfisAv, emailsRes, cnpjsRes, perfisRes] = await Promise.all([
@@ -2308,9 +2323,23 @@ export function ProducaoClient() {
                             </div>
                             <div className="sm:col-span-2">
                               <span className="text-xs text-gray-500">Senha atual</span>
-                              <p className="font-mono break-all">
-                                {a.passwordPlain?.trim() ? a.passwordPlain : '—'}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-mono break-all">
+                                  {a.passwordPlain?.trim() ? a.passwordPlain : '—'}
+                                </p>
+                                {a.passwordPlain?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(a.passwordPlain || '', 'Senha copiada para a área de transferência.')
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    Copiar senha
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="sm:col-span-2">
                               <span className="text-xs text-gray-500">Cartão CNPJ</span>
@@ -2329,6 +2358,19 @@ export function ProducaoClient() {
                                   >
                                     Baixar cartão CNPJ
                                   </a>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        cnpjPdfDownloadUrl(a.id),
+                                        'Link do cartão CNPJ copiado para a área de transferência.'
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    Copiar link
+                                  </button>
                                 </div>
                               ) : (
                                 <p>—</p>
@@ -2419,9 +2461,26 @@ export function ProducaoClient() {
                           <div className="max-w-md space-y-3">
                             <div className="rounded border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-2">
                               <p className="text-[11px] text-gray-500">Senha atual</p>
-                              <p className="font-mono text-sm break-all">
-                                {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-mono text-sm break-all">
+                                  {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
+                                </p>
+                                {editForm.currentPassword?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        editForm.currentPassword,
+                                        'Senha copiada para a área de transferência.'
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    Copiar senha
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="flex gap-2">
                               <input
@@ -2456,6 +2515,19 @@ export function ProducaoClient() {
                                 >
                                   Baixar cartão CNPJ
                                 </a>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    copyQuickValue(
+                                      cnpjPdfDownloadUrl(a.id),
+                                      'Link do cartão CNPJ copiado para a área de transferência.'
+                                    )
+                                  }
+                                  className="btn-secondary text-xs"
+                                >
+                                  <Copy className="w-3 h-3 inline mr-1" />
+                                  Copiar link
+                                </button>
                               </div>
                             ) : (
                               <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
@@ -2512,9 +2584,26 @@ export function ProducaoClient() {
                           <div className="max-w-md space-y-2">
                             <div className="rounded border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-2">
                               <p className="text-[11px] text-gray-500">Senha atual</p>
-                              <p className="font-mono text-sm break-all">
-                                {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-mono text-sm break-all">
+                                  {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
+                                </p>
+                                {editForm.currentPassword?.trim() && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      copyQuickValue(
+                                        editForm.currentPassword,
+                                        'Senha copiada para a área de transferência.'
+                                      )
+                                    }
+                                    className="btn-secondary text-xs"
+                                  >
+                                    <Copy className="w-3 h-3 inline mr-1" />
+                                    Copiar senha
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="flex gap-2">
                               <input
@@ -2549,6 +2638,19 @@ export function ProducaoClient() {
                                 >
                                   Baixar cartão CNPJ
                                 </a>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    copyQuickValue(
+                                      cnpjPdfDownloadUrl(a.id),
+                                      'Link do cartão CNPJ copiado para a área de transferência.'
+                                    )
+                                  }
+                                  className="btn-secondary text-xs"
+                                >
+                                  <Copy className="w-3 h-3 inline mr-1" />
+                                  Copiar link
+                                </button>
                               </div>
                             ) : (
                               <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
