@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
+import { VendaRapidaTab } from '@/app/dashboard/compras/VendaRapidaTab'
 
 type Stats = {
   faturamento24h: number
@@ -590,6 +591,16 @@ export function CommercialOxygenClient() {
       </section>
 
       <section>
+        <h2 className="heading-2 mb-4">Links de venda rápida (PIX + WhatsApp)</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Crie links de checkout público para fechar no comercial com envio instantâneo de PIX no WhatsApp.
+        </p>
+        <div className="card">
+          <VendaRapidaTab />
+        </div>
+      </section>
+
+      <section>
         <h2 className="heading-2 mb-4">Gestão de leads e pedidos (Área do Cliente)</h2>
         <div className="card overflow-x-auto mb-4">
           <h3 className="font-semibold mb-2 text-sm">Solicitações e fila de espera</h3>
@@ -786,6 +797,16 @@ export function CommercialOxygenClient() {
           <Link href="/dashboard/estoque" className="text-primary-600 text-sm inline-block">
             Estoque completo →
           </Link>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="heading-2 mb-4">Venda rápida (PIX + WhatsApp)</h2>
+        <div className="card">
+          <p className="text-xs text-gray-500 mb-3">
+            Crie links comerciais de checkout rápido para fechar no WhatsApp com PIX e QR Code.
+          </p>
+          <VendaRapidaTab />
         </div>
       </section>
 
