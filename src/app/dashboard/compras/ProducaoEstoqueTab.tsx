@@ -301,7 +301,7 @@ export function ProducaoEstoqueTab() {
                             {hoursIn < 24 ? `${hoursIn}h` : `${Math.round(hoursIn / 24)}d`} em estoque
                           </span>
                         </div>
-                        {specs?.year && (
+                        {!!specs?.year && (
                           <p className="text-[11px] text-zinc-400">Conta {String(specs.year)}</p>
                         )}
                       </td>
