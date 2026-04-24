@@ -147,7 +147,7 @@ export async function POST(req: globalThis.Request) {
     data: {
       ticketNumber,
       originalAssetId:       resolvedAssetId,
-      originalOrderId:       originalOrderId ?? deliveredOrder?.id ?? null,
+      originalOrderId:       originalOrderId ?? null,
       vendorId:              resolvedVendorId,
       reason:                reason as RMAReason,
       reasonDetail,
