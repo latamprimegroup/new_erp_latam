@@ -89,6 +89,7 @@ type Account = {
   proxyNote?: string | null
   proxyConfigured?: boolean
   cnpjPdfUrl?: string | null
+  passwordPlain?: string | null
   // Melhoria 15/04/2026 — Checkpoint de Auditoria
   productionCost?: number | null
   warmupStatus?: 'NORMAL' | 'WARM_UP' | 'READY_TO_SCALE' | 'FLAGGED' | null
@@ -328,6 +329,7 @@ export function ProducaoClient() {
     email: '',
     cnpj: '',
     password: '',
+    currentPassword: '',
     productionNiche: 'OTHER' as string,
     verificationGoal: 'G2_AND_ADVERTISER' as string,
     primaryDomain: '',
@@ -836,6 +838,7 @@ export function ProducaoClient() {
       email: account.email || '',
       cnpj: account.cnpj || '',
       password: '',
+      currentPassword: account.passwordPlain || '',
       productionNiche: account.productionNiche || 'OTHER',
       verificationGoal: account.verificationGoal || 'G2_AND_ADVERTISER',
       primaryDomain: account.primaryDomain || '',
@@ -2303,6 +2306,34 @@ export function ProducaoClient() {
                               <span className="text-xs text-gray-500">Domínio principal</span>
                               <p>{a.primaryDomain || '—'}</p>
                             </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Senha atual</span>
+                              <p className="font-mono break-all">
+                                {a.passwordPlain?.trim() ? a.passwordPlain : '—'}
+                              </p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="text-xs text-gray-500">Cartão CNPJ</span>
+                              {a.cnpjPdfUrl ? (
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPdfPreviewId(a.id)}
+                                    className="btn-secondary text-xs"
+                                  >
+                                    Visualizar PDF
+                                  </button>
+                                  <a
+                                    href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`}
+                                    className="btn-secondary text-xs"
+                                  >
+                                    Baixar cartão CNPJ
+                                  </a>
+                                </div>
+                              ) : (
+                                <p>—</p>
+                              )}
+                            </div>
                             <div className="sm:col-span-2 flex gap-2 pt-2">
                               <button
                                 type="button"
@@ -2386,10 +2417,12 @@ export function ProducaoClient() {
 
                         {editKind === 'approved-review' && editTab === 'senha' && (
                           <div className="max-w-md space-y-3">
-                            <p className="text-xs text-gray-500">
-                              A senha não pode ser exibida (armazenada com hash). Defina uma nova para substituir a
-                              anterior.
-                            </p>
+                            <div className="rounded border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-2">
+                              <p className="text-[11px] text-gray-500">Senha atual</p>
+                              <p className="font-mono text-sm break-all">
+                                {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
+                              </p>
+                            </div>
                             <div className="flex gap-2">
                               <input
                                 type={editPasswordVisible ? 'text' : 'password'}
@@ -2408,6 +2441,25 @@ export function ProducaoClient() {
                                 {editPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
                             </div>
+                            {a.cnpjPdfUrl ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPdfPreviewId(a.id)}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Ver cartão CNPJ
+                                </button>
+                                <a
+                                  href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Baixar cartão CNPJ
+                                </a>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
+                            )}
                             <div className="flex gap-2 pt-1">
                               <button type="button" onClick={handleSaveEdit} className="btn-primary text-sm">
                                 Atualizar senha
@@ -2458,9 +2510,12 @@ export function ProducaoClient() {
                         </div>
                         {editTab === 'senha' ? (
                           <div className="max-w-md space-y-2">
-                            <p className="text-xs text-gray-500">
-                              Digite uma nova senha para substituir a anterior. O armazenamento é em hash (bcrypt).
-                            </p>
+                            <div className="rounded border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-2">
+                              <p className="text-[11px] text-gray-500">Senha atual</p>
+                              <p className="font-mono text-sm break-all">
+                                {editForm.currentPassword?.trim() ? editForm.currentPassword : '—'}
+                              </p>
+                            </div>
                             <div className="flex gap-2">
                               <input
                                 type={editPasswordVisible ? 'text' : 'password'}
@@ -2479,6 +2534,25 @@ export function ProducaoClient() {
                                 {editPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
                             </div>
+                            {a.cnpjPdfUrl ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setPdfPreviewId(a.id)}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Ver cartão CNPJ
+                                </button>
+                                <a
+                                  href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`}
+                                  className="btn-secondary text-xs"
+                                >
+                                  Baixar cartão CNPJ
+                                </a>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-500">Cartão CNPJ não enviado.</p>
+                            )}
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">

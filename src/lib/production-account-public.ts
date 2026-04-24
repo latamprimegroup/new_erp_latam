@@ -9,16 +9,17 @@ export async function hashProductionAccountPassword(plain: string): Promise<stri
 
 export type ProductionAccountPublic<T extends ProductionAccount = ProductionAccount> = Omit<
   T,
-  'passwordHash'
-> & { hasPassword: boolean }
+  'passwordHash' | 'passwordPlain'
+> & { hasPassword: boolean; passwordPlain?: string | null }
 
 export function toProductionAccountPublic<T extends ProductionAccount>(
   account: T
 ): ProductionAccountPublic<T> {
-  const { passwordHash, ...rest } = account
+  const { passwordHash, passwordPlain, ...rest } = account
   return {
     ...rest,
     hasPassword: !!passwordHash && passwordHash.length > 0,
+    passwordPlain: passwordPlain ?? null,
   } as ProductionAccountPublic<T>
 }
 
