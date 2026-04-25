@@ -25,6 +25,15 @@ interface Listing {
   createdAt:      string
 }
 
+interface StockProductSuggestion {
+  assetId: string
+  adsId: string
+  displayName: string
+  category: string
+  salePrice: number
+  availableInCategory: number
+}
+
 interface GeneratedPix {
   checkoutId:   string
   txid:         string
@@ -95,6 +104,10 @@ export function VendaRapidaTab() {
   const [category, setCategory]     = useState('GOOGLE_ADS')
   const [stockProductCode, setStockProductCode] = useState('')
   const [stockProductName, setStockProductName] = useState('')
+  const [stockSearch, setStockSearch] = useState('')
+  const [stockSuggestions, setStockSuggestions] = useState<StockProductSuggestion[]>([])
+  const [stockSearching, setStockSearching] = useState(false)
+  const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
@@ -121,6 +134,37 @@ export function VendaRapidaTab() {
   const maxPixQty = selectedListing ? Math.min(selectedListing.maxQty, selectedListing.available) : 0
   const safePixQty = maxPixQty > 0 ? Math.max(1, Math.min(pixQty, maxPixQty)) : 0
   const estimatedPixTotal = selectedListing ? selectedListing.pricePerUnit * safePixQty : 0
+
+  useEffect(() => {
+    const q = stockSearch.trim()
+    if (q.length < 2) {
+      setStockSuggestions([])
+      return
+    }
+
+    const ctrl = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        setStockSearching(true)
+        const res = await fetch(`/api/admin/listings/stock-products?q=${encodeURIComponent(q)}`, {
+          signal: ctrl.signal,
+          cache: 'no-store',
+        })
+        if (!res.ok) return
+        const data = await res.json() as { items?: StockProductSuggestion[] }
+        setStockSuggestions(data.items ?? [])
+      } catch {
+        // ignora erros de rede/abort para não quebrar UX
+      } finally {
+        setStockSearching(false)
+      }
+    }, 250)
+
+    return () => {
+      ctrl.abort()
+      window.clearTimeout(timer)
+    }
+  }, [stockSearch])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -194,6 +238,9 @@ export function VendaRapidaTab() {
       setFullDescription('')
       setStockProductCode('')
       setStockProductName('')
+      setStockSearch('')
+      setStockSuggestions([])
+      setStockSearchOpen(false)
       setPrice('')
       setMaxQty('10')
       setBadge('ENTREGA AUTOMÁTICA')
@@ -202,6 +249,14 @@ export function VendaRapidaTab() {
       const d = await res.json()
       alert(d.error ?? 'Erro ao criar listing')
     }
+  }
+
+  const applyStockSuggestion = (item: StockProductSuggestion) => {
+    setStockProductCode(item.adsId)
+    setStockProductName(item.displayName)
+    setCategory(item.category)
+    setStockSearch(`${item.adsId} · ${item.displayName}`)
+    setStockSearchOpen(false)
   }
 
   const handleCreatePixTest = async (e: React.FormEvent) => {
@@ -557,6 +612,43 @@ export function VendaRapidaTab() {
                   placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
                   className="input-dark"
                 />
+              </Field>
+              <Field label="Buscar no estoque por código ou nome">
+                <div className="relative">
+                  <input
+                    value={stockSearch}
+                    onChange={(e) => {
+                      setStockSearch(e.target.value)
+                      setStockSearchOpen(true)
+                    }}
+                    onFocus={() => setStockSearchOpen(true)}
+                    placeholder="Digite AA-CONT-000001 ou nome do produto..."
+                    className="input-dark"
+                  />
+                  {stockSearchOpen && stockSearch.trim().length >= 2 ? (
+                    <div className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto">
+                      {stockSearching ? (
+                        <p className="px-3 py-2 text-xs text-zinc-400">Buscando no estoque...</p>
+                      ) : stockSuggestions.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-zinc-500">Nenhum produto encontrado.</p>
+                      ) : (
+                        stockSuggestions.map((item) => (
+                          <button
+                            key={item.assetId}
+                            type="button"
+                            onClick={() => applyStockSuggestion(item)}
+                            className="w-full text-left px-3 py-2 hover:bg-zinc-800 transition border-b border-zinc-800 last:border-b-0"
+                          >
+                            <p className="text-xs text-zinc-200 font-medium">{item.adsId} · {item.displayName}</p>
+                            <p className="text-[11px] text-zinc-500">
+                              {item.category.replace('_', ' ')} · R$ {item.salePrice.toFixed(2)} · disp categoria: {item.availableInCategory}
+                            </p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               </Field>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field label="Código do produto no estoque (opcional)">
