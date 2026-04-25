@@ -9,6 +9,7 @@ type SecurityPayload = {
   linkExpirationMax: number
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
+  linkSharingAttempts: number
   pendingKycCount: number
   adspowerGroupMap: Record<string, string>
   utmifyTokenPreview: string | null
@@ -228,7 +229,7 @@ export function QuickSaleSecurityPanel() {
         <p className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">{message}</p>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="rounded-xl border border-zinc-700 bg-zinc-900/70 p-3">
           <p className="text-zinc-500 text-xs uppercase tracking-wider">Limite atual KYC</p>
           <p className="text-white text-lg font-bold">
@@ -242,6 +243,10 @@ export function QuickSaleSecurityPanel() {
         <div className="rounded-xl border border-zinc-700 bg-zinc-900/70 p-3">
           <p className="text-zinc-500 text-xs uppercase tracking-wider">Bloqueios Kill Switch</p>
           <p className="text-red-300 text-lg font-bold">{security?.antiFraudBlocks ?? 0}</p>
+        </div>
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/70 p-3">
+          <p className="text-zinc-500 text-xs uppercase tracking-wider">Tentativas de compartilhamento</p>
+          <p className="text-fuchsia-300 text-lg font-bold">{security?.linkSharingAttempts ?? 0}</p>
         </div>
       </div>
 
