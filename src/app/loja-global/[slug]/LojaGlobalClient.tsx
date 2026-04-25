@@ -61,6 +61,7 @@ interface PaymentPayload {
 interface CheckoutCreatedResponse {
   checkoutId: string
   orderNumber?: string | null
+  expiresAt?: string | null
   paymentMethod: Gateway
   paymentPayload: PaymentPayload
   totalAmount: number
@@ -150,6 +151,31 @@ function normalizeEmail(v: string) {
   return v.trim().toLowerCase()
 }
 
+function useCountdown(expiresAt: string | null) {
+  const [secs, setSecs] = useState<number>(0)
+  useEffect(() => {
+    if (!expiresAt) {
+      setSecs(0)
+      return
+    }
+    const calc = () => Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
+    setSecs(calc())
+    const t = setInterval(() => setSecs(calc()), 1000)
+    return () => clearInterval(t)
+  }, [expiresAt])
+  const h = String(Math.floor(secs / 3600)).padStart(2, '0')
+  const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0')
+  const s = String(secs % 60).padStart(2, '0')
+  return { secs, label: `${h}:${m}:${s}` }
+}
+
+function resolvePaymentExpiry(data: {
+  checkoutExpiresAt?: string | null
+  paymentPayload?: PaymentPayload | null
+}) {
+  return data.checkoutExpiresAt ?? data.paymentPayload?.expiresAt ?? null
+}
+
 function getDefaultDeliveryState(status: CheckoutStatusResponse['status']): DeliveryState {
   const flowStatus: DeliveryFlowStatus = status === 'PAID' ? 'WAITING_CUSTOMER_DATA' : 'PENDING_PAYMENT'
   return {
@@ -215,6 +241,11 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const utmsRef = useRef<UtmData | null>(null)
+  const paymentExpiresAt = resolvePaymentExpiry({
+    checkoutExpiresAt: checkoutData?.expiresAt ?? null,
+    paymentPayload: checkoutData?.paymentPayload ?? null,
+  })
+  const { secs: paymentSecs, label: paymentCountdown } = useCountdown(paymentExpiresAt)
 
   const total = useMemo(() => {
     if (!product) return 0
@@ -255,6 +286,7 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
         return {
           ...prev,
           orderNumber: checkout.orderNumber ?? prev.orderNumber,
+          expiresAt: checkout.expiresAt ?? prev.expiresAt ?? null,
           paymentMethod: checkout.paymentMethod ?? prev.paymentMethod,
           paymentPayload: checkout.paymentPayload ?? prev.paymentPayload,
         }
@@ -305,6 +337,7 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
         setCheckoutData((prev) => ({
           checkoutId,
           orderNumber: status.orderNumber ?? prev?.orderNumber ?? null,
+          expiresAt: status.expiresAt ?? prev?.expiresAt ?? null,
           paymentMethod: status.paymentMethod ?? prev?.paymentMethod ?? 'KAST',
           paymentPayload: status.paymentPayload ?? prev?.paymentPayload ?? {},
           totalAmount: status.totalAmount ?? prev?.totalAmount ?? 0,
@@ -323,6 +356,14 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current)
   }, [])
+
+  useEffect(() => {
+    if (step === 'payment' && paymentExpiresAt && paymentSecs === 0) {
+      if (pollRef.current) clearInterval(pollRef.current)
+      setErrorMsg('O prazo deste pagamento global expirou. Gere um novo checkout para continuar.')
+      setStep('error')
+    }
+  }, [step, paymentExpiresAt, paymentSecs])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -366,6 +407,7 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
     }
 
     const created = data as CheckoutCreatedResponse
+    created.expiresAt = created.expiresAt ?? created.paymentPayload?.expiresAt ?? null
     setCheckoutData(created)
     setStep('payment')
     startPolling(created.checkoutId)
@@ -457,9 +499,38 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
             <p className="text-white/80 text-sm mt-1">
               Pedido #{checkoutData.orderNumber ?? checkoutData.checkoutId} · Método: {checkoutData.paymentMethod}
             </p>
+            {paymentExpiresAt ? (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/30 bg-black/20 px-3 py-1">
+                <span className="text-white/80 text-[11px] uppercase tracking-wider">Expira em</span>
+                <span className={`font-mono font-bold text-sm ${paymentSecs < 300 ? 'text-red-200' : 'text-white'}`}>
+                  {paymentCountdown}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <div className="p-6 space-y-4">
+            {paymentExpiresAt ? (
+              <div className={`rounded-xl border px-4 py-3 ${
+                paymentSecs < 300
+                  ? 'border-red-500/50 bg-red-500/10'
+                  : 'border-indigo-500/30 bg-indigo-500/10'
+              }`}>
+                <p className="text-[11px] uppercase tracking-wider text-zinc-300">Cronômetro de foco</p>
+                <p className={`mt-1 font-mono font-bold text-2xl ${
+                  paymentSecs < 300 ? 'text-red-300' : 'text-indigo-200'
+                }`}>
+                  {paymentCountdown}
+                </p>
+                <p className="mt-1 text-xs text-zinc-300">
+                  Finalize seu pagamento dentro da janela para evitar expiração do pedido.
+                </p>
+                {paymentSecs < 300 ? (
+                  <p className="mt-1 text-[11px] font-semibold text-red-200">⚠️ Últimos minutos para concluir o pagamento.</p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="rounded-xl border border-zinc-700 bg-zinc-800/40 p-4 flex items-center justify-between">
               <div>
                 <p className="text-zinc-500 text-xs">Valor total</p>

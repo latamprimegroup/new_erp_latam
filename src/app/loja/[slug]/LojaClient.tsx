@@ -166,7 +166,10 @@ function normalizeDeliveryState(
 function useCountdown(expiresAt: string | null) {
   const [secs, setSecs] = useState<number>(0)
   useEffect(() => {
-    if (!expiresAt) return
+    if (!expiresAt) {
+      setSecs(0)
+      return
+    }
     const calc = () => Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
     setSecs(calc())
     const t = setInterval(() => setSecs(calc()), 1000)
@@ -499,6 +502,22 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
           </div>
 
           <div className="p-6 space-y-5">
+            <div className={`rounded-xl border px-4 py-3 ${
+              secs < 120
+                ? 'border-red-500/50 bg-red-500/10'
+                : 'border-emerald-500/30 bg-emerald-500/10'
+            }`}>
+              <p className="text-[11px] uppercase tracking-wider text-zinc-300">Cronômetro de foco</p>
+              <p className={`mt-1 font-mono font-bold text-2xl ${
+                secs < 120 ? 'text-red-300' : 'text-emerald-300'
+              }`}>
+                {countdown}
+              </p>
+              <p className="mt-1 text-xs text-zinc-300">
+                Complete o pagamento agora para evitar expiração do pedido.
+              </p>
+            </div>
+
             <div className="flex flex-col items-center space-y-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
