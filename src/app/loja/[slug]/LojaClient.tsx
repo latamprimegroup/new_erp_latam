@@ -19,6 +19,7 @@ interface ProductInfo {
 
 interface PixData {
   checkoutId: string
+  orderNumber?: string | null
   txid: string
   pixCopyPaste: string
   qrCodeBase64: string
@@ -46,6 +47,7 @@ interface DeliveryState {
 
 interface CheckoutStatusResponse {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
+  orderNumber?: string | null
   paidAt?: string | null
   expiresAt?: string | null
   pixCopyPaste?: string | null
@@ -269,6 +271,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     if (checkout.pixCopyPaste && checkout.qrCodeBase64 && checkout.expiresAt) {
       setPixData({
         checkoutId: cid,
+        orderNumber: checkout.orderNumber ?? null,
         txid: '',
         pixCopyPaste: checkout.pixCopyPaste,
         qrCodeBase64: checkout.qrCodeBase64,
@@ -520,6 +523,9 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
 
             <div className="bg-zinc-800/50 rounded-xl p-4 flex items-center justify-between">
               <div>
+                <p className="text-zinc-500 text-[11px]">
+                  Pedido {pixData.orderNumber ? `#${pixData.orderNumber}` : `#${pixData.checkoutId}`}
+                </p>
                 <p className="text-zinc-500 text-xs">Valor total</p>
                 <p className="text-white font-bold text-xl">
                   R$ {pixData.totalAmount.toFixed(2).replace('.', ',')}
@@ -548,7 +554,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     const waNumber = (process.env.NEXT_PUBLIC_WA_SUPPORT_NUMBER ?? '').replace(/\D/g, '')
     const refreshUrl = `/loja/${slug}?checkoutId=${encodeURIComponent(pixData.checkoutId)}`
     const waText = encodeURIComponent(
-      `Olá, equipe Ads Ativos. Pedido #${pixData.checkoutId}. Já paguei e preciso acompanhar a entrega.`
+      `Olá, equipe Ads Ativos. Pedido #${pixData.orderNumber ?? pixData.checkoutId}. Já paguei e preciso acompanhar a entrega.`
     )
 
     return (
@@ -568,7 +574,9 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-white text-sm font-semibold">{pixData.title}</p>
-                  <p className="text-zinc-400 text-xs">Pedido #{pixData.checkoutId}</p>
+                  <p className="text-zinc-400 text-xs">
+                    Pedido #{pixData.orderNumber ?? pixData.checkoutId}
+                  </p>
                 </div>
                 <span className="text-emerald-400 font-bold text-lg">
                   R$ {pixData.totalAmount.toFixed(2).replace('.', ',')}

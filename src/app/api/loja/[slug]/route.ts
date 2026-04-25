@@ -22,6 +22,9 @@ const DELIVERY_FLOW = {
   DELIVERED: 'DELIVERED',
 } as const
 
+const QUICK_SALE_ORDER_SEQUENCE_KEY = 'quick_sale_order_sequence'
+const QUICK_SALE_ORDER_REF_PREFIX = 'quick_sale_order_ref:'
+
 function normalizeStockCode(v: string | null | undefined) {
   const normalized = (v ?? '').trim().toUpperCase()
   return normalized || null
@@ -37,6 +40,65 @@ function isMissingColumnError(err: unknown) {
   const code = (err as { code?: string }).code
   const msg = String((err as { message?: string }).message ?? '')
   return code === 'P2022' || msg.includes('Unknown column')
+}
+
+function parseSequenceValue(value: string | null | undefined) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+function formatQuickSaleOrderNumber(sequence: number) {
+  return `VR-${String(sequence).padStart(6, '0')}`
+}
+
+function getQuickSaleOrderRefKey(checkoutId: string) {
+  return `${QUICK_SALE_ORDER_REF_PREFIX}${checkoutId}`
+}
+
+async function reserveNextQuickSaleOrderNumber(tx: Prisma.TransactionClient) {
+  const sequenceSetting = await tx.systemSetting.findUnique({
+    where: { key: QUICK_SALE_ORDER_SEQUENCE_KEY },
+    select: { id: true, value: true },
+  })
+  if (!sequenceSetting) {
+    throw new Error('QUICK_SALE_SEQUENCE_NOT_INITIALIZED')
+  }
+
+  const nextSequence = parseSequenceValue(sequenceSetting.value) + 1
+  await tx.systemSetting.update({
+    where: { id: sequenceSetting.id },
+    data: { value: String(nextSequence) },
+  })
+
+  return {
+    sequence: nextSequence,
+    orderNumber: formatQuickSaleOrderNumber(nextSequence),
+  }
+}
+
+async function attachQuickSaleOrderNumber(
+  tx: Prisma.TransactionClient,
+  checkoutId: string,
+  orderNumber: string,
+) {
+  await tx.systemSetting.upsert({
+    where: { key: getQuickSaleOrderRefKey(checkoutId) },
+    create: {
+      key: getQuickSaleOrderRefKey(checkoutId),
+      value: orderNumber,
+    },
+    update: { value: orderNumber },
+  })
+}
+
+async function getQuickSaleOrderNumber(checkoutId: string) {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: getQuickSaleOrderRefKey(checkoutId) },
+    select: { value: true },
+  })
+  const orderNumber = setting?.value?.trim()
+  return orderNumber ? orderNumber : null
 }
 
 function buildAssetWhere(listing: {
@@ -162,18 +224,43 @@ async function createQuickCheckoutWithFallback(
     referrer: string | null
   },
 ) {
-  try {
-    return await tx.quickSaleCheckout.create({
-      data: {
-        ...data,
-        deliveryFlowStatus: DELIVERY_FLOW.PENDING_PAYMENT,
-        deliveryStatusNote: 'Aguardando pagamento PIX para liberar etapa de entrega.',
-      },
-    })
-  } catch (err) {
-    if (!isMissingColumnError(err)) throw err
-    return tx.quickSaleCheckout.create({ data })
+  type QuickSaleCreateInput = Prisma.QuickSaleCheckoutUncheckedCreateInput
+  const {
+    stockProductCodeSnapshot,
+    stockProductNameSnapshot,
+    ...withoutSnapshots
+  } = data
+
+  const attempts: QuickSaleCreateInput[] = [
+    {
+      ...data,
+      deliveryFlowStatus: DELIVERY_FLOW.PENDING_PAYMENT,
+      deliveryStatusNote: 'Aguardando pagamento PIX para liberar etapa de entrega.',
+    },
+    data,
+    {
+      ...withoutSnapshots,
+      deliveryFlowStatus: DELIVERY_FLOW.PENDING_PAYMENT,
+      deliveryStatusNote: 'Aguardando pagamento PIX para liberar etapa de entrega.',
+    },
+    withoutSnapshots,
+  ]
+
+  let lastErr: unknown
+  for (const payload of attempts) {
+    try {
+      return await tx.quickSaleCheckout.create({ data: payload })
+    } catch (err) {
+      if (!isMissingColumnError(err)) throw err
+      lastErr = err
+    }
   }
+
+  if (lastErr) {
+    throw lastErr
+  }
+
+  throw new Error('Falha ao criar checkout de Venda Rápida')
 }
 
 // ─── GET: retorna info do produto OU status do checkout ───────────────────────
@@ -251,6 +338,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     if (co.listing.slug !== params.slug) {
       return NextResponse.json({ error: 'Checkout não pertence a este produto' }, { status: 404 })
     }
+    const orderNumber = await getQuickSaleOrderNumber(checkoutId).catch(() => null)
     return NextResponse.json({
       status: co.status,
       paidAt: co.paidAt,
@@ -260,6 +348,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
       totalAmount: Number(co.totalAmount),
       qty: co.qty,
       title: co.listing.title,
+      orderNumber,
       delivery: {
         flowStatus: co.deliveryFlowStatus,
         adspowerEmail: co.adspowerEmail,
@@ -402,8 +491,15 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   // 2. Reserva ativos de forma ATÔMICA dentro da transação
   //    updateMany retorna { count } — se count < qty, outra requisição chegou primeiro
   let checkout: Awaited<ReturnType<typeof prisma.quickSaleCheckout.create>>
+  let generatedOrderNumber: string | null = null
   try {
-    checkout = await prisma.$transaction(async (tx) => {
+    await prisma.systemSetting.upsert({
+      where: { key: QUICK_SALE_ORDER_SEQUENCE_KEY },
+      create: { key: QUICK_SALE_ORDER_SEQUENCE_KEY, value: '0' },
+      update: {},
+    })
+
+    const txResult = await prisma.$transaction(async (tx) => {
       // Seleciona IDs dentro da transação para evitar leitura suja
       const candidates = await tx.asset.findMany({
         where:   buildAssetWhere(listing),
@@ -429,7 +525,9 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         throw new Error(`STOCK_RACE:${count}`)
       }
 
-      return createQuickCheckoutWithFallback(tx, {
+      const reservedOrder = await reserveNextQuickSaleOrderNumber(tx)
+
+      const createdCheckout = await createQuickCheckoutWithFallback(tx, {
         listingId:        listing.id,
         buyerName:        name,
         buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
@@ -457,10 +555,18 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         gclid:            gclid        ?? null,
         referrer:         referrer     ?? null,
       })
+      await attachQuickSaleOrderNumber(tx, createdCheckout.id, reservedOrder.orderNumber)
+
+      return {
+        checkout: createdCheckout,
+        orderNumber: reservedOrder.orderNumber,
+      }
     }, {
       // Isolamento máximo para evitar double-sell
       isolationLevel: 'Serializable',
     })
+    checkout = txResult.checkout
+    generatedOrderNumber = txResult.orderNumber
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : ''
     if (msg.startsWith('STOCK_INSUFFICIENT') || msg.startsWith('STOCK_RACE')) {
@@ -500,6 +606,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   const whatsappMsg = [
     '🚀 *PIX GERADO — ADS ATIVOS*',
     '',
+    `Pedido: *${generatedOrderNumber ?? checkout.id}*`,
     `Produto: *${listing.title}*`,
     `Quantidade: *${qty}*`,
     `Valor: *R$ ${totalAmount.toFixed(2)}*`,
@@ -524,6 +631,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     totalAmount,
     qty,
     title:        listing.title,
+    orderNumber:  generatedOrderNumber,
     resumeUrl,
   }, { status: 201 })
 }
