@@ -177,43 +177,18 @@ function buildAssetWhere(listing: {
 
 async function countAvailableAssetsWithFallback(listing: {
   assetCategory: string
-  stockProductCode: string | null
-  stockProductName: string | null
 }) {
-  const whereStrict = {
-    ...buildAssetWhere(listing),
-    vendor: { suspended: false },
-  }
-  try {
-    return await prisma.asset.count({ where: whereStrict })
-  } catch (err) {
-    console.error('[Loja GET] Falha no count estrito, aplicando fallback:', err)
-  }
-
-  try {
-    return await prisma.asset.count({
-      where: buildAssetWhere(listing),
-    })
-  } catch (err) {
-    console.error('[Loja GET] Falha no count por vínculo, fallback por categoria:', err)
-  }
-
   const byCategory = {
     category: listing.assetCategory as never,
     status: 'AVAILABLE' as const,
   }
-  try {
-    return await prisma.asset.count({
-      where: {
-        ...byCategory,
-        vendor: { suspended: false },
-      },
-    })
-  } catch (err) {
-    console.error('[Loja GET] Falha no count categoria+vendor, fallback final:', err)
-  }
 
-  return prisma.asset.count({ where: byCategory })
+  try {
+    return await prisma.asset.count({ where: byCategory })
+  } catch (err) {
+    console.error('[Loja GET] Falha no count por categoria:', err)
+    return 0
+  }
 }
 
 type ListingLite = {
@@ -231,41 +206,41 @@ type ListingLite = {
 }
 
 async function getListingBySlug(slug: string): Promise<ListingLite | null> {
+  const base = await prisma.productListing.findFirst({
+    where: { slug, active: true },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      subtitle: true,
+      badge: true,
+      assetCategory: true,
+      pricePerUnit: true,
+      maxQty: true,
+    },
+  })
+  if (!base) return null
+
   try {
-    return await prisma.productListing.findFirst({
-      where: { slug, active: true },
+    const extended = await prisma.productListing.findUnique({
+      where: { id: base.id },
       select: {
-        id: true,
-        slug: true,
-        title: true,
-        subtitle: true,
-        badge: true,
-        assetCategory: true,
-        pricePerUnit: true,
-        maxQty: true,
         fullDescription: true,
         stockProductCode: true,
         stockProductName: true,
       },
     })
+
+    return {
+      ...base,
+      fullDescription: extended?.fullDescription ?? null,
+      stockProductCode: extended?.stockProductCode ?? null,
+      stockProductName: extended?.stockProductName ?? null,
+    }
   } catch (err) {
     if (!isMissingColumnError(err)) throw err
-    const legacy = await prisma.productListing.findFirst({
-      where: { slug, active: true },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        subtitle: true,
-        badge: true,
-        assetCategory: true,
-        pricePerUnit: true,
-        maxQty: true,
-      },
-    })
-    if (!legacy) return null
     return {
-      ...legacy,
+      ...base,
       fullDescription: null,
       stockProductCode: null,
       stockProductName: null,
