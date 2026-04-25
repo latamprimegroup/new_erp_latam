@@ -10,7 +10,7 @@ export default async function ClienteWarRoomPage({
 }) {
   const session = await getServerSession(authOptions)
   if (!session) redirect('/login')
-  if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
+  if (!['ADMIN', 'COMMERCIAL', 'FINANCE', 'DELIVERER'].includes(session.user?.role || '')) {
     redirect('/dashboard')
   }
   const { clientId } = await params
