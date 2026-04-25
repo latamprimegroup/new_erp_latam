@@ -1,7 +1,10 @@
 /* global self __WB_MANIFEST */
+import { clientsClaim } from 'workbox-core'
 import { precacheAndRoute } from 'workbox-precaching'
 
 precacheAndRoute(self.__WB_MANIFEST || [])
+self.skipWaiting()
+clientsClaim()
 
 self.addEventListener('push', (event) => {
   const data = event.data?.json() || {}
