@@ -39,6 +39,7 @@ type CheckoutRow = {
   id: string
   orderNumber?: string | null
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
+  paymentMethod?: 'PIX' | 'KAST' | 'MERCURY'
   buyerName: string
   buyerWhatsapp: string
   qty: number
@@ -54,8 +55,30 @@ type CheckoutRow = {
   checkoutUrl: string
 }
 
+type FunnelByListingEntry = {
+  listingId: string
+  slug: string
+  title: string
+  generated: number
+  pending: number
+  paid: number
+  expired: number
+  cancelled: number
+  conversionPct: number
+}
+
 type CheckoutResponse = {
   items: CheckoutRow[]
+  funnel?: {
+    generated: number
+    pending: number
+    paid: number
+    expired: number
+    cancelled: number
+    pendingStale: number
+    conversionPct: number
+    byListing?: FunnelByListingEntry[]
+  }
 }
 
 type GeneratedCheckout = {
@@ -101,6 +124,25 @@ export function CommercialSellerClient({
   const [history, setHistory] = useState<CheckoutRow[]>([])
   const [loadingStock, setLoadingStock] = useState(true)
   const [loadingHistory, setLoadingHistory] = useState(true)
+  const [historyFunnel, setHistoryFunnel] = useState<{
+    generated: number
+    pending: number
+    paid: number
+    expired: number
+    cancelled: number
+    pendingStale: number
+    conversionPct: number
+    byListing: FunnelByListingEntry[]
+  }>({
+    generated: 0,
+    pending: 0,
+    paid: 0,
+    expired: 0,
+    cancelled: 0,
+    pendingStale: 0,
+    conversionPct: 0,
+    byListing: [],
+  })
   const [query, setQuery] = useState('')
   const [onlyActive, setOnlyActive] = useState(true)
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'>('ALL')
@@ -147,7 +189,25 @@ export function CommercialSellerClient({
       const res = await fetch(`/api/commercial/seller/checkouts${suffix}`)
       const data = (await res.json()) as CheckoutResponse | { error?: string }
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Erro ao carregar histórico')
-      setHistory((data as CheckoutResponse).items ?? [])
+      const payload = data as CheckoutResponse
+      setHistory(payload.items ?? [])
+      if (payload.funnel) {
+        setHistoryFunnel({
+          ...payload.funnel,
+          byListing: payload.funnel.byListing ?? [],
+        })
+      } else {
+        setHistoryFunnel({
+          generated: payload.items?.length ?? 0,
+          pending: payload.items?.filter((item) => item.status === 'PENDING').length ?? 0,
+          paid: payload.items?.filter((item) => item.status === 'PAID').length ?? 0,
+          expired: payload.items?.filter((item) => item.status === 'EXPIRED').length ?? 0,
+          cancelled: payload.items?.filter((item) => item.status === 'CANCELLED').length ?? 0,
+          pendingStale: 0,
+          conversionPct: 0,
+          byListing: [],
+        })
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar histórico')
     } finally {
@@ -327,8 +387,15 @@ export function CommercialSellerClient({
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
-  const pendingCount = history.filter((h) => h.status === 'PENDING').length
-  const paidCount = history.filter((h) => h.status === 'PAID').length
+  const pendingCount = historyFunnel.pending
+  const paidCount = historyFunnel.paid
+  const expiredCount = historyFunnel.expired
+  const cancelledCount = historyFunnel.cancelled
+  const totalCheckouts = historyFunnel.generated
+  const conversionRate = historyFunnel.conversionPct
+  const pendingRate = totalCheckouts > 0 ? (pendingCount / totalCheckouts) * 100 : 0
+  const expiredRate = totalCheckouts > 0 ? (expiredCount / totalCheckouts) * 100 : 0
+  const cancelledRate = totalCheckouts > 0 ? (cancelledCount / totalCheckouts) * 100 : 0
   const hasClientSideSearch = normalizedHistorySearch.length > 0
   const visibleHistory = hasClientSideSearch
     ? history.filter((item) => {
@@ -370,6 +437,80 @@ export function CommercialSellerClient({
           <p className="text-xs text-gray-500 uppercase">Vendas aprovadas</p>
           <p className="text-2xl font-bold text-emerald-600">{paidCount}</p>
         </div>
+      </section>
+
+      <section className="card space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="heading-2">Funil rápido de checkout</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Visão instantânea do pipeline para ação comercial imediata.
+            </p>
+          </div>
+          <span className="text-xs px-2 py-1 rounded-full bg-primary-100 text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">
+            Conversão: {conversionRate.toFixed(1)}%
+          </span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-zinc-200 dark:border-white/10 p-3">
+            <p className="text-[11px] uppercase text-zinc-500">Pendentes</p>
+            <p className="text-xl font-bold text-amber-600">{pendingCount}</p>
+            <p className="text-xs text-zinc-500">{pendingRate.toFixed(1)}% do total</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 dark:border-white/10 p-3">
+            <p className="text-[11px] uppercase text-zinc-500">Pagos</p>
+            <p className="text-xl font-bold text-emerald-600">{paidCount}</p>
+            <p className="text-xs text-zinc-500">{conversionRate.toFixed(1)}% do total</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 dark:border-white/10 p-3">
+            <p className="text-[11px] uppercase text-zinc-500">Expirados</p>
+            <p className="text-xl font-bold text-zinc-600">{expiredCount}</p>
+            <p className="text-xs text-zinc-500">{expiredRate.toFixed(1)}% do total</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 dark:border-white/10 p-3">
+            <p className="text-[11px] uppercase text-zinc-500">Cancelados</p>
+            <p className="text-xl font-bold text-red-600">{cancelledCount}</p>
+            <p className="text-xs text-zinc-500">{cancelledRate.toFixed(1)}% do total</p>
+          </div>
+        </div>
+        {historyFunnel.pendingStale > 0 ? (
+          <p className="text-xs text-amber-600 dark:text-amber-300">
+            Atenção: {historyFunnel.pendingStale} checkout(s) pendente(s) há mais de 15 min.
+          </p>
+        ) : null}
+        {historyFunnel.byListing.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[780px] border border-zinc-200 dark:border-white/10 rounded-lg">
+              <thead className="bg-zinc-100/60 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-300">
+                <tr>
+                  <th className="text-left px-3 py-2">Listing</th>
+                  <th className="text-right px-3 py-2">Iniciados</th>
+                  <th className="text-right px-3 py-2">Pendentes</th>
+                  <th className="text-right px-3 py-2">Pagos</th>
+                  <th className="text-right px-3 py-2">Expirados</th>
+                  <th className="text-right px-3 py-2">Cancelados</th>
+                  <th className="text-right px-3 py-2">Conversão</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyFunnel.byListing.map((entry) => (
+                  <tr key={entry.listingId} className="border-t border-zinc-200 dark:border-white/10">
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-zinc-900 dark:text-zinc-100">{entry.title}</p>
+                      <p className="text-[10px] text-zinc-500">{entry.slug}</p>
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold">{entry.generated}</td>
+                    <td className="px-3 py-2 text-right text-amber-600">{entry.pending}</td>
+                    <td className="px-3 py-2 text-right text-emerald-600">{entry.paid}</td>
+                    <td className="px-3 py-2 text-right text-zinc-600">{entry.expired}</td>
+                    <td className="px-3 py-2 text-right text-red-600">{entry.cancelled}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{entry.conversionPct}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       <section id="estoque" className="card space-y-4">
@@ -717,6 +858,9 @@ export function CommercialSellerClient({
                     <td className="py-2 pr-2">{item.buyerName}</td>
                     <td className="py-2 pr-2">
                       {item.listing.title} · {item.qty} un.
+                      <p className="text-[10px] text-zinc-500 mt-0.5">
+                        Método: {item.paymentMethod ?? 'PIX'}
+                      </p>
                     </td>
                     <td className="py-2 pr-2">
                       {item.totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}

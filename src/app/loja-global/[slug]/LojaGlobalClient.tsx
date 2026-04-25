@@ -6,6 +6,15 @@ import { captureUtms, buildUtmPayload, type UtmData } from '@/lib/utm-tracker'
 type DocType = 'cpf' | 'cnpj'
 type Gateway = 'KAST' | 'MERCURY'
 type Step = 'loading' | 'form' | 'payment' | 'delivery' | 'error'
+type RetryableGlobalCheckoutInput = {
+  name: string
+  docType: DocType
+  doc: string
+  phone: string
+  email: string
+  qty: number
+  paymentMethod: Gateway
+}
 
 interface ProductInfo {
   id: string
@@ -238,6 +247,10 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
   const [deliverySaving, setDeliverySaving] = useState(false)
   const [deliveryError, setDeliveryError] = useState('')
   const [deliverySuccessMsg, setDeliverySuccessMsg] = useState('')
+  const [checkingPayment, setCheckingPayment] = useState(false)
+  const [paymentCheckHint, setPaymentCheckHint] = useState('')
+  const [retryingCheckout, setRetryingCheckout] = useState(false)
+  const [lastCheckoutInput, setLastCheckoutInput] = useState<RetryableGlobalCheckoutInput | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const utmsRef = useRef<UtmData | null>(null)
@@ -365,52 +378,95 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
     }
   }, [step, paymentExpiresAt, paymentSecs])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
+    if (step !== 'payment') setPaymentCheckHint('')
+  }, [step])
+
+  const createGlobalCheckout = async (input: RetryableGlobalCheckoutInput, fromRetry = false) => {
     if (!product) return
-    if (!product.paymentMethods.includes(selectedGateway)) {
+    if (!product.paymentMethods.includes(input.paymentMethod)) {
       setErrorMsg('Selecione um método de pagamento disponível para este link.')
       setStep('error')
       return
     }
-    setSubmitting(true)
+    if (fromRetry) setRetryingCheckout(true)
+    else setSubmitting(true)
     setErrorMsg('')
+    setPaymentCheckHint('')
 
-    const waClean = phone.replace(/\D/g, '')
-    const waE164 = `+55${waClean}`
-    const docClean = doc.replace(/\D/g, '')
-    const utmPayload = utmsRef.current ? buildUtmPayload(utmsRef.current) : {}
+    try {
+      const waClean = input.phone.replace(/\D/g, '')
+      const waE164 = `+55${waClean}`
+      const docClean = input.doc.replace(/\D/g, '')
+      const utmPayload = utmsRef.current ? buildUtmPayload(utmsRef.current) : {}
 
-    const body: Record<string, unknown> = {
-      name: name.trim(),
-      whatsapp: waE164,
-      email: email.trim() || undefined,
+      const body: Record<string, unknown> = {
+        name: input.name.trim(),
+        whatsapp: waE164,
+        email: input.email.trim() || undefined,
+        qty: Math.max(1, Math.min(input.qty, product.maxQty, product.available)),
+        paymentMethod: input.paymentMethod,
+        sellerRef: sellerRef || undefined,
+        ...utmPayload,
+      }
+      if (input.docType === 'cnpj') body.cnpj = docClean
+      else body.cpf = docClean
+
+      const res = await fetch(`/api/loja-global/${slug}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorMsg(data.error ?? 'Erro ao gerar checkout global.')
+        setStep('error')
+        return
+      }
+
+      const created = data as CheckoutCreatedResponse
+      created.expiresAt = created.expiresAt ?? created.paymentPayload?.expiresAt ?? null
+      setLastCheckoutInput(input)
+      setCheckoutData(created)
+      setStep('payment')
+      startPolling(created.checkoutId)
+    } catch {
+      setErrorMsg('Falha de conexão ao gerar checkout global. Tente novamente.')
+      setStep('error')
+    } finally {
+      if (fromRetry) setRetryingCheckout(false)
+      else setSubmitting(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await createGlobalCheckout({
+      name,
+      docType,
+      doc,
+      phone,
+      email,
       qty,
       paymentMethod: selectedGateway,
-      sellerRef: sellerRef || undefined,
-      ...utmPayload,
-    }
-    if (docType === 'cnpj') body.cnpj = docClean
-    else body.cpf = doc
-
-    const res = await fetch(`/api/loja-global/${slug}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
     })
-    const data = await res.json()
-    setSubmitting(false)
-    if (!res.ok) {
-      setErrorMsg(data.error ?? 'Erro ao gerar checkout global.')
-      setStep('error')
-      return
-    }
+  }
 
-    const created = data as CheckoutCreatedResponse
-    created.expiresAt = created.expiresAt ?? created.paymentPayload?.expiresAt ?? null
-    setCheckoutData(created)
-    setStep('payment')
-    startPolling(created.checkoutId)
+  const checkPaymentNow = async () => {
+    if (!checkoutData) return
+    setCheckingPayment(true)
+    setPaymentCheckHint('')
+    try {
+      const status = await fetchCheckoutStatus(checkoutData.checkoutId)
+      applyCheckoutStatus(status, checkoutData.checkoutId)
+      if (status.status === 'PENDING') {
+        setPaymentCheckHint('Pagamento ainda não confirmado. Continuaremos atualizando automaticamente.')
+      }
+    } catch {
+      setPaymentCheckHint('Não foi possível validar agora. Tente novamente em instantes.')
+    } finally {
+      setCheckingPayment(false)
+    }
   }
 
   const handleDeliverySubmit = async (e: React.FormEvent) => {
@@ -470,12 +526,27 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
   }
 
   if (step === 'error') {
+    const canRetryExpired = Boolean(
+      lastCheckoutInput && /expirou|expirad/i.test(errorMsg),
+    )
     return (
       <main className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-md w-full text-center space-y-4">
           <div className="text-4xl">❌</div>
           <p className="text-white font-semibold text-lg">Ops!</p>
           <p className="text-zinc-400 text-sm">{errorMsg}</p>
+          {canRetryExpired ? (
+            <button
+              onClick={() => {
+                if (!lastCheckoutInput) return
+                void createGlobalCheckout(lastCheckoutInput, true)
+              }}
+              disabled={retryingCheckout}
+              className="w-full py-3 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60 transition"
+            >
+              {retryingCheckout ? 'Gerando novo pagamento...' : 'Gerar novo pagamento com os mesmos dados'}
+            </button>
+          ) : null}
           <button
             onClick={() => { setErrorMsg(''); setStep('form') }}
             className="w-full py-3 rounded-xl bg-zinc-800 text-white text-sm font-medium hover:bg-zinc-700 transition"
@@ -579,6 +650,19 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
 
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
               Após o pagamento, esta página será atualizada automaticamente e liberará a etapa de entrega.
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={checkPaymentNow}
+                disabled={checkingPayment}
+                className="w-full py-2.5 rounded-xl border border-zinc-700 text-zinc-100 text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-60"
+              >
+                {checkingPayment ? 'Validando pagamento...' : 'Já paguei — validar agora'}
+              </button>
+              {paymentCheckHint ? (
+                <p className="text-xs text-zinc-400 text-center">{paymentCheckHint}</p>
+              ) : null}
             </div>
           </div>
         </div>
