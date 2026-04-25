@@ -24,6 +24,7 @@ const DELIVERY_FLOW = {
 
 const QUICK_SALE_ORDER_SEQUENCE_KEY = 'quick_sale_order_sequence'
 const QUICK_SALE_ORDER_REF_PREFIX = 'quick_sale_order_ref:'
+const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
 const REUSABLE_PENDING_PIX_BUFFER_MS = 30_000
 const MAX_TRANSACTION_RETRIES = 3
 
@@ -87,6 +88,10 @@ function parseSequenceValue(value: string | null | undefined) {
 
 function formatQuickSaleOrderNumber(sequence: number) {
   return `VR-${String(sequence).padStart(6, '0')}`
+}
+
+function listingStockQtyKey(listingId: string) {
+  return `${LISTING_STOCK_QTY_PREFIX}${listingId}`
 }
 
 function getQuickSaleOrderRefKey(checkoutId: string) {
@@ -166,6 +171,31 @@ async function getReusablePendingCheckout(input: {
       qty: true,
     },
   })
+}
+
+async function getListingStockQtyConfigured(listingId: string) {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: listingStockQtyKey(listingId) },
+    select: { value: true },
+  })
+  if (!setting?.value) return null
+  const qty = Number.parseInt(String(setting.value).trim(), 10)
+  if (!Number.isFinite(qty) || qty <= 0) return null
+  return qty
+}
+
+async function getListingStockQtyRemaining(listingId: string) {
+  const configured = await getListingStockQtyConfigured(listingId)
+  if (configured == null) return null
+  const reserved = await prisma.quickSaleCheckout.aggregate({
+    where: {
+      listingId,
+      status: { in: ['PENDING', 'PAID'] },
+    },
+    _sum: { qty: true },
+  })
+  const used = Number(reserved._sum.qty ?? 0)
+  return Math.max(0, configured - used)
 }
 
 function buildAssetWhere(listing: {
@@ -451,7 +481,11 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     const listing = await getListingBySlug(params.slug)
     if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
 
-    const available = await countAvailableAssetsWithFallback(listing)
+    const stockQtyRemaining = await getListingStockQtyRemaining(listing.id)
+    const availableByAssets = await countAvailableAssetsWithFallback(listing)
+    const available = stockQtyRemaining == null
+      ? availableByAssets
+      : Math.min(availableByAssets, stockQtyRemaining)
 
     return NextResponse.json({
       id:           listing.id,
@@ -551,6 +585,13 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       select: { id: true },
     }).catch(() => null)
     if (sellerUser) checkoutSellerId = sellerUser.id
+  }
+
+  const listingStockRemaining = await getListingStockQtyRemaining(listing.id)
+  if (listingStockRemaining != null && listingStockRemaining < qty) {
+    return NextResponse.json({
+      error: `Estoque configurado insuficiente para este link. Restante: ${listingStockRemaining} unidade(s).`,
+    }, { status: 409 })
   }
 
   const totalAmount = Number(listing.pricePerUnit) * qty
