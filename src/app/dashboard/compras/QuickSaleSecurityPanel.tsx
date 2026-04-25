@@ -10,6 +10,17 @@ type SecurityPayload = {
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
   linkSharingAttempts: number
+  recentLinkSharingAttempts: Array<{
+    id: string
+    createdAt: string
+    token: string | null
+    checkoutId: string | null
+    listingId: string | null
+    ip: string | null
+    originalIp: string | null
+    sharingAttemptIp: string | null
+    userAgent: string | null
+  }>
   pendingKycCount: number
   adspowerGroupMap: Record<string, string>
   utmifyTokenPreview: string | null
@@ -54,9 +65,16 @@ function reasonLabel(reason: string) {
   return reason
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Data inválida'
+  return date.toLocaleString('pt-BR')
+}
+
 export function QuickSaleSecurityPanel() {
   const [security, setSecurity] = useState<SecurityPayload | null>(null)
   const [pendingKyc, setPendingKyc] = useState<PendingKycItem[]>([])
+  const [showSharingAttempts, setShowSharingAttempts] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [actingCheckoutId, setActingCheckoutId] = useState<string | null>(null)
@@ -247,8 +265,67 @@ export function QuickSaleSecurityPanel() {
         <div className="rounded-xl border border-zinc-700 bg-zinc-900/70 p-3">
           <p className="text-zinc-500 text-xs uppercase tracking-wider">Tentativas de compartilhamento</p>
           <p className="text-fuchsia-300 text-lg font-bold">{security?.linkSharingAttempts ?? 0}</p>
+          <button
+            type="button"
+            onClick={() => setShowSharingAttempts((prev) => !prev)}
+            className="mt-2 text-[11px] px-2 py-1 rounded-md border border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/10 transition"
+          >
+            {showSharingAttempts ? 'Ocultar últimas tentativas' : 'Ver últimas tentativas'}
+          </button>
         </div>
       </div>
+
+      {showSharingAttempts ? (
+        <section className="rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/5 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold text-fuchsia-200">Últimas tentativas de compartilhamento de link</h4>
+            <span className="text-[11px] text-zinc-400">
+              Exibindo {security?.recentLinkSharingAttempts?.length ?? 0} registros
+            </span>
+          </div>
+          {security?.recentLinkSharingAttempts && security.recentLinkSharingAttempts.length > 0 ? (
+            <div className="space-y-2 max-h-72 overflow-auto pr-1">
+              {security.recentLinkSharingAttempts.map((attempt) => (
+                <article key={attempt.id} className="rounded-lg border border-zinc-700 bg-zinc-900/70 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <p className="text-xs text-zinc-300">
+                        <span className="text-zinc-500">Data:</span>{' '}
+                        {new Date(attempt.createdAt).toLocaleString('pt-BR')}
+                      </p>
+                      <p className="text-xs text-zinc-300 break-all">
+                        <span className="text-zinc-500">Token:</span> {attempt.token ?? '—'}
+                      </p>
+                      <p className="text-xs text-zinc-300 break-all">
+                        <span className="text-zinc-500">IP original:</span> {attempt.originalIp ?? '—'} {' · '}
+                        <span className="text-zinc-500">IP tentativa:</span> {attempt.sharingAttemptIp ?? attempt.ip ?? '—'}
+                      </p>
+                      <p className="text-xs text-zinc-300 break-all">
+                        <span className="text-zinc-500">Checkout:</span> {attempt.checkoutId ?? '—'} {' · '}
+                        <span className="text-zinc-500">Listing:</span> {attempt.listingId ?? '—'}
+                      </p>
+                    </div>
+                    {attempt.checkoutId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(attempt.checkoutId as string)
+                          setMessage(`Checkout ${attempt.checkoutId} copiado.`)
+                        }}
+                        className="text-[11px] px-2 py-1 rounded-md border border-zinc-600 text-zinc-200 hover:bg-zinc-800 transition"
+                      >
+                        Copiar checkoutId
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500">Nenhuma tentativa registrada até o momento.</p>
+          )}
+        </section>
+      ) : null}
 
       <form onSubmit={handleSaveSecurity} className="space-y-3 rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
         <h4 className="text-sm font-semibold text-white">Configuracao global de seguranca</h4>
