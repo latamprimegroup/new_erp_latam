@@ -258,35 +258,35 @@ function buildAssetWhere(listing: {
   assetCategory: string
   stockProductCode: string | null
   stockProductName: string | null
+  status?: 'AVAILABLE' | 'QUARANTINE'
 }) {
   const code = normalizeStockCode(listing.stockProductCode)
   const name = normalizeStockName(listing.stockProductName)
   const base = {
     category: listing.assetCategory as never,
-    status: 'AVAILABLE' as const,
+    status: listing.status ?? 'AVAILABLE' as const,
   }
+  const orClauses: Array<Record<string, unknown>> = []
   if (code) {
-    return {
-      ...base,
-      OR: [
-        { adsId: code },
-        { specs: { path: '$.productCode', equals: code } },
-        { specs: { path: '$.codigoProduto', equals: code } },
-      ],
-    }
+    orClauses.push(
+      { adsId: code },
+      { specs: { path: '$.productCode', equals: code } },
+      { specs: { path: '$.codigoProduto', equals: code } },
+    )
   }
   if (name) {
-    return {
-      ...base,
-      OR: [
-        { displayName: { equals: name, mode: 'insensitive' as const } },
-        { subCategory: { equals: name, mode: 'insensitive' as const } },
-        { specs: { path: '$.productName', equals: name } },
-        { specs: { path: '$.nomeProduto', equals: name } },
-      ],
-    }
+    orClauses.push(
+      { displayName: { equals: name, mode: 'insensitive' as const } },
+      { subCategory: { equals: name, mode: 'insensitive' as const } },
+      { specs: { path: '$.productName', equals: name } },
+      { specs: { path: '$.nomeProduto', equals: name } },
+    )
   }
-  return base
+  if (orClauses.length === 0) return base
+  return {
+    ...base,
+    OR: orClauses,
+  }
 }
 
 async function resolveListingPaymentConfig(listingId: string) {
