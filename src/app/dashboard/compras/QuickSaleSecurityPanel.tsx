@@ -26,6 +26,8 @@ type SecurityPayload = {
   utmifyTokenPreview: string | null
 }
 
+type SharingPeriod = '24h' | '7d' | '30d'
+
 type PendingKycItem = {
   id: string
   buyerName: string
@@ -75,6 +77,7 @@ export function QuickSaleSecurityPanel() {
   const [security, setSecurity] = useState<SecurityPayload | null>(null)
   const [pendingKyc, setPendingKyc] = useState<PendingKycItem[]>([])
   const [showSharingAttempts, setShowSharingAttempts] = useState(false)
+  const [sharingPeriod, setSharingPeriod] = useState<SharingPeriod>('24h')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [actingCheckoutId, setActingCheckoutId] = useState<string | null>(null)
@@ -86,6 +89,55 @@ export function QuickSaleSecurityPanel() {
   const [suspiciousDomainsText, setSuspiciousDomainsText] = useState('')
   const [utmifyTokenInput, setUtmifyTokenInput] = useState('')
   const [adspowerGroupMapText, setAdspowerGroupMapText] = useState('{\n  \n}')
+
+  const downloadSharingCsv = useCallback(() => {
+    const rows = security?.recentLinkSharingAttempts ?? []
+    if (rows.length === 0) {
+      setMessage('Não há tentativas para exportar no período selecionado.')
+      return
+    }
+
+    const escapeCsv = (value: string | null | undefined) => {
+      const raw = String(value ?? '')
+      return `"${raw.replace(/"/g, '""')}"`
+    }
+    const headers = [
+      'id',
+      'createdAt',
+      'token',
+      'checkoutId',
+      'listingId',
+      'ip',
+      'originalIp',
+      'sharingAttemptIp',
+      'userAgent',
+    ]
+    const csv = [
+      headers.join(','),
+      ...rows.map((item) => ([
+        escapeCsv(item.id),
+        escapeCsv(item.createdAt),
+        escapeCsv(item.token),
+        escapeCsv(item.checkoutId),
+        escapeCsv(item.listingId),
+        escapeCsv(item.ip),
+        escapeCsv(item.originalIp),
+        escapeCsv(item.sharingAttemptIp),
+        escapeCsv(item.userAgent),
+      ].join(','))),
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `tentativas-compartilhamento-${sharingPeriod}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+    setMessage(`CSV exportado com ${rows.length} registro(s).`)
+  }, [security?.recentLinkSharingAttempts, sharingPeriod])
 
   const fillForm = useCallback((payload: SecurityPayload) => {
     setMinValueForKycBrl(String(payload.minValueForKycBrl))
@@ -100,7 +152,7 @@ export function QuickSaleSecurityPanel() {
     setMessage('')
     try {
       const [securityRes, kycRes] = await Promise.all([
-        fetch('/api/admin/quick-sale/security', { cache: 'no-store' }),
+        fetch(`/api/admin/quick-sale/security?period=${sharingPeriod}&limit=50`, { cache: 'no-store' }),
         fetch('/api/admin/quick-sale/kyc?limit=30', { cache: 'no-store' }),
       ])
 
@@ -125,7 +177,7 @@ export function QuickSaleSecurityPanel() {
     } finally {
       setLoading(false)
     }
-  }, [fillForm])
+  }, [fillForm, sharingPeriod])
 
   useEffect(() => {
     void loadData()
@@ -279,9 +331,34 @@ export function QuickSaleSecurityPanel() {
         <section className="rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/5 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h4 className="text-sm font-semibold text-fuchsia-200">Últimas tentativas de compartilhamento de link</h4>
-            <span className="text-[11px] text-zinc-400">
-              Exibindo {security?.recentLinkSharingAttempts?.length ?? 0} registros
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex rounded-lg border border-zinc-700 overflow-hidden">
+                {(['24h', '7d', '30d'] as SharingPeriod[]).map((period) => (
+                  <button
+                    key={period}
+                    type="button"
+                    onClick={() => setSharingPeriod(period)}
+                    className={`px-2 py-1 text-[11px] transition ${
+                      sharingPeriod === period
+                        ? 'bg-fuchsia-500/20 text-fuchsia-200'
+                        : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {period}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={downloadSharingCsv}
+                className="text-[11px] px-2 py-1 rounded-md border border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/10 transition"
+              >
+                Exportar CSV
+              </button>
+              <span className="text-[11px] text-zinc-400">
+                Exibindo {security?.recentLinkSharingAttempts?.length ?? 0} registros
+              </span>
+            </div>
           </div>
           {security?.recentLinkSharingAttempts && security.recentLinkSharingAttempts.length > 0 ? (
             <div className="space-y-2 max-h-72 overflow-auto pr-1">

@@ -25,6 +25,7 @@ type SecurityPayload = {
   linkExpirationTime: number
   linkExpirationMin: number
   linkExpirationMax: number
+  sharingWindow: '24h' | '7d' | '30d'
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
   linkSharingAttempts: number
@@ -42,6 +43,31 @@ type SecurityPayload = {
   pendingKycCount: number
   adspowerGroupMap: Record<string, string>
   utmifyTokenPreview: string | null
+}
+
+type SharingWindow = '24h' | '7d' | '30d'
+
+const DEFAULT_SHARING_WINDOW: SharingWindow = '24h'
+const DEFAULT_SHARING_LIMIT = 50
+const MAX_SHARING_LIMIT = 500
+
+function parseSharingWindow(raw: string | null | undefined): SharingWindow {
+  const normalized = String(raw ?? '').trim().toLowerCase()
+  if (normalized === '24h' || normalized === '7d' || normalized === '30d') {
+    return normalized
+  }
+  return DEFAULT_SHARING_WINDOW
+}
+
+function parseSharingLimit(raw: string | null | undefined) {
+  const parsed = Number.parseInt(String(raw ?? '').trim(), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SHARING_LIMIT
+  return Math.max(1, Math.min(MAX_SHARING_LIMIT, parsed))
+}
+
+function sharingWindowSince(window: SharingWindow) {
+  const hours = window === '24h' ? 24 : window === '7d' ? 24 * 7 : 24 * 30
+  return new Date(Date.now() - hours * 60 * 60 * 1000)
 }
 
 function maskToken(token: string | null) {
@@ -86,19 +112,31 @@ function parseLinkSharingDetails(raw: unknown) {
   }
 }
 
-async function buildSecurityPayload(): Promise<SecurityPayload> {
+async function buildSecurityPayload(options?: {
+  sharingWindow?: SharingWindow
+  sharingLimit?: number
+}): Promise<SecurityPayload> {
+  const sharingWindow = options?.sharingWindow ?? DEFAULT_SHARING_WINDOW
+  const sharingLimit = Math.max(1, Math.min(MAX_SHARING_LIMIT, Number(options?.sharingLimit ?? DEFAULT_SHARING_LIMIT)))
+  const since = sharingWindowSince(sharingWindow)
   const [minValueForKycBrl, linkExpirationTime, suspiciousEmailDomains, antiFraudBlocks, linkSharingAttempts, recentLinkSharingAttempts, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
     getMinValueForKycBrl(),
     getInvisibleCheckoutTtlMinutes(),
     getSuspiciousEmailDomains(),
     getQuickSaleAntiFraudCounter(),
     prisma.auditLog.count({
-      where: { action: 'QUICK_SALE_LINK_SHARING_ATTEMPT' },
+      where: {
+        action: 'QUICK_SALE_LINK_SHARING_ATTEMPT',
+        createdAt: { gte: since },
+      },
     }).catch(() => 0),
     prisma.auditLog.findMany({
-      where: { action: 'QUICK_SALE_LINK_SHARING_ATTEMPT' },
+      where: {
+        action: 'QUICK_SALE_LINK_SHARING_ATTEMPT',
+        createdAt: { gte: since },
+      },
       orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: sharingLimit,
       select: {
         id: true,
         createdAt: true,
@@ -130,6 +168,7 @@ async function buildSecurityPayload(): Promise<SecurityPayload> {
     linkExpirationTime,
     linkExpirationMin: INVISIBLE_LINK_EXPIRATION_MIN_MINUTES,
     linkExpirationMax: INVISIBLE_LINK_EXPIRATION_MAX_MINUTES,
+    sharingWindow,
     suspiciousEmailDomains,
     antiFraudBlocks,
     linkSharingAttempts,
@@ -153,11 +192,14 @@ async function buildSecurityPayload(): Promise<SecurityPayload> {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requireRoles(['ADMIN', 'COMMERCIAL'])
   if (!auth.ok) return auth.response
 
-  const payload = await buildSecurityPayload()
+  const { searchParams } = new URL(req.url)
+  const sharingWindow = parseSharingWindow(searchParams.get('period'))
+  const sharingLimit = parseSharingLimit(searchParams.get('limit'))
+  const payload = await buildSecurityPayload({ sharingWindow, sharingLimit })
   return NextResponse.json(payload)
 }
 
