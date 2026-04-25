@@ -4,6 +4,8 @@ export type NavItem = {
   label: string
   /** Chave i18n (ex: nav.home) — área cliente */
   labelKey?: string
+  /** Badge curto opcional exibido no menu lateral (ex.: BR, INTL) */
+  menuBadge?: string
   roles: string[]
   icon: string
   /** Grupo/seção que aparece como header no sidebar */
@@ -192,8 +194,17 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/venda-rapida',
     label: 'Venda Rápida PIX',
+    menuBadge: 'BR',
     roles: ['ADMIN', 'COMMERCIAL'],
     icon: 'Zap',
+    group: 'Comercial',
+  },
+  {
+    href: '/dashboard/venda-rapida-global',
+    label: 'Venda Rápida Global',
+    menuBadge: 'INTL',
+    roles: ['ADMIN', 'COMMERCIAL'],
+    icon: 'Globe',
     group: 'Comercial',
   },
   {
