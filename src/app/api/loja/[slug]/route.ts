@@ -13,6 +13,59 @@ import { sendUtmifyPixGerado } from '@/lib/utmify'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 
+const DELIVERY_FLOW = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
+  WAITING_CUSTOMER_DATA: 'WAITING_CUSTOMER_DATA',
+  DELIVERY_REQUESTED: 'DELIVERY_REQUESTED',
+  DELIVERY_IN_PROGRESS: 'DELIVERY_IN_PROGRESS',
+  DELIVERED: 'DELIVERED',
+} as const
+
+function normalizeStockCode(v: string | null | undefined) {
+  const normalized = (v ?? '').trim().toUpperCase()
+  return normalized || null
+}
+
+function normalizeStockName(v: string | null | undefined) {
+  const normalized = (v ?? '').trim()
+  return normalized || null
+}
+
+function buildAssetWhere(listing: {
+  assetCategory: string
+  stockProductCode: string | null
+  stockProductName: string | null
+}) {
+  const code = normalizeStockCode(listing.stockProductCode)
+  const name = normalizeStockName(listing.stockProductName)
+  const base = {
+    category: listing.assetCategory as never,
+    status: 'AVAILABLE' as const,
+  }
+  if (code) {
+    return {
+      ...base,
+      OR: [
+        { adsId: code },
+        { specs: { path: '$.productCode', equals: code } },
+        { specs: { path: '$.codigoProduto', equals: code } },
+      ],
+    }
+  }
+  if (name) {
+    return {
+      ...base,
+      OR: [
+        { displayName: { equals: name, mode: 'insensitive' as const } },
+        { subCategory: { equals: name, mode: 'insensitive' as const } },
+        { specs: { path: '$.productName', equals: name } },
+        { specs: { path: '$.nomeProduto', equals: name } },
+      ],
+    }
+  }
+  return base
+}
+
 // ─── GET: retorna info do produto OU status do checkout ───────────────────────
 
 export async function GET(req: globalThis.Request, { params }: { params: { slug: string } }) {
@@ -31,6 +84,12 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
         pixQrCode: true,
         totalAmount: true,
         qty: true,
+        deliveryFlowStatus: true,
+        adspowerEmail: true,
+        adspowerProfileReleased: true,
+        deliveryRequestedAt: true,
+        deliveryStatusNote: true,
+        deliverySent: true,
         listing: { select: { slug: true, title: true } },
       },
     })
@@ -47,6 +106,14 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
       totalAmount: Number(co.totalAmount),
       qty: co.qty,
       title: co.listing.title,
+      delivery: {
+        flowStatus: co.deliveryFlowStatus,
+        adspowerEmail: co.adspowerEmail,
+        adspowerProfileReleased: co.adspowerProfileReleased,
+        deliveryRequestedAt: co.deliveryRequestedAt,
+        deliveryStatusNote: co.deliveryStatusNote,
+        deliverySent: co.deliverySent,
+      },
     })
   }
 
@@ -58,9 +125,8 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
   // Conta estoque disponível — exclui ativos de fornecedores suspensos (stop-loss)
   const available = await prisma.asset.count({
     where: {
-      category: listing.assetCategory as never,
-      status:   'AVAILABLE',
-      vendor:   { suspended: false },
+      ...buildAssetWhere(listing),
+      vendor: { suspended: false },
     },
   })
 
@@ -69,7 +135,10 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     slug:         listing.slug,
     title:        listing.title,
     subtitle:     listing.subtitle,
+    fullDescription: listing.fullDescription,
     badge:        listing.badge,
+    stockProductCode: listing.stockProductCode,
+    stockProductName: listing.stockProductName,
     pricePerUnit: Number(listing.pricePerUnit),
     maxQty:       Math.min(listing.maxQty, available),
     available,
@@ -187,7 +256,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     checkout = await prisma.$transaction(async (tx) => {
       // Seleciona IDs dentro da transação para evitar leitura suja
       const candidates = await tx.asset.findMany({
-        where:   { category: listing.assetCategory as never, status: 'AVAILABLE' },
+        where:   buildAssetWhere(listing),
         select:  { id: true },
         take:    qty,
         orderBy: { createdAt: 'asc' },
@@ -218,6 +287,8 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           buyerWhatsapp:    waE164,
           buyerEmail:       email || null,
           qty,
+          stockProductCodeSnapshot: normalizeStockCode(listing.stockProductCode),
+          stockProductNameSnapshot: normalizeStockName(listing.stockProductName),
           totalAmount,
           status:           'PENDING',
           interTxid:        pixData.txid,
@@ -227,6 +298,8 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           reservedAssetIds: assetIds,
           sellerId:         checkoutSellerId,
           managerId:        checkoutManagerId,
+          deliveryFlowStatus: DELIVERY_FLOW.PENDING_PAYMENT,
+          deliveryStatusNote: 'Aguardando pagamento PIX para liberar etapa de entrega.',
           utmSource:        utm_source   ?? null,
           utmMedium:        utm_medium   ?? null,
           utmCampaign:      utm_campaign ?? null,
@@ -309,6 +382,89 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   }, { status: 201 })
 }
 
+const deliverySchema = z.object({
+  checkoutId: z.string().min(1),
+  adspowerEmail: z.string().email('Informe um e-mail AdsPower válido'),
+  adspowerProfileReleased: z.boolean(),
+})
+
+export async function PATCH(req: globalThis.Request, { params }: { params: { slug: string } }) {
+  let body: unknown
+  try { body = await req.json() } catch {
+    return NextResponse.json({ error: 'JSON inválido' }, { status: 400 })
+  }
+
+  const parsed = deliverySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
+  }
+
+  const { checkoutId, adspowerEmail, adspowerProfileReleased } = parsed.data
+  if (!adspowerProfileReleased) {
+    return NextResponse.json({
+      error: 'É obrigatório confirmar que o perfil AdsPower está liberado para enviar a entrega.',
+    }, { status: 422 })
+  }
+
+  const checkout = await prisma.quickSaleCheckout.findUnique({
+    where: { id: checkoutId },
+    select: {
+      id: true,
+      status: true,
+      listing: { select: { slug: true } },
+      deliveryFlowStatus: true,
+    },
+  })
+
+  if (!checkout) return NextResponse.json({ error: 'Checkout não encontrado' }, { status: 404 })
+  if (checkout.listing.slug !== params.slug) {
+    return NextResponse.json({ error: 'Checkout não pertence a este produto' }, { status: 404 })
+  }
+  if (checkout.status !== 'PAID') {
+    return NextResponse.json({ error: 'A entrega só pode ser enviada após confirmação do pagamento.' }, { status: 409 })
+  }
+
+  const nextFlow =
+    checkout.deliveryFlowStatus === DELIVERY_FLOW.DELIVERED
+      ? DELIVERY_FLOW.DELIVERED
+      : checkout.deliveryFlowStatus === DELIVERY_FLOW.DELIVERY_IN_PROGRESS
+        ? DELIVERY_FLOW.DELIVERY_IN_PROGRESS
+        : DELIVERY_FLOW.DELIVERY_REQUESTED
+
+  const updated = await prisma.quickSaleCheckout.update({
+    where: { id: checkout.id },
+    data: {
+      adspowerEmail: normalizeEmail(adspowerEmail),
+      adspowerProfileReleased: true,
+      deliveryRequestedAt: new Date(),
+      deliveryFlowStatus: nextFlow,
+      deliveryStatusNote: 'Dados de entrega recebidos. Equipe Ads Ativos validando e separando acesso.',
+    },
+    select: {
+      id: true,
+      deliveryFlowStatus: true,
+      adspowerEmail: true,
+      adspowerProfileReleased: true,
+      deliveryRequestedAt: true,
+      deliveryStatusNote: true,
+      deliverySent: true,
+    },
+  })
+
+  return NextResponse.json({
+    ok: true,
+    checkoutId: updated.id,
+    delivery: {
+      flowStatus: updated.deliveryFlowStatus,
+      adspowerEmail: updated.adspowerEmail,
+      adspowerProfileReleased: updated.adspowerProfileReleased,
+      deliveryRequestedAt: updated.deliveryRequestedAt,
+      deliveryStatusNote: updated.deliveryStatusNote,
+      deliverySent: updated.deliverySent,
+    },
+  })
+}
+
 // ─── GET status do checkout ───────────────────────────────────────────────────
 // Chamado pelo polling do frontend: GET /api/loja/[slug]?checkoutId=xxx
 
@@ -323,4 +479,8 @@ export async function HEAD(req: globalThis.Request) {
   })
   if (!co) return new Response(null, { status: 404 })
   return new Response(null, { status: co.status === 'PAID' ? 200 : 202 })
+}
+
+function normalizeEmail(v: string) {
+  return v.trim().toLowerCase()
 }

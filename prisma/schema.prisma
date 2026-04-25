@@ -5347,6 +5347,12 @@ model ProductListing {
   title        String   @db.VarChar(200)
   /// Subtítulo/descrição curta
   subtitle     String?  @db.VarChar(500)
+  /// Descrição completa para copy de venda (multilinha)
+  fullDescription String? @map("full_description") @db.Text
+  /// Código interno do produto de estoque vinculado ao listing (ex: AA-CONT-000001)
+  stockProductCode String? @map("stock_product_code") @db.VarChar(40)
+  /// Nome interno do produto de estoque vinculado ao listing
+  stockProductName String? @map("stock_product_name") @db.VarChar(200)
   /// Categoria do Asset que será reservado (filtra estoque disponível)
   assetCategory String  @map("asset_category") @db.VarChar(50)
   /// Tags opcionais para filtrar ativos (ex: "tiktok,verificada")
@@ -5387,6 +5393,9 @@ model QuickSaleCheckout {
   buyerEmail     String?        @map("buyer_email") @db.VarChar(200)
   /// Quantidade comprada
   qty            Int            @default(1)
+  /// Snapshot do vínculo de estoque no momento da compra
+  stockProductCodeSnapshot String? @map("stock_product_code_snapshot") @db.VarChar(40)
+  stockProductNameSnapshot String? @map("stock_product_name_snapshot") @db.VarChar(200)
   /// Valor total cobrado
   totalAmount    Decimal        @map("total_amount") @db.Decimal(10, 2)
   status         CheckoutStatus @default(PENDING)
@@ -5415,6 +5424,16 @@ model QuickSaleCheckout {
   /// Auditoria gerencial de conferência comercial
   commercialAuditAt DateTime?   @map("commercial_audit_at")
   deliverySent   Boolean        @default(false) @map("delivery_sent")
+  /// Etapa de entrega exibida para o cliente no checkout público
+  deliveryFlowStatus String      @default("PENDING_PAYMENT") @map("delivery_flow_status") @db.VarChar(40)
+  /// E-mail informado para entrega via AdsPower
+  adspowerEmail     String?      @map("adspower_email") @db.VarChar(200)
+  /// Confirmação de que o perfil AdsPower está liberado para recebimento
+  adspowerProfileReleased Boolean @default(false) @map("adspower_profile_released")
+  /// Timestamp em que o cliente confirmou dados de entrega
+  deliveryRequestedAt DateTime?  @map("delivery_requested_at")
+  /// Mensagem curta de status para timeline pública da entrega
+  deliveryStatusNote  String?    @map("delivery_status_note") @db.VarChar(300)
   utmifySent     Boolean        @default(false) @map("utmify_sent")
   /// ID de transação retornado pela Utmify após postback (anti-duplicata)
   utmifyOrderId  String?        @map("utmify_order_id") @db.VarChar(120)
@@ -5443,6 +5462,7 @@ model QuickSaleCheckout {
   @@index([listingId])
   @@index([sellerId])
   @@index([managerId])
+  @@index([deliveryFlowStatus])
   @@index([createdAt])
   @@index([fbclid])
   @@index([gclid])
