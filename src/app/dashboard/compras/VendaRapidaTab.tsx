@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -10,8 +10,11 @@ interface Listing {
   slug:           string
   title:          string
   subtitle:       string | null
+  fullDescription: string | null
   badge:          string | null
   assetCategory:  string
+  stockProductCode: string | null
+  stockProductName: string | null
   pricePerUnit:   number
   maxQty:         number
   active:         boolean
@@ -20,6 +23,15 @@ interface Listing {
   paidCheckouts:  number
   revenue:        number
   createdAt:      string
+}
+
+interface StockProductSuggestion {
+  assetId: string
+  adsId: string
+  displayName: string
+  category: string
+  salePrice: number
+  availableInCategory: number
 }
 
 interface GeneratedPix {
@@ -76,6 +88,22 @@ function normalizeWhatsapp(raw: string) {
   return ''
 }
 
+function escapeRegExp(v: string) {
+  return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function renderHighlightedText(text: string, query: string) {
+  const q = query.trim()
+  if (!q) return text
+  const regex = new RegExp(`(${escapeRegExp(q)})`, 'ig')
+  const parts = text.split(regex)
+  return parts.map((part, idx) =>
+    part.toLowerCase() === q.toLowerCase()
+      ? <mark key={`${part}-${idx}`} className="bg-emerald-500/20 text-emerald-200 rounded px-0.5">{part}</mark>
+      : <span key={`${part}-${idx}`}>{part}</span>,
+  )
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function VendaRapidaTab() {
@@ -88,7 +116,17 @@ export function VendaRapidaTab() {
   // Formulário
   const [title, setTitle]           = useState('')
   const [subtitle, setSubtitle]     = useState('')
+  const [fullDescription, setFullDescription] = useState('')
   const [category, setCategory]     = useState('GOOGLE_ADS')
+  const [stockProductCode, setStockProductCode] = useState('')
+  const [stockProductName, setStockProductName] = useState('')
+  const [stockSearch, setStockSearch] = useState('')
+  const [stockSuggestions, setStockSuggestions] = useState<StockProductSuggestion[]>([])
+  const [stockSearching, setStockSearching] = useState(false)
+  const [stockSearchOpen, setStockSearchOpen] = useState(false)
+  const [stockHighlightedIndex, setStockHighlightedIndex] = useState(-1)
+  const stockSearchWrapRef = useRef<HTMLDivElement | null>(null)
+  const stockDropdownRef = useRef<HTMLDivElement | null>(null)
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
@@ -115,6 +153,63 @@ export function VendaRapidaTab() {
   const maxPixQty = selectedListing ? Math.min(selectedListing.maxQty, selectedListing.available) : 0
   const safePixQty = maxPixQty > 0 ? Math.max(1, Math.min(pixQty, maxPixQty)) : 0
   const estimatedPixTotal = selectedListing ? selectedListing.pricePerUnit * safePixQty : 0
+
+  useEffect(() => {
+    const q = stockSearch.trim()
+    if (q.length < 2) {
+      setStockSuggestions([])
+      setStockHighlightedIndex(-1)
+      return
+    }
+
+    const ctrl = new AbortController()
+    const timer = window.setTimeout(async () => {
+      try {
+        setStockSearching(true)
+        const res = await fetch(`/api/admin/listings/stock-products?q=${encodeURIComponent(q)}`, {
+          signal: ctrl.signal,
+          cache: 'no-store',
+        })
+        if (!res.ok) return
+        const data = await res.json() as { items?: StockProductSuggestion[] }
+        setStockSuggestions(data.items ?? [])
+        setStockHighlightedIndex((data.items?.length ?? 0) > 0 ? 0 : -1)
+      } catch {
+        // ignora erros de rede/abort para não quebrar UX
+      } finally {
+        setStockSearching(false)
+      }
+    }, 250)
+
+    return () => {
+      ctrl.abort()
+      window.clearTimeout(timer)
+    }
+  }, [stockSearch])
+
+  useEffect(() => {
+    if (!stockSearchOpen) return
+    const onPointerDownOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (stockSearchWrapRef.current?.contains(target)) return
+      setStockSearchOpen(false)
+      setStockHighlightedIndex(-1)
+    }
+    document.addEventListener('mousedown', onPointerDownOutside)
+    document.addEventListener('touchstart', onPointerDownOutside)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDownOutside)
+      document.removeEventListener('touchstart', onPointerDownOutside)
+    }
+  }, [stockSearchOpen])
+
+  useEffect(() => {
+    if (!stockSearchOpen || stockHighlightedIndex < 0) return
+    const highlightedNode = stockDropdownRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-stock-idx="${stockHighlightedIndex}"]`)
+    highlightedNode?.scrollIntoView({ block: 'nearest' })
+  }, [stockHighlightedIndex, stockSearchOpen])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -170,7 +265,10 @@ export function VendaRapidaTab() {
       body: JSON.stringify({
         title:         title.trim(),
         subtitle:      subtitle.trim() || undefined,
+        fullDescription: fullDescription.trim() || undefined,
         assetCategory: category,
+        stockProductCode: stockProductCode.trim() || undefined,
+        stockProductName: stockProductName.trim() || undefined,
         pricePerUnit:  parseFloat(price),
         maxQty:        parseInt(maxQty),
         badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
@@ -180,11 +278,57 @@ export function VendaRapidaTab() {
     setSaving(false)
     if (res.ok) {
       setShowForm(false)
-      setTitle(''); setSubtitle(''); setPrice(''); setMaxQty('10'); setBadge('ENTREGA AUTOMÁTICA')
+      setTitle('')
+      setSubtitle('')
+      setFullDescription('')
+      setStockProductCode('')
+      setStockProductName('')
+      setStockSearch('')
+      setStockSuggestions([])
+      setStockSearchOpen(false)
+      setStockHighlightedIndex(-1)
+      setPrice('')
+      setMaxQty('10')
+      setBadge('ENTREGA AUTOMÁTICA')
       load()
     } else {
       const d = await res.json()
       alert(d.error ?? 'Erro ao criar listing')
+    }
+  }
+
+  const applyStockSuggestion = (item: StockProductSuggestion) => {
+    setStockProductCode(item.adsId)
+    setStockProductName(item.displayName)
+    setCategory(item.category)
+    setStockSearch(`${item.adsId} · ${item.displayName}`)
+    setStockSearchOpen(false)
+    setStockHighlightedIndex(-1)
+  }
+
+  const handleStockSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!stockSearchOpen || stockSuggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setStockHighlightedIndex((prev) => (prev + 1) % stockSuggestions.length)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setStockHighlightedIndex((prev) => (prev <= 0 ? stockSuggestions.length - 1 : prev - 1))
+      return
+    }
+    if (e.key === 'Enter') {
+      if (stockHighlightedIndex >= 0 && stockHighlightedIndex < stockSuggestions.length) {
+        e.preventDefault()
+        applyStockSuggestion(stockSuggestions[stockHighlightedIndex])
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setStockSearchOpen(false)
+      setStockHighlightedIndex(-1)
     }
   }
 
@@ -273,7 +417,9 @@ export function VendaRapidaTab() {
       'PIX copia e cola:',
       pixResult.pixCopyPaste,
       '',
-      `QR e status: ${pixResult.resumeUrl}`,
+      `Checkout + Entrega: ${pixResult.resumeUrl}`,
+      '',
+      'Após o pagamento, o cliente deve preencher a tela de entrega com e-mail AdsPower e confirmar perfil liberado.',
     ].join('\n')
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
@@ -488,7 +634,7 @@ export function VendaRapidaTab() {
                     className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
                   >
                     <QrCode className="w-3.5 h-3.5 inline mr-1" />
-                    Abrir checkout/status
+                    Abrir checkout + entrega
                   </a>
                   <button
                     type="button"
@@ -525,12 +671,99 @@ export function VendaRapidaTab() {
                 />
               </Field>
               <Field label="Subtítulo (opcional)">
-                <input
+                <textarea
                   value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
-                  placeholder="Ex: Conta aquecida e pronta para uso"
+                  rows={3}
+                  placeholder="Resumo rápido do produto para o card"
                   className="input-dark"
                 />
               </Field>
+              <Field label="Descrição completa (copiar e colar)">
+                <textarea
+                  value={fullDescription} onChange={(e) => setFullDescription(e.target.value)}
+                  rows={6}
+                  placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
+                  className="input-dark"
+                />
+              </Field>
+              <Field label="Buscar no estoque por código ou nome">
+                <div ref={stockSearchWrapRef} className="relative">
+                  <input
+                    value={stockSearch}
+                    onChange={(e) => {
+                      setStockSearch(e.target.value)
+                      setStockSearchOpen(true)
+                    }}
+                    onFocus={() => setStockSearchOpen(true)}
+                    onKeyDown={handleStockSearchKeyDown}
+                    placeholder="Digite AA-CONT-000001 ou nome do produto..."
+                    className="input-dark"
+                  />
+                  {stockSearchOpen && stockSearch.trim().length >= 2 ? (
+                    <div
+                      ref={stockDropdownRef}
+                      className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto"
+                    >
+                      {stockSearching ? (
+                        <p className="px-3 py-2 text-xs text-zinc-400">Buscando no estoque...</p>
+                      ) : stockSuggestions.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-zinc-500">Nenhum produto encontrado.</p>
+                      ) : (
+                        stockSuggestions.map((item, idx) => (
+                          <button
+                            key={item.assetId}
+                            type="button"
+                            data-stock-idx={idx}
+                            onClick={() => applyStockSuggestion(item)}
+                            className={`w-full text-left px-3 py-2 transition border-b border-zinc-800 last:border-b-0 ${
+                              idx === stockHighlightedIndex ? 'bg-zinc-800' : 'hover:bg-zinc-800'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs text-zinc-200 font-medium">
+                                  {renderHighlightedText(item.adsId, stockSearch)} · {renderHighlightedText(item.displayName, stockSearch)}
+                                </p>
+                                <p className="text-[11px] text-zinc-500">
+                                  {item.category.replace('_', ' ')} · R$ {item.salePrice.toFixed(2)}
+                                </p>
+                              </div>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                item.availableInCategory > 0
+                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                  : 'border-red-500/40 bg-red-500/10 text-red-300'
+                              }`}>
+                                Estoque: {item.availableInCategory}
+                              </span>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </Field>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Field label="Código do produto no estoque (opcional)">
+                  <input
+                    value={stockProductCode}
+                    onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
+                    placeholder="AA-CONT-000001"
+                    className="input-dark"
+                  />
+                </Field>
+                <Field label="Nome do produto no estoque (opcional)">
+                  <input
+                    value={stockProductName}
+                    onChange={(e) => setStockProductName(e.target.value)}
+                    placeholder="Perfil Real Verificado"
+                    className="input-dark"
+                  />
+                </Field>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Se preencher código ou nome, a Venda Rápida vai tentar atrelar e baixar o estoque desse produto automaticamente no pagamento.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Categoria do ativo">
                   <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
@@ -624,7 +857,15 @@ export function VendaRapidaTab() {
                       </span>
                     </div>
                     {l.subtitle && <p className="text-zinc-500 text-sm mt-0.5">{l.subtitle}</p>}
+                    {l.fullDescription && (
+                      <p className="text-zinc-400 text-xs mt-1 whitespace-pre-line">{l.fullDescription}</p>
+                    )}
                     <p className="text-zinc-600 text-xs mt-1">{l.assetCategory.replace('_', ' ')} · R$ {l.pricePerUnit.toFixed(2)}/un · máx {l.maxQty} un</p>
+                    {(l.stockProductCode || l.stockProductName) && (
+                      <p className="text-zinc-500 text-[11px] mt-1">
+                        Vínculo estoque: {l.stockProductCode || '—'} {l.stockProductName ? `· ${l.stockProductName}` : ''}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">

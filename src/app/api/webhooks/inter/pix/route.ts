@@ -27,7 +27,6 @@ import {
 import { sendSaleIncentiveNotifications } from '@/lib/notifications/sales-incentive'
 import { sendUtmifyConversion, sendUtmifyQuickSaleConversion } from '@/lib/utmify'
 import {
-  sendWhatsAppConfirmation,
   sendWhatsAppEliteDelivery,
   sendWhatsApp,
 } from '@/lib/notifications/channels/whatsapp'
@@ -36,9 +35,15 @@ import {
   registerQuickSaleProductionBonus,
   getSalesCheckoutIncentiveBreakdown,
 } from '@/lib/incentive-engine'
-import { handlePostPaymentOnboarding } from '@/lib/onboarding-engine'
 
 export const runtime = 'nodejs'
+
+const QUICK_DELIVERY_FLOW = {
+  WAITING_CUSTOMER_DATA: 'WAITING_CUSTOMER_DATA',
+  DELIVERY_REQUESTED: 'DELIVERY_REQUESTED',
+  DELIVERY_IN_PROGRESS: 'DELIVERY_IN_PROGRESS',
+  DELIVERED: 'DELIVERED',
+} as const
 
 // ─── Log de auditoria de cada evento PIX ─────────────────────────────────────
 
@@ -167,8 +172,6 @@ function extractPixItems(raw: unknown): InterPixItem[] {
   scan(raw)
   return items
 }
-
-// sendWhatsAppDelivery agora usa sendWhatsAppConfirmation do canal centralizado
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 
@@ -301,7 +304,7 @@ export async function POST(req: NextRequest) {
           ? await prisma.asset.findUnique({ where: { id: checkout.assetId }, select: { displayName: true } })
           : null
 
-        checkoutUtmifySynced = await sendUtmifyConversion({
+        const utmifyResult = await sendUtmifyConversion({
           checkoutId:  checkout.id,
           adsId:       checkout.adsId,
           displayName: asset?.displayName ?? checkout.adsId,
@@ -324,8 +327,9 @@ export async function POST(req: NextRequest) {
           },
         }).catch((e) => {
           console.error('[Utmify]', e)
-          return false
+          return { ok: false }
         })
+        checkoutUtmifySynced = Boolean(utmifyResult.ok)
 
         if (checkoutUtmifySynced) {
           await prisma.salesCheckout.update({
@@ -400,7 +404,7 @@ export async function POST(req: NextRequest) {
     // ── 3. Fluxo Venda Rápida: QuickSaleCheckout ─────────────────────────────
     const quickCheckout = await prisma.quickSaleCheckout.findUnique({
       where:   { interTxid: txid },
-      include: { listing: { select: { title: true, assetCategory: true, warrantyDays: true, destinationProfile: true } } },
+      include: { listing: { select: { title: true, slug: true, assetCategory: true, warrantyDays: true, destinationProfile: true } } },
     })
 
     if (quickCheckout && quickCheckout.status !== 'PENDING') {
@@ -411,6 +415,24 @@ export async function POST(req: NextRequest) {
       const assetIds = Array.isArray(quickCheckout.reservedAssetIds)
         ? (quickCheckout.reservedAssetIds as string[])
         : []
+      const warrantyDays = quickCheckout.listing.warrantyDays ?? 7
+      const warrantyEndsAt = new Date(paidAt.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
+      const paidFlowStatus =
+        quickCheckout.deliveryFlowStatus === QUICK_DELIVERY_FLOW.DELIVERED
+          ? QUICK_DELIVERY_FLOW.DELIVERED
+          : quickCheckout.deliveryFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_IN_PROGRESS
+            ? QUICK_DELIVERY_FLOW.DELIVERY_IN_PROGRESS
+            : quickCheckout.deliveryFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_REQUESTED
+              ? QUICK_DELIVERY_FLOW.DELIVERY_REQUESTED
+              : QUICK_DELIVERY_FLOW.WAITING_CUSTOMER_DATA
+      const paidStatusNote =
+        paidFlowStatus === QUICK_DELIVERY_FLOW.DELIVERED
+          ? 'Pagamento confirmado e entrega concluída.'
+          : paidFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_IN_PROGRESS
+            ? 'Pagamento confirmado. Entrega em andamento pela equipe.'
+            : paidFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_REQUESTED
+              ? 'Pagamento confirmado. Dados AdsPower recebidos e entrega em fila.'
+              : 'Pagamento confirmado. Envie seu e-mail AdsPower e confirme perfil liberado para iniciar a entrega.'
 
       // 3a. Atualiza checkout como PAID
       await prisma.quickSaleCheckout.update({
@@ -420,6 +442,9 @@ export async function POST(req: NextRequest) {
           paidAt,
           interE2eId:     e2eid ?? null,
           webhookPayload: payload as never,
+          warrantyEndsAt,
+          deliveryFlowStatus: paidFlowStatus,
+          deliveryStatusNote: paidStatusNote,
         },
       })
       checkoutsUpdated++
@@ -456,6 +481,27 @@ export async function POST(req: NextRequest) {
         },
       }).catch((e) => console.error('[QuickCheckout] Falha ao registrar receita financeira:', e))
 
+      await prisma.auditLog.create({
+        data: {
+          action: 'QUICK_SALE_ORDER_CONFIRMED',
+          entity: 'QuickSaleCheckout',
+          entityId: quickCheckout.id,
+          userId: quickCheckout.sellerId ?? quickCheckout.managerId ?? null,
+          details: {
+            checkoutId: quickCheckout.id,
+            buyerName: quickCheckout.buyerName,
+            buyerWhatsapp: quickCheckout.buyerWhatsapp,
+            listingId: quickCheckout.listingId,
+            listingTitle: quickCheckout.listing.title,
+            stockProductCode: quickCheckout.stockProductCodeSnapshot,
+            stockProductName: quickCheckout.stockProductNameSnapshot,
+            qty: quickCheckout.qty,
+            totalAmount: Number(quickCheckout.totalAmount),
+            paidAt: paidAt.toISOString(),
+          },
+        },
+      }).catch((e) => console.error('[QuickCheckout] Falha ao registrar auditoria da compra:', e))
+
       // 3b. Marca todos os ativos reservados como SOLD
       if (assetIds.length > 0) {
         await prisma.asset.updateMany({
@@ -468,13 +514,14 @@ export async function POST(req: NextRequest) {
           data: assetIds.map((aid) => ({
             assetId:  aid,
             toStatus: 'SOLD' as const,
-            reason:   `Venda Rápida — Comprador: ${quickCheckout.buyerName} | CPF: ${quickCheckout.buyerCpf} | Checkout: ${quickCheckout.id}`,
+            reason:   `Venda Rápida — Comprador: ${quickCheckout.buyerName} | CPF: ${quickCheckout.buyerCpf} | Produto estoque: ${quickCheckout.stockProductCodeSnapshot ?? quickCheckout.stockProductNameSnapshot ?? quickCheckout.listing.title} | Checkout: ${quickCheckout.id}`,
           })),
           skipDuplicates: true,
         }).catch((e) => console.error('[QuickCheckout] Falha ao registrar movimentos:', e))
       }
 
       // 3c. Utmify — S2S com retry, profileType tag e persistência de utmifyOrderId
+      let quickUtmifySynced = Boolean(quickCheckout.utmifySent)
       if (!quickCheckout.utmifySent) {
         const utmifyResult = await sendUtmifyQuickSaleConversion({
           checkoutId:   quickCheckout.id,
@@ -501,13 +548,14 @@ export async function POST(req: NextRequest) {
             src:          quickCheckout.utmSrc                   ?? undefined,
           },
         }).catch((e) => { console.error('[Utmify/Quick]', e); return { ok: false } })
+        quickUtmifySynced = Boolean(utmifyResult.ok)
 
         if (utmifyResult.ok) {
           await prisma.quickSaleCheckout.update({
             where: { id: quickCheckout.id },
             data: {
               utmifySent:   true,
-              utmifyOrderId: utmifyResult.utmifyOrderId ?? null,
+              utmifyOrderId: ('utmifyOrderId' in utmifyResult ? utmifyResult.utmifyOrderId : null) ?? null,
             },
           }).catch((e) => console.error('[Utmify/Quick] Falha ao persistir utmifyOrderId:', e))
         }
@@ -550,66 +598,27 @@ export async function POST(req: NextRequest) {
 
       await logPixEvent({ txid, e2eid, amount: Number(quickCheckout.totalAmount), status: 'PROCESSED', flowType: 'QUICK_CHECKOUT', relatedId: quickCheckout.id, rawPayload })
 
-      // 3d. Motor de Onboarding Automático + Entrega Elite WhatsApp
-      if (!quickCheckout.deliverySent && quickCheckout.buyerEmail) {
-        // Calcula prazo de garantia com base em warrantyDays do listing
-        const warrantyDays   = quickCheckout.listing.warrantyDays ?? 7
-        const warrantyEndsAt = new Date(paidAt.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
-        prisma.quickSaleCheckout.update({
-          where: { id: quickCheckout.id },
-          data:  { warrantyEndsAt },
-        }).catch(() => {})
-
-        // Busca rawData do ativo principal para incluir na entrega
-        const primaryAsset = assetIds.length > 0
-          ? await prisma.asset.findUnique({
-              where:  { id: assetIds[0] },
-              select: { rawData: true },
-            }).catch(() => null)
-          : null
-        const hasRawData = primaryAsset?.rawData && typeof primaryAsset.rawData === 'object'
-
-        // Perfil concedido pelo produto (ou TRADER_WHATSAPP como default)
-        const destinationProfile = quickCheckout.listing.destinationProfile ?? 'TRADER_WHATSAPP'
-
-        // Motor de Onboarding: cria/atualiza conta + envia notificações
-        const onboardingResult = await handlePostPaymentOnboarding({
-          email:              quickCheckout.buyerEmail,
-          name:               quickCheckout.buyerName,
-          whatsapp:           quickCheckout.buyerWhatsapp,
-          destinationProfile,
-          productTitle:       quickCheckout.listing.title,
-          productRef:         quickCheckout.listingId,
-          checkoutId:         quickCheckout.id,
-          credentials:        hasRawData ? (primaryAsset!.rawData as Record<string, unknown>) : null,
-          warrantyEndsAt,
-        }).catch((e) => { console.error('[Onboarding/Quick]', e); return null })
-
-        if (onboardingResult) {
-          await prisma.quickSaleCheckout.update({
-            where: { id: quickCheckout.id },
-            data:  { deliverySent: true },
-          }).catch((e) => console.error('[Onboarding/Quick] Falha ao persistir deliverySent:', e))
-        }
-      } else if (!quickCheckout.deliverySent) {
-        // Sem e-mail — entrega simples sem onboarding
-        const warrantyDays   = quickCheckout.listing.warrantyDays ?? 7
-        const warrantyEndsAt = new Date(paidAt.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
-        sendWhatsAppEliteDelivery({
-          whatsapp:      quickCheckout.buyerWhatsapp,
-          buyerName:     quickCheckout.buyerName,
-          productTitle:  quickCheckout.listing.title,
-          checkoutId:    quickCheckout.id,
-          credentials:   null,
-          warrantyEndsAt,
-        }).then(async (sent) => {
-          if (sent) {
-            await prisma.quickSaleCheckout.update({
-              where: { id: quickCheckout.id },
-              data:  { deliverySent: true },
-            }).catch(() => {})
-          }
-        }).catch((e) => console.error('[Quick/NoEmail delivery]', e))
+      // 3d. Pós-pagamento: direciona para tela pública de Entrega (AdsPower)
+      const appBase = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+      const deliveryUrl = appBase
+        ? `${appBase}/loja/${quickCheckout.listing.slug}?checkoutId=${encodeURIComponent(quickCheckout.id)}`
+        : null
+      if (deliveryUrl) {
+        const guidanceMessage = [
+          '✅ *Pagamento confirmado na Ads Ativos*',
+          '',
+          `Pedido: #${quickCheckout.id}`,
+          `Produto: ${quickCheckout.listing.title}`,
+          '',
+          '🚚 *Próximo passo obrigatório:*',
+          'Abra o link abaixo, informe seu e-mail do AdsPower e confirme que o perfil está liberado.',
+          '',
+          deliveryUrl,
+          '',
+          'Sem perfil AdsPower liberado o sistema não autoriza envio da entrega.',
+        ].join('\n')
+        sendWhatsApp({ phone: quickCheckout.buyerWhatsapp, message: guidanceMessage })
+          .catch((e) => console.error('[QuickCheckout] guia entrega whatsapp', e))
       }
     }
 

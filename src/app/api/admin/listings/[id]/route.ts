@@ -17,9 +17,12 @@ async function requireAdmin() {
 const patchSchema = z.object({
   title:        z.string().min(2).max(200).optional(),
   subtitle:     z.string().max(500).nullable().optional(),
+  fullDescription: z.string().max(8000).nullable().optional(),
   pricePerUnit: z.number().positive().optional(),
   maxQty:       z.number().int().min(1).max(100).optional(),
   badge:        z.string().max(100).nullable().optional(),
+  stockProductCode: z.string().max(40).nullable().optional(),
+  stockProductName: z.string().max(200).nullable().optional(),
   active:       z.boolean().optional(),
 })
 
