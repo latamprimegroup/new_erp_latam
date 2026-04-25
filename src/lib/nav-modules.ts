@@ -190,6 +190,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
+    href: '/dashboard/venda-rapida',
+    label: 'Venda Rápida PIX',
+    roles: ['ADMIN', 'COMMERCIAL'],
+    icon: 'Zap',
+    group: 'Comercial',
+  },
+  {
     href: '/dashboard/commercial',
     label: 'Pulmão Comercial',
     roles: ['ADMIN', 'COMMERCIAL'],

@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth/next'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
-import { canManageCommercialTeam } from '@/lib/commercial-hierarchy'
 import { CommercialSellerClient } from './CommercialSellerClient'
 
 export default async function CommercialSellerPage() {
@@ -10,8 +10,8 @@ export default async function CommercialSellerPage() {
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
     redirect('/dashboard')
   }
-  if (canManageCommercialTeam(session.user?.role, session.user?.cargo)) {
-    redirect('/dashboard/commercial/manager')
+  if (!session.user?.id) {
+    redirect('/dashboard')
   }
 
   return (
@@ -22,6 +22,11 @@ export default async function CommercialSellerPage() {
           Menu comercial rápido com vitrine pronta para consulta, lançamento da venda via PIX + WhatsApp e acompanhamento
           dos últimos checkouts gerados no fechamento.
         </p>
+        <div className="mt-3">
+          <Link href="/dashboard/venda-rapida" className="btn-secondary text-sm">
+            Abrir Venda Rápida PIX
+          </Link>
+        </div>
       </div>
       <CommercialSellerClient
         sellerId={session.user.id}
