@@ -24,6 +24,8 @@ const DELIVERY_FLOW = {
 
 const QUICK_SALE_ORDER_SEQUENCE_KEY = 'quick_sale_order_sequence'
 const QUICK_SALE_ORDER_REF_PREFIX = 'quick_sale_order_ref:'
+const REUSABLE_PENDING_PIX_BUFFER_MS = 30_000
+const MAX_TRANSACTION_RETRIES = 3
 
 function normalizeStockCode(v: string | null | undefined) {
   const normalized = (v ?? '').trim().toUpperCase()
@@ -40,6 +42,13 @@ function isMissingColumnError(err: unknown) {
   const code = (err as { code?: string }).code
   const msg = String((err as { message?: string }).message ?? '')
   return code === 'P2022' || msg.includes('Unknown column')
+}
+
+function isRetryableTransactionError(err: unknown) {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: string }).code
+  const msg = String((err as { message?: string }).message ?? '').toLowerCase()
+  return code === 'P2034' || msg.includes('could not serialize') || msg.includes('serialization')
 }
 
 function parseSequenceValue(value: string | null | undefined) {
@@ -99,6 +108,36 @@ async function getQuickSaleOrderNumber(checkoutId: string) {
   })
   const orderNumber = setting?.value?.trim()
   return orderNumber ? orderNumber : null
+}
+
+async function getReusablePendingCheckout(input: {
+  listingId: string
+  buyerDoc: string
+  buyerWhatsapp: string
+  qty: number
+}) {
+  return prisma.quickSaleCheckout.findFirst({
+    where: {
+      listingId: input.listingId,
+      buyerCpf: input.buyerDoc,
+      buyerWhatsapp: input.buyerWhatsapp,
+      qty: input.qty,
+      status: 'PENDING',
+      expiresAt: { gt: new Date(Date.now() + REUSABLE_PENDING_PIX_BUFFER_MS) },
+      pixCopyPaste: { not: null },
+      pixQrCode: { not: null },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      listing: { select: { slug: true, title: true } },
+      pixCopyPaste: true,
+      pixQrCode: true,
+      expiresAt: true,
+      totalAmount: true,
+      qty: true,
+    },
+  })
 }
 
 function buildAssetWhere(listing: {
@@ -279,6 +318,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
       pixQrCode: string | null
       totalAmount: Prisma.Decimal
       qty: number
+      updatedAt: Date
       listing: { slug: string; title: string }
       deliveryFlowStatus: string
       adspowerEmail: string | null
@@ -298,6 +338,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
           pixQrCode: true,
           totalAmount: true,
           qty: true,
+          updatedAt: true,
           deliveryFlowStatus: true,
           adspowerEmail: true,
           adspowerProfileReleased: true,
@@ -319,6 +360,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
           pixQrCode: true,
           totalAmount: true,
           qty: true,
+          updatedAt: true,
           listing: { select: { slug: true, title: true } },
         },
       })
@@ -349,6 +391,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
       qty: co.qty,
       title: co.listing.title,
       orderNumber,
+      updatedAt: co.updatedAt,
       delivery: {
         flowStatus: co.deliveryFlowStatus,
         adspowerEmail: co.adspowerEmail,
@@ -470,6 +513,49 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   const totalAmount = Number(listing.pricePerUnit) * qty
   const txid        = randomUUID().replace(/-/g, '').slice(0, 35)
 
+  const reusableCheckout = await getReusablePendingCheckout({
+    listingId: listing.id,
+    buyerDoc,
+    buyerWhatsapp: waE164,
+    qty,
+  })
+  if (reusableCheckout && reusableCheckout.expiresAt && reusableCheckout.pixCopyPaste && reusableCheckout.pixQrCode) {
+    const baseUrl = getPublicAppBaseUrl() || new URL(req.url).origin
+    const resumeUrl = `${baseUrl}/loja/${listing.slug}?checkoutId=${encodeURIComponent(reusableCheckout.id)}`
+    const orderNumber = await getQuickSaleOrderNumber(reusableCheckout.id).catch(() => null)
+    await prisma.auditLog.create({
+      data: {
+        action: 'QUICK_SALE_PIX_REUSED',
+        entity: 'QuickSaleCheckout',
+        entityId: reusableCheckout.id,
+        userId: checkoutSellerId,
+        details: {
+          checkoutId: reusableCheckout.id,
+          listingId: listing.id,
+          listingTitle: listing.title,
+          buyerDoc,
+          buyerWhatsapp: waE164,
+          qty,
+          orderNumber,
+        },
+      },
+    }).catch((e) => console.error('[Loja PIX] Falha ao auditar reuso do checkout:', e))
+
+    return NextResponse.json({
+      checkoutId: reusableCheckout.id,
+      txid: 'REUSED',
+      pixCopyPaste: reusableCheckout.pixCopyPaste,
+      qrCodeBase64: reusableCheckout.pixQrCode,
+      expiresAt: reusableCheckout.expiresAt.toISOString(),
+      totalAmount: Number(reusableCheckout.totalAmount),
+      qty: reusableCheckout.qty,
+      title: reusableCheckout.listing.title,
+      orderNumber,
+      resumeUrl,
+      reusedCheckout: true,
+    })
+  }
+
   // 1. Gera PIX ANTES de bloquear ativos (evita segurar estoque se o Inter falhar)
   let pixData: { txid: string; pixCopyPaste: string; qrCodeBase64: string; expiresAt: Date }
   try {
@@ -499,72 +585,86 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       update: {},
     })
 
-    const txResult = await prisma.$transaction(async (tx) => {
+    let txResult: { checkout: Awaited<ReturnType<typeof prisma.quickSaleCheckout.create>>; orderNumber: string } | null = null
+    for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt += 1) {
+      try {
+        txResult = await prisma.$transaction(async (tx) => {
       // Seleciona IDs dentro da transação para evitar leitura suja
-      const candidates = await tx.asset.findMany({
-        where:   buildAssetWhere(listing),
-        select:  { id: true },
-        take:    qty,
-        orderBy: { createdAt: 'asc' },
-      })
+          const candidates = await tx.asset.findMany({
+            where:   buildAssetWhere(listing),
+            select:  { id: true },
+            take:    qty,
+            orderBy: { createdAt: 'asc' },
+          })
 
-      if (candidates.length < qty) {
-        throw new Error(`STOCK_INSUFFICIENT:${candidates.length}`)
+          if (candidates.length < qty) {
+            throw new Error(`STOCK_INSUFFICIENT:${candidates.length}`)
+          }
+
+          const assetIds = candidates.map((a) => a.id)
+
+          // Reserva atômica: só afeta registros que AINDA estão AVAILABLE
+          const { count } = await tx.asset.updateMany({
+            where: { id: { in: assetIds }, status: 'AVAILABLE' },
+            data:  { status: 'QUARANTINE' },
+          })
+
+          // Se count < qty, outro processo tomou alguns antes de nós
+          if (count < qty) {
+            throw new Error(`STOCK_RACE:${count}`)
+          }
+
+          const reservedOrder = await reserveNextQuickSaleOrderNumber(tx)
+
+          const createdCheckout = await createQuickCheckoutWithFallback(tx, {
+            listingId:        listing.id,
+            buyerName:        name,
+            buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
+            buyerWhatsapp:    waE164,
+            buyerEmail:       email || null,
+            qty,
+            stockProductCodeSnapshot: normalizeStockCode(listing.stockProductCode),
+            stockProductNameSnapshot: normalizeStockName(listing.stockProductName),
+            totalAmount,
+            status:           'PENDING',
+            interTxid:        pixData.txid,
+            pixCopyPaste:     pixData.pixCopyPaste,
+            pixQrCode:        pixData.qrCodeBase64,
+            expiresAt:        pixData.expiresAt,
+            reservedAssetIds: assetIds,
+            sellerId:         checkoutSellerId,
+            managerId:        checkoutManagerId,
+            utmSource:        utm_source   ?? null,
+            utmMedium:        utm_medium   ?? null,
+            utmCampaign:      utm_campaign ?? null,
+            utmContent:       utm_content  ?? null,
+            utmTerm:          utm_term     ?? null,
+            utmSrc:           src ?? utmSrc ?? null,
+            fbclid:           fbclid       ?? null,
+            gclid:            gclid        ?? null,
+            referrer:         referrer     ?? null,
+          })
+          await attachQuickSaleOrderNumber(tx, createdCheckout.id, reservedOrder.orderNumber)
+
+          return {
+            checkout: createdCheckout,
+            orderNumber: reservedOrder.orderNumber,
+          }
+        }, {
+          // Isolamento máximo para evitar double-sell
+          isolationLevel: 'Serializable',
+        })
+        break
+      } catch (err) {
+        if (attempt < MAX_TRANSACTION_RETRIES && isRetryableTransactionError(err)) {
+          continue
+        }
+        throw err
       }
-
-      const assetIds = candidates.map((a) => a.id)
-
-      // Reserva atômica: só afeta registros que AINDA estão AVAILABLE
-      const { count } = await tx.asset.updateMany({
-        where: { id: { in: assetIds }, status: 'AVAILABLE' },
-        data:  { status: 'QUARANTINE' },
-      })
-
-      // Se count < qty, outro processo tomou alguns antes de nós
-      if (count < qty) {
-        throw new Error(`STOCK_RACE:${count}`)
-      }
-
-      const reservedOrder = await reserveNextQuickSaleOrderNumber(tx)
-
-      const createdCheckout = await createQuickCheckoutWithFallback(tx, {
-        listingId:        listing.id,
-        buyerName:        name,
-        buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
-        buyerWhatsapp:    waE164,
-        buyerEmail:       email || null,
-        qty,
-        stockProductCodeSnapshot: normalizeStockCode(listing.stockProductCode),
-        stockProductNameSnapshot: normalizeStockName(listing.stockProductName),
-        totalAmount,
-        status:           'PENDING',
-        interTxid:        pixData.txid,
-        pixCopyPaste:     pixData.pixCopyPaste,
-        pixQrCode:        pixData.qrCodeBase64,
-        expiresAt:        pixData.expiresAt,
-        reservedAssetIds: assetIds,
-        sellerId:         checkoutSellerId,
-        managerId:        checkoutManagerId,
-        utmSource:        utm_source   ?? null,
-        utmMedium:        utm_medium   ?? null,
-        utmCampaign:      utm_campaign ?? null,
-        utmContent:       utm_content  ?? null,
-        utmTerm:          utm_term     ?? null,
-        utmSrc:           src ?? utmSrc ?? null,
-        fbclid:           fbclid       ?? null,
-        gclid:            gclid        ?? null,
-        referrer:         referrer     ?? null,
-      })
-      await attachQuickSaleOrderNumber(tx, createdCheckout.id, reservedOrder.orderNumber)
-
-      return {
-        checkout: createdCheckout,
-        orderNumber: reservedOrder.orderNumber,
-      }
-    }, {
-      // Isolamento máximo para evitar double-sell
-      isolationLevel: 'Serializable',
-    })
+    }
+    if (!txResult) {
+      throw new Error('TRANSACTION_FAILED')
+    }
     checkout = txResult.checkout
     generatedOrderNumber = txResult.orderNumber
   } catch (err: unknown) {
@@ -621,6 +721,26 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
 
   sendWhatsApp({ phone: waE164, message: whatsappMsg })
     .catch((e) => console.error('[Loja WhatsApp PIX]', e))
+
+  await prisma.auditLog.create({
+    data: {
+      action: 'QUICK_SALE_PIX_CREATED',
+      entity: 'QuickSaleCheckout',
+      entityId: checkout.id,
+      userId: checkoutSellerId,
+      details: {
+        checkoutId: checkout.id,
+        orderNumber: generatedOrderNumber,
+        listingId: listing.id,
+        listingTitle: listing.title,
+        qty,
+        totalAmount,
+        buyerName: name,
+        buyerDoc,
+        buyerWhatsapp: waE164,
+      },
+    },
+  }).catch((e) => console.error('[Loja PIX] Falha ao auditar criação:', e))
 
   return NextResponse.json({
     checkoutId:   checkout.id,

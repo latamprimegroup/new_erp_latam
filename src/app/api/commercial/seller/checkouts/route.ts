@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const statusFilter = (searchParams.get('status') || '').trim().toUpperCase()
+    const searchQuery = (searchParams.get('q') || searchParams.get('search') || '').trim().toLowerCase()
     const limit = Math.min(150, Math.max(5, Number(searchParams.get('limit') || 40)))
 
     // Para COMMERCIAL usa apenas filtro por listing.createdBy para evitar
@@ -57,26 +58,61 @@ export async function GET(req: NextRequest) {
       },
     })
 
+    const orderKeys = checkouts.map((checkout) => `quick_sale_order_ref:${checkout.id}`)
+    const orderRefs = orderKeys.length > 0
+      ? await prisma.systemSetting.findMany({
+          where: { key: { in: orderKeys } },
+          select: { key: true, value: true },
+        })
+      : []
+    const orderNumberByCheckoutId = new Map<string, string>()
+    for (const ref of orderRefs) {
+      if (!ref.key.startsWith('quick_sale_order_ref:')) continue
+      const checkoutId = ref.key.replace('quick_sale_order_ref:', '')
+      const orderNumber = ref.value?.trim()
+      if (!checkoutId || !orderNumber) continue
+      orderNumberByCheckoutId.set(checkoutId, orderNumber)
+    }
+
+    const items = checkouts.map((checkout) => ({
+      id: checkout.id,
+      orderNumber: orderNumberByCheckoutId.get(checkout.id) ?? null,
+      status: checkout.status,
+      buyerName: checkout.buyerName,
+      buyerWhatsapp: checkout.buyerWhatsapp,
+      adspowerEmail: checkout.adspowerEmail,
+      deliveryFlowStatus: checkout.deliveryFlowStatus,
+      deliveryStatusNote: checkout.deliveryStatusNote,
+      deliveryRequestedAt: checkout.deliveryRequestedAt,
+      deliverySent: checkout.deliverySent,
+      qty: checkout.qty,
+      totalAmount: Number(checkout.totalAmount),
+      pixCopyPaste: checkout.pixCopyPaste,
+      createdAt: checkout.createdAt,
+      paidAt: checkout.paidAt,
+      expiresAt: checkout.expiresAt,
+      listing: checkout.listing,
+      checkoutUrl: `/loja/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`,
+    }))
+
+    const filteredItems = searchQuery
+      ? items.filter((item) => {
+          const haystack = [
+            item.id,
+            item.orderNumber ?? '',
+            item.buyerName,
+            item.buyerWhatsapp,
+            item.listing.title,
+            item.listing.slug,
+          ]
+            .join(' ')
+            .toLowerCase()
+          return haystack.includes(searchQuery)
+        })
+      : items
+
     return NextResponse.json({
-      items: checkouts.map((checkout) => ({
-        id: checkout.id,
-        status: checkout.status,
-        buyerName: checkout.buyerName,
-        buyerWhatsapp: checkout.buyerWhatsapp,
-        adspowerEmail: checkout.adspowerEmail,
-        deliveryFlowStatus: checkout.deliveryFlowStatus,
-        deliveryStatusNote: checkout.deliveryStatusNote,
-        deliveryRequestedAt: checkout.deliveryRequestedAt,
-        deliverySent: checkout.deliverySent,
-        qty: checkout.qty,
-        totalAmount: Number(checkout.totalAmount),
-        pixCopyPaste: checkout.pixCopyPaste,
-        createdAt: checkout.createdAt,
-        paidAt: checkout.paidAt,
-        expiresAt: checkout.expiresAt,
-        listing: checkout.listing,
-        checkoutUrl: `/loja/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`,
-      })),
+      items: filteredItems,
     })
   } catch (err) {
     console.error('[seller/checkouts] Erro:', err)

@@ -43,11 +43,13 @@ interface DeliveryState {
   deliveryRequestedAt: string | null
   deliveryStatusNote: string | null
   deliverySent: boolean
+  lastStatusAt?: string | null
 }
 
 interface CheckoutStatusResponse {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
   orderNumber?: string | null
+  updatedAt?: string | null
   paidAt?: string | null
   expiresAt?: string | null
   pixCopyPaste?: string | null
@@ -137,12 +139,14 @@ function getDefaultDeliveryState(status: CheckoutStatusResponse['status']): Deli
     deliveryRequestedAt: null,
     deliveryStatusNote: DELIVERY_FLOW_LABELS[flowStatus].description,
     deliverySent: false,
+    lastStatusAt: null,
   }
 }
 
 function normalizeDeliveryState(
   raw: CheckoutStatusResponse['delivery'] | undefined,
   status: CheckoutStatusResponse['status'],
+  checkoutUpdatedAt?: string | null,
 ): DeliveryState {
   if (!raw) return getDefaultDeliveryState(status)
   const safeFlowStatus: DeliveryFlowStatus = raw.flowStatus in DELIVERY_FLOW_LABELS
@@ -155,6 +159,7 @@ function normalizeDeliveryState(
     deliveryRequestedAt: raw.deliveryRequestedAt ?? null,
     deliveryStatusNote: raw.deliveryStatusNote ?? DELIVERY_FLOW_LABELS[safeFlowStatus].description,
     deliverySent: Boolean(raw.deliverySent),
+    lastStatusAt: raw.lastStatusAt ?? checkoutUpdatedAt ?? null,
   }
 }
 
@@ -253,7 +258,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const applyCheckoutStatus = useCallback((checkout: CheckoutStatusResponse, cid: string) => {
     if (checkout.status === 'PAID') {
       if (pollRef.current) clearInterval(pollRef.current)
-      const normalizedDelivery = normalizeDeliveryState(checkout.delivery, checkout.status)
+      const normalizedDelivery = normalizeDeliveryState(checkout.delivery, checkout.status, checkout.updatedAt ?? null)
       setDeliveryState(normalizedDelivery)
       setDeliveryEmail(normalizedDelivery.adspowerEmail ?? '')
       setDeliveryProfileReleased(normalizedDelivery.adspowerProfileReleased)
@@ -677,6 +682,9 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
 
               <div className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-xs text-zinc-300 space-y-1">
                 <p><span className="text-zinc-500">Status atual:</span> {currentDelivery.deliveryStatusNote ?? 'Aguardando atualização da equipe.'}</p>
+                {currentDelivery.lastStatusAt ? (
+                  <p><span className="text-zinc-500">Última atualização:</span> {new Date(currentDelivery.lastStatusAt).toLocaleString('pt-BR')}</p>
+                ) : null}
                 {currentDelivery.deliveryRequestedAt ? (
                   <p><span className="text-zinc-500">Dados enviados em:</span> {new Date(currentDelivery.deliveryRequestedAt).toLocaleString('pt-BR')}</p>
                 ) : null}

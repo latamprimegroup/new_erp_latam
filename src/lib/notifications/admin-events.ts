@@ -29,6 +29,55 @@ async function getAdminAndFinanceIds(): Promise<string[]> {
   return users.map((u) => u.id)
 }
 
+export async function notifyQuickSaleDeliverySlaRisk(params: {
+  checkoutId: string
+  orderNumber?: string | null
+  listingTitle: string
+  buyerName: string
+  buyerWhatsapp: string
+  minutesWaiting: number
+  flowStatus: string
+  checkoutUrl: string
+}): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: { role: { in: ['ADMIN', 'DELIVERER', 'COMMERCIAL'] } },
+    select: { id: true },
+  })
+  if (users.length === 0) return
+
+  const publicRef = params.orderNumber || params.checkoutId.slice(0, 8)
+  const title = 'SLA de entrega em risco (Venda Rápida)'
+  const message = [
+    `Pedido ${publicRef} aguardando avanço há ${params.minutesWaiting} min.`,
+    `Fluxo atual: ${params.flowStatus}.`,
+    `Cliente: ${params.buyerName} (${params.buyerWhatsapp}).`,
+    `Produto: ${params.listingTitle}.`,
+  ].join(' ')
+
+  for (const u of users) {
+    await notify({
+      userId: u.id,
+      title,
+      message,
+      link: params.checkoutUrl,
+      channels: ['IN_APP'],
+      metadata: {
+        checkoutId: params.checkoutId,
+        orderNumber: params.orderNumber ?? null,
+        flowStatus: params.flowStatus,
+        minutesWaiting: params.minutesWaiting,
+      },
+    })
+    await sendPush({
+      userId: u.id,
+      title: '⏱️ ' + title,
+      body: message,
+      link: params.checkoutUrl,
+      tag: `quick-sla-risk-${params.checkoutId}`,
+    })
+  }
+}
+
 export async function notifyAdminsProductionInReview(
   codeG2: string,
   producerName: string | null
