@@ -19,7 +19,7 @@ export default async function VendaRapidaPage() {
           Crie links de checkout, gere PIX integrado e envie no WhatsApp sem depender da área de Compras.
         </p>
       </div>
-      <VendaRapidaTab mode="PIX" />
+      <VendaRapidaTab defaultPaymentMode="PIX" listingModeFilter="PIX" showSecurityPanel={false} />
     </div>
   )
 }

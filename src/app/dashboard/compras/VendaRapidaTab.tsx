@@ -213,6 +213,7 @@ export function VendaRapidaTab({
   const [copyAutoFilledFromStock, setCopyAutoFilledFromStock] = useState(false)
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
   const [selectedListingId, setSelectedListingId] = useState('')
+  const fixedMode = listingModeFilter === 'ALL' ? null : listingModeFilter
 
   const selectedGlobalGateways = useMemo(() => {
     const methods: ('KAST' | 'MERCURY')[] = []
@@ -220,6 +221,7 @@ export function VendaRapidaTab({
     if (globalGatewayMercury) methods.push('MERCURY')
     return methods
   }, [globalGatewayKast, globalGatewayMercury])
+  const effectivePaymentMode: 'PIX' | 'GLOBAL' = fixedMode ?? paymentMode
 
   // Teste rápido PIX integrado
   const [pixBuyerName, setPixBuyerName] = useState('')
