@@ -14,6 +14,11 @@ import { createKastInvoice } from '@/lib/kast/client'
 import { getFxRates } from '@/lib/mercury/client'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 import {
+  ISSUE_SOURCE,
+  buildInvisibleOneTimeCheckoutUrl,
+  issueInvisibleCheckoutAccess,
+} from '@/lib/invisible-checkout'
+import {
   checkoutPaymentMethodKey,
   checkoutPaymentPayloadKey,
   listingGlobalGatewaysKey,
@@ -723,6 +728,16 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         userAgent: req.headers.get('user-agent') ?? null,
       }).catch((e) => console.error('[Loja Global] Falha ao registrar aceite legal:', e))
 
+      const access = await issueInvisibleCheckoutAccess({
+        checkoutId: checkout.id,
+        listingSlug: listing.slug,
+        paymentMode: 'GLOBAL',
+        source: ISSUE_SOURCE.API_GLOBAL_LOJA,
+      }).catch(() => null)
+      const secureCheckoutUrl = access
+        ? buildInvisibleOneTimeCheckoutUrl(access.token)
+        : null
+
       return NextResponse.json({
         checkoutId: checkout.id,
         orderNumber,
@@ -732,6 +747,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         qty,
         title: listing.title,
         resumeUrl,
+        secureCheckoutUrl,
       }, { status: 201 })
     }
 
@@ -768,6 +784,16 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       userAgent: req.headers.get('user-agent') ?? null,
     }).catch((e) => console.error('[Loja Global] Falha ao registrar aceite legal:', e))
 
+    const access = await issueInvisibleCheckoutAccess({
+      checkoutId: checkout.id,
+      listingSlug: listing.slug,
+      paymentMode: 'GLOBAL',
+      source: ISSUE_SOURCE.API_GLOBAL_LOJA,
+    }).catch(() => null)
+    const secureCheckoutUrl = access
+      ? buildInvisibleOneTimeCheckoutUrl(access.token)
+      : null
+
     return NextResponse.json({
       checkoutId: checkout.id,
       orderNumber,
@@ -777,6 +803,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       qty,
       title: listing.title,
       resumeUrl,
+      secureCheckoutUrl,
     }, { status: 201 })
   } catch (err) {
     console.error('[Loja Global payment setup]', err)

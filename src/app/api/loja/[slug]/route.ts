@@ -15,6 +15,9 @@ import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 import { listingPaymentModeKey, parseQuickSalePaymentMode } from '@/lib/quick-sale-payments'
 import { acceptQuickSaleLegalTerms } from '@/lib/smart-delivery-system'
+import {
+  getInvisibleCheckoutPayloadForCheckout,
+} from '@/lib/invisible-checkout'
 
 const DELIVERY_FLOW = {
   PENDING_PAYMENT: 'PENDING_PAYMENT',
@@ -638,6 +641,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     const baseUrl = getPublicAppBaseUrl() || new URL(req.url).origin
     const resumeUrl = `${baseUrl}/loja/${listing.slug}?checkoutId=${encodeURIComponent(reusableCheckout.id)}`
     const orderNumber = await getQuickSaleOrderNumber(reusableCheckout.id).catch(() => null)
+    const invisiblePayload = await getInvisibleCheckoutPayloadForCheckout(reusableCheckout.id).catch(() => null)
     await prisma.auditLog.create({
       data: {
         action: 'QUICK_SALE_PIX_REUSED',
@@ -667,6 +671,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       title: reusableCheckout.listing.title,
       orderNumber,
       resumeUrl,
+      invisibleCheckout: invisiblePayload,
       reusedCheckout: true,
     })
   }
@@ -800,6 +805,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
 
   const baseUrl = getPublicAppBaseUrl() || new URL(req.url).origin
   const resumeUrl = `${baseUrl}/loja/${listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`
+  const invisiblePayload = await getInvisibleCheckoutPayloadForCheckout(checkout.id).catch(() => null)
 
   sendUtmifyPixGerado({
     checkoutId: checkout.id,
@@ -881,6 +887,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     title:        listing.title,
     orderNumber:  generatedOrderNumber,
     resumeUrl,
+    invisibleCheckout: invisiblePayload,
   }, { status: 201 })
 }
 

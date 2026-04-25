@@ -28,6 +28,7 @@ interface PixData {
   totalAmount: number
   qty: number
   title: string
+  resumeUrl?: string
 }
 
 type DeliveryFlowStatus =
@@ -320,6 +321,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
         totalAmount: Number(checkout.totalAmount ?? 0),
         qty: Number(checkout.qty ?? 1),
         title: checkout.title ?? product?.title ?? 'Checkout PIX',
+        resumeUrl: '',
       })
       setStep('pix')
     }
