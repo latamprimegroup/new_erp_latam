@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
+import { QuickSaleSecurityPanel } from './QuickSaleSecurityPanel'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -609,6 +610,8 @@ export function VendaRapidaTab() {
           Novo Link
         </button>
       </div>
+
+      <QuickSaleSecurityPanel />
 
       {generatedLink ? (
         <section className="border border-emerald-500/30 rounded-2xl p-4 bg-emerald-500/5 space-y-3">

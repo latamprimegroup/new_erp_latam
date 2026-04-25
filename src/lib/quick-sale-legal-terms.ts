@@ -1,0 +1,2 @@
+export const QUICK_SALE_LEGAL_TERMS_TEXT =
+  'Ao finalizar esta compra, o contratante declara ciência de que ativos digitais (perfis de navegador e contas de anúncio) são bens de consumo imediato. Uma vez que o acesso ao perfil é fornecido via sistema, o serviço é considerado prestado e entregue, não cabendo desistência por arrependimento conforme Art. 49 do CDC para produtos digitais consumíveis já acessados.'

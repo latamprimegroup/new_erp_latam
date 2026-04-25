@@ -14,9 +14,11 @@ import { sendUtmifyPixGerado } from '@/lib/utmify'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 import { listingPaymentModeKey, parseQuickSalePaymentMode } from '@/lib/quick-sale-payments'
+import { acceptQuickSaleLegalTerms } from '@/lib/smart-delivery-system'
 
 const DELIVERY_FLOW = {
   PENDING_PAYMENT: 'PENDING_PAYMENT',
+  PENDING_KYC: 'PENDING_KYC',
   WAITING_CUSTOMER_DATA: 'WAITING_CUSTOMER_DATA',
   DELIVERY_REQUESTED: 'DELIVERY_REQUESTED',
   DELIVERY_IN_PROGRESS: 'DELIVERY_IN_PROGRESS',
@@ -539,6 +541,9 @@ const schema = z.object({
   fbclid:       z.string().max(512).optional(),
   gclid:        z.string().max(512).optional(),
   referrer:     z.string().max(500).optional(),
+  acceptTerms:  z.boolean().refine((value) => value === true, {
+    message: 'É obrigatório aceitar os termos legais para continuar.',
+  }),
 }).refine((d) => d.cpf || d.cnpj, { message: 'Informe CPF (PF) ou CNPJ (PJ)', path: ['cpf'] })
 
 export async function POST(req: globalThis.Request, { params }: { params: { slug: string } }) {
@@ -582,7 +587,14 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     fbclid,
     gclid,
     referrer,
+    acceptTerms,
   } = parsed.data
+  if (!acceptTerms) {
+    return NextResponse.json({
+      error: 'É obrigatório aceitar os termos legais para continuar.',
+    }, { status: 422 })
+  }
+  void acceptTerms
   const waE164    = whatsapp.startsWith('+') ? whatsapp : `+${whatsapp}`
   const cpfClean  = cpf?.replace(/\D/g, '')  ?? ''
   const cnpjClean = cnpj?.replace(/\D/g, '') ?? ''
@@ -849,6 +861,15 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     },
   }).catch((e) => console.error('[Loja PIX] Falha ao auditar criação:', e))
 
+  await acceptQuickSaleLegalTerms(checkout.id, {
+    buyerName: name,
+    buyerDocument: buyerDoc,
+    buyerEmail: email || null,
+    buyerWhatsapp: waE164,
+    ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    userAgent: req.headers.get('user-agent') ?? null,
+  }).catch((e) => console.error('[Loja PIX] Falha ao registrar aceite legal:', e))
+
   return NextResponse.json({
     checkoutId:   checkout.id,
     txid:         pixData.txid,
@@ -927,6 +948,11 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { slu
   }
   if (checkout.status !== 'PAID') {
     return NextResponse.json({ error: 'A entrega só pode ser enviada após confirmação do pagamento.' }, { status: 409 })
+  }
+  if (checkout.deliveryFlowStatus === DELIVERY_FLOW.PENDING_KYC) {
+    return NextResponse.json({
+      error: 'Este pedido está em validação KYC. Envie documento e selfie para liberar a entrega.',
+    }, { status: 409 })
   }
 
   const nextFlow =

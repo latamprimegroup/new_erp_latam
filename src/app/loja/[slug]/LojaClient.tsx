@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { captureUtms, buildUtmPayload, type UtmData } from '@/lib/utm-tracker'
+import { QUICK_SALE_LEGAL_TERMS_TEXT } from '@/lib/quick-sale-legal-terms'
 
 interface ProductInfo {
   id: string
@@ -31,6 +32,7 @@ interface PixData {
 
 type DeliveryFlowStatus =
   | 'PENDING_PAYMENT'
+  | 'PENDING_KYC'
   | 'WAITING_CUSTOMER_DATA'
   | 'DELIVERY_REQUESTED'
   | 'DELIVERY_IN_PROGRESS'
@@ -44,6 +46,11 @@ interface DeliveryState {
   deliveryStatusNote: string | null
   deliverySent: boolean
   lastStatusAt?: string | null
+}
+
+interface KycUploadState {
+  documentPath?: string | null
+  selfiePath?: string | null
 }
 
 interface CheckoutStatusResponse {
@@ -69,6 +76,7 @@ type RetryableCheckoutInput = {
   phone: string
   email: string
   qty: number
+  acceptTerms: boolean
 }
 
 const DELIVERY_FLOW_LABELS: Record<DeliveryFlowStatus, { title: string; description: string; order: number }> = {
@@ -77,29 +85,35 @@ const DELIVERY_FLOW_LABELS: Record<DeliveryFlowStatus, { title: string; descript
     description: 'O PIX precisa ser aprovado para liberar a etapa de entrega.',
     order: 0,
   },
+  PENDING_KYC: {
+    title: 'Aguardando KYC',
+    description: 'Envie documento e selfie para validacao de identidade.',
+    order: 1,
+  },
   WAITING_CUSTOMER_DATA: {
     title: 'Aguardando dados AdsPower',
     description: 'Preencha seu e-mail AdsPower e confirme que o perfil está liberado.',
-    order: 1,
+    order: 2,
   },
   DELIVERY_REQUESTED: {
     title: 'Dados de entrega recebidos',
     description: 'Estamos validando seu perfil e separando a entrega.',
-    order: 2,
+    order: 3,
   },
   DELIVERY_IN_PROGRESS: {
     title: 'Entrega em andamento',
     description: 'Equipe Ads Ativos está liberando o ativo.',
-    order: 3,
+    order: 4,
   },
   DELIVERED: {
     title: 'Entrega concluída',
     description: 'Seu ativo já foi entregue.',
-    order: 4,
+    order: 5,
   },
 }
 
 const DELIVERY_TIMELINE: DeliveryFlowStatus[] = [
+  'PENDING_KYC',
   'WAITING_CUSTOMER_DATA',
   'DELIVERY_REQUESTED',
   'DELIVERY_IN_PROGRESS',
@@ -242,6 +256,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [qty, setQty] = useState(1)
+  const [acceptTerms, setAcceptTerms] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const [pixData, setPixData] = useState<PixData | null>(null)
@@ -252,6 +267,12 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const [deliverySaving, setDeliverySaving] = useState(false)
   const [deliveryError, setDeliveryError] = useState('')
   const [deliverySuccessMsg, setDeliverySuccessMsg] = useState('')
+  const [kycDocumentFile, setKycDocumentFile] = useState<File | null>(null)
+  const [kycSelfieFile, setKycSelfieFile] = useState<File | null>(null)
+  const [kycSaving, setKycSaving] = useState(false)
+  const [kycError, setKycError] = useState('')
+  const [kycSuccessMsg, setKycSuccessMsg] = useState('')
+  const [kycUploadState, setKycUploadState] = useState<KycUploadState | null>(null)
   const [checkingPayment, setCheckingPayment] = useState(false)
   const [paymentCheckHint, setPaymentCheckHint] = useState('')
   const [retryingCheckout, setRetryingCheckout] = useState(false)
@@ -396,6 +417,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
       whatsapp: waE164,
       email: input.email.trim() || undefined,
       qty: Math.max(1, Math.min(input.qty, product.maxQty, product.available)),
+      acceptTerms: input.acceptTerms,
       sellerRef: sellerRef || undefined,
       ...utmPayload,
     }
@@ -433,6 +455,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
       phone,
       email,
       qty,
+      acceptTerms,
     })
   }
 
@@ -451,6 +474,41 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     } finally {
       setCheckingPayment(false)
     }
+  }
+
+  const handleKycSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pixData) return
+    if (!kycDocumentFile || !kycSelfieFile) {
+      setKycError('Envie documento e selfie para continuar.')
+      return
+    }
+    setKycError('')
+    setKycSuccessMsg('')
+    setKycSaving(true)
+
+    const form = new FormData()
+    form.set('checkoutId', pixData.checkoutId)
+    form.set('document', kycDocumentFile)
+    form.set('selfie', kycSelfieFile)
+
+    const res = await fetch('/api/loja/kyc', {
+      method: 'POST',
+      body: form,
+    })
+    const data = await res.json().catch(() => ({})) as {
+      error?: string
+      fileMeta?: KycUploadState
+    }
+    setKycSaving(false)
+
+    if (!res.ok) {
+      setKycError(data.error ?? 'Falha ao enviar KYC.')
+      return
+    }
+
+    setKycUploadState(data.fileMeta ?? null)
+    setKycSuccessMsg('KYC enviado com sucesso. A equipe irá revisar e liberar sua entrega.')
   }
 
   const handleDeliverySubmit = async (e: React.FormEvent) => {
@@ -651,6 +709,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     const currentDelivery = deliveryState ?? getDefaultDeliveryState('PAID')
     const currentOrder = DELIVERY_FLOW_LABELS[currentDelivery.flowStatus].order
     const canEditData = currentDelivery.flowStatus === 'WAITING_CUSTOMER_DATA' || currentDelivery.flowStatus === 'DELIVERY_REQUESTED'
+    const isPendingKyc = currentDelivery.flowStatus === 'PENDING_KYC'
     const waNumber = (process.env.NEXT_PUBLIC_WA_SUPPORT_NUMBER ?? '').replace(/\D/g, '')
     const refreshUrl = `/loja/${slug}?checkoutId=${encodeURIComponent(pixData.checkoutId)}`
     const waText = encodeURIComponent(
@@ -692,6 +751,67 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
               </p>
             </div>
 
+            {isPendingKyc ? (
+              <form onSubmit={handleKycSubmit} className="space-y-3">
+                <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 p-4 space-y-2">
+                  <p className="text-violet-200 font-semibold text-sm">🛡️ Verificação de identidade obrigatória (KYC)</p>
+                  <p className="text-violet-100/90 text-sm leading-relaxed">
+                    Pagamento confirmado! Para liberar seu ativo de alto valor, envie documento e selfie para validação.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-zinc-300 text-xs uppercase tracking-wider font-medium">
+                    Documento (RG/CNH/Passaporte)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    required
+                    onChange={(e) => setKycDocumentFile(e.target.files?.[0] ?? null)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-200 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-zinc-100"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-zinc-300 text-xs uppercase tracking-wider font-medium">
+                    Selfie segurando documento
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    required
+                    onChange={(e) => setKycSelfieFile(e.target.files?.[0] ?? null)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-200 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-zinc-100"
+                  />
+                </div>
+
+                {kycError ? (
+                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                    {kycError}
+                  </p>
+                ) : null}
+                {kycSuccessMsg ? (
+                  <p className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                    {kycSuccessMsg}
+                  </p>
+                ) : null}
+                {kycUploadState?.documentPath || kycUploadState?.selfiePath ? (
+                  <p className="text-xs text-zinc-400">
+                    Upload registrado: documento {kycUploadState.documentPath ? '✅' : '—'} · selfie {kycUploadState.selfiePath ? '✅' : '—'}
+                  </p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={kycSaving}
+                  className="w-full py-3 rounded-xl font-bold text-white text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed, #0ea5e9)' }}
+                >
+                  {kycSaving ? 'Enviando verificação KYC...' : 'Enviar documento + selfie'}
+                </button>
+              </form>
+            ) : (
             <form onSubmit={handleDeliverySubmit} className="space-y-3">
               <div className="space-y-1">
                 <label className="text-zinc-300 text-xs uppercase tracking-wider font-medium">
@@ -741,6 +861,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
                 {deliverySaving ? 'Enviando dados de entrega...' : 'Enviar dados para entrega'}
               </button>
             </form>
+            )}
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -968,9 +1089,21 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             <span className="text-white font-bold text-2xl">R$ {total.toFixed(2).replace('.', ',')}</span>
           </div>
 
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={acceptTerms}
+              onChange={(e) => setAcceptTerms(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-emerald-500"
+            />
+            <span className="text-xs text-zinc-300 leading-relaxed">
+              {QUICK_SALE_LEGAL_TERMS_TEXT}
+            </span>
+          </label>
+
           <button
             type="submit"
-            disabled={submitting || !product || product.available === 0}
+            disabled={submitting || !product || product.available === 0 || !acceptTerms}
             className="w-full py-4 rounded-xl font-bold text-white text-base tracking-wide transition disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: 'linear-gradient(135deg, #10b981, #0ea5e9)' }}
           >
