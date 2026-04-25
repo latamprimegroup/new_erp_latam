@@ -47,14 +47,49 @@ export async function GET(req: NextRequest) {
     take: limit,
   })
 
+  if (assets.length === 0) {
+    return NextResponse.json({ items: [] })
+  }
+
+  const categories = Array.from(new Set(assets.map((a) => a.category)))
+  const names = Array.from(new Set(assets.map((a) => a.displayName)))
+
+  const [categoryCountsRaw, nameCountsRaw] = await Promise.all([
+    Promise.all(categories.map(async (cat) => ({
+      cat,
+      count: await prisma.asset.count({
+        where: {
+          category: cat,
+          status: 'AVAILABLE',
+          vendor: { suspended: false },
+        },
+      }),
+    }))),
+    Promise.all(names.map(async (name) => ({
+      name,
+      count: await prisma.asset.count({
+        where: {
+          displayName: name,
+          status: 'AVAILABLE',
+          vendor: { suspended: false },
+        },
+      }),
+    }))),
+  ])
+
+  const categoryCounts = Object.fromEntries(categoryCountsRaw.map((row) => [row.cat, row.count]))
+  const nameCounts = Object.fromEntries(nameCountsRaw.map((row) => [row.name, row.count]))
+
   return NextResponse.json({
     items: assets.map((asset) => ({
-      id: asset.id,
-      code: asset.adsId,
-      name: asset.displayName,
+      assetId: asset.id,
+      adsId: asset.adsId,
+      displayName: asset.displayName,
       category: asset.category,
       subCategory: asset.subCategory,
       salePrice: Number(asset.salePrice),
+      availableInCategory: categoryCounts[asset.category] ?? 0,
+      availableForName: nameCounts[asset.displayName] ?? 0,
     })),
   })
 }
