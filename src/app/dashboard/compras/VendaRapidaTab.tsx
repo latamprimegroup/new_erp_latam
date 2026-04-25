@@ -51,7 +51,15 @@ const ASSET_CATEGORIES = [
   'LINKEDIN_ADS', 'PINTEREST_ADS', 'SNAPCHAT_ADS', 'OTHER',
 ]
 
-const BASE_URL = typeof window !== 'undefined' ? window.location.origin : ''
+function getRuntimeBaseUrl() {
+  if (typeof window !== 'undefined') return window.location.origin
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ?? ''
+}
+
+function buildPublicCheckoutUrl(slug: string) {
+  const base = getRuntimeBaseUrl()
+  return `${base}/loja/${slug}`
+}
 
 function formatCpf(v: string) {
   const d = v.replace(/\D/g, '').slice(0, 11)
@@ -112,6 +120,9 @@ export function VendaRapidaTab() {
   const [showForm, setShowForm]     = useState(false)
   const [saving, setSaving]         = useState(false)
   const [copiedId, setCopiedId]     = useState<string | null>(null)
+  const [generatedLink, setGeneratedLink] = useState('')
+  const [generatedLinkTitle, setGeneratedLinkTitle] = useState('')
+  const [generatedLinkCopied, setGeneratedLinkCopied] = useState(false)
 
   // Formulário
   const [title, setTitle]           = useState('')
@@ -235,7 +246,7 @@ export function VendaRapidaTab() {
   }, [maxPixQty])
 
   const copyLink = async (slug: string) => {
-    const url = `${BASE_URL}/loja/${slug}`
+    const url = buildPublicCheckoutUrl(slug)
     await navigator.clipboard.writeText(url)
     setCopiedId(slug)
     setTimeout(() => setCopiedId(null), 2500)
@@ -276,7 +287,13 @@ export function VendaRapidaTab() {
       }),
     })
     setSaving(false)
+    const data = await res.json().catch(() => ({})) as { slug?: string; title?: string; error?: string }
     if (res.ok) {
+      if (data.slug) {
+        setGeneratedLink(buildPublicCheckoutUrl(data.slug))
+        setGeneratedLinkTitle(data.title ?? title.trim())
+        setGeneratedLinkCopied(false)
+      }
       setShowForm(false)
       setTitle('')
       setSubtitle('')
@@ -292,9 +309,15 @@ export function VendaRapidaTab() {
       setBadge('ENTREGA AUTOMÁTICA')
       load()
     } else {
-      const d = await res.json()
-      alert(d.error ?? 'Erro ao criar listing')
+      alert(data.error ?? 'Erro ao criar listing')
     }
+  }
+
+  const copyGeneratedLink = async () => {
+    if (!generatedLink) return
+    await navigator.clipboard.writeText(generatedLink)
+    setGeneratedLinkCopied(true)
+    window.setTimeout(() => setGeneratedLinkCopied(false), 2200)
   }
 
   const applyStockSuggestion = (item: StockProductSuggestion) => {
@@ -451,6 +474,57 @@ export function VendaRapidaTab() {
           Novo Link
         </button>
       </div>
+
+      {generatedLink ? (
+        <section className="border border-emerald-500/30 rounded-2xl p-4 bg-emerald-500/5 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-emerald-300">Link pronto para enviar ao cliente</p>
+              <p className="text-xs text-zinc-400 mt-0.5">{generatedLinkTitle || 'Venda Rápida'}</p>
+            </div>
+            <button
+              type="button"
+              className="text-zinc-400 hover:text-white text-xs"
+              onClick={() => setGeneratedLink('')}
+            >
+              fechar
+            </button>
+          </div>
+          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-2">
+            <p className="text-xs text-zinc-300 break-all">{generatedLink}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={copyGeneratedLink}
+              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-medium"
+            >
+              <Copy className="w-3.5 h-3.5 inline mr-1" />
+              {generatedLinkCopied ? 'Link copiado!' : 'Copiar link'}
+            </button>
+            <a
+              href={generatedLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+            >
+              <ExternalLink className="w-3.5 h-3.5 inline mr-1" />
+              Abrir checkout
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                const msg = `Segue seu link para preencher dados e gerar o PIX:\n${generatedLink}`
+                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer')
+              }}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+            >
+              <MessageCircle className="w-3.5 h-3.5 inline mr-1" />
+              Enviar no WhatsApp
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {/* Teste rápido de PIX integrado */}
       <section className="border border-zinc-800 rounded-2xl p-5 space-y-4 bg-zinc-900/40">
@@ -841,7 +915,7 @@ export function VendaRapidaTab() {
       ) : (
         <div className="grid gap-4">
           {listings.map((l) => {
-            const url = `${BASE_URL}/loja/${l.slug}`
+            const url = buildPublicCheckoutUrl(l.slug)
             return (
               <div
                 key={l.id}
