@@ -19,7 +19,11 @@ export default async function VendaRapidaGlobalPage() {
           Gere links globais com gateways Kast/Mercury e acompanhe o fluxo internacional sem misturar com PIX.
         </p>
       </div>
-      <VendaRapidaTab mode="GLOBAL" showSecurityPanel={false} />
+      <VendaRapidaTab
+        defaultPaymentMode="GLOBAL"
+        listingModeFilter="GLOBAL"
+        showSecurityPanel={false}
+      />
     </div>
   )
 }

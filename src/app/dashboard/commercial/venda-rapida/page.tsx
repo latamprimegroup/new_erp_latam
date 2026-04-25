@@ -7,5 +7,5 @@ export default async function CommercialVendaRapidaAliasPage() {
   if (!session?.user?.role || !['ADMIN', 'COMMERCIAL'].includes(session.user.role)) {
     redirect('/dashboard')
   }
-  redirect('/dashboard/venda-rapida-pix')
+  redirect('/dashboard/venda-rapida')
 }
