@@ -30,6 +30,17 @@ interface Listing {
   createdAt:      string
 }
 
+type CreateListingResponse = {
+  slug?: string
+  title?: string
+  paymentMode?: 'PIX' | 'GLOBAL'
+  error?: string
+  code?: string
+  requestedStockQty?: number
+  suggestedStockQty?: number
+  canForce?: boolean
+}
+
 interface StockProductSuggestion {
   assetId: string
   adsId: string
@@ -140,6 +151,7 @@ export function VendaRapidaTab() {
   const [generatedLink, setGeneratedLink] = useState('')
   const [generatedLinkTitle, setGeneratedLinkTitle] = useState('')
   const [generatedLinkCopied, setGeneratedLinkCopied] = useState(false)
+  const [syncingStockListingId, setSyncingStockListingId] = useState<string | null>(null)
 
   // Formulário
   const [title, setTitle]           = useState('')
@@ -306,60 +318,117 @@ export function VendaRapidaTab() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaving(true)
-    const res = await fetch('/api/admin/listings', {
+    if (paymentMode === 'GLOBAL' && selectedGlobalGateways.length === 0) {
+      alert('Selecione pelo menos um gateway global para gerar o link.')
+      return
+    }
+    const payloadBase = {
+      title:         title.trim(),
+      subtitle:      subtitle.trim() || undefined,
+      fullDescription: fullDescription.trim() || undefined,
+      assetCategory: category,
+      stockProductCode: stockProductCode.trim() || undefined,
+      stockProductName: stockProductName.trim() || undefined,
+      pricePerUnit:  parseFloat(price),
+      maxQty:        parseInt(maxQty),
+      stockQty:      parseInt(stockQty),
+      paymentMode,
+      globalGateways: selectedGlobalGateways,
+      badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
+      active:        true,
+    }
+
+    const submitCreate = async (forceStockQty: boolean) => fetch('/api/admin/listings', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title:         title.trim(),
-        subtitle:      subtitle.trim() || undefined,
-        fullDescription: fullDescription.trim() || undefined,
-        assetCategory: category,
-        stockProductCode: stockProductCode.trim() || undefined,
-        stockProductName: stockProductName.trim() || undefined,
-        pricePerUnit:  parseFloat(price),
-        maxQty:        parseInt(maxQty),
-        stockQty:      parseInt(stockQty),
-        paymentMode,
-        globalGateways: selectedGlobalGateways,
-        badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
-        active:        true,
+        ...payloadBase,
+        forceStockQty,
       }),
     })
-    setSaving(false)
-    const data = await res.json().catch(() => ({})) as { slug?: string; title?: string; error?: string }
-    if (res.ok) {
-      if (data.slug) {
-        const generatedMode = (data as { paymentMode?: 'PIX' | 'GLOBAL' }).paymentMode ?? paymentMode
-        const link = generatedMode === 'GLOBAL'
-          ? buildPublicGlobalCheckoutUrl(data.slug)
-          : buildPublicCheckoutUrl(data.slug)
-        setGeneratedLink(link)
-        setGeneratedLinkTitle(data.title ?? title.trim())
-        setGeneratedLinkCopied(false)
+
+    setSaving(true)
+    try {
+      let res = await submitCreate(false)
+      let data = await res.json().catch(() => ({})) as CreateListingResponse
+
+      if (!res.ok && data.code === 'STOCK_QTY_ABOVE_SUGGESTED' && data.canForce) {
+        const shouldForce = window.confirm(
+          `O estoque solicitado (${data.requestedStockQty ?? parseInt(stockQty)}) está acima do sugerido (${data.suggestedStockQty ?? 1}).\n\nDeseja forçar mesmo assim?`,
+        )
+        if (shouldForce) {
+          res = await submitCreate(true)
+          data = await res.json().catch(() => ({})) as CreateListingResponse
+        }
       }
-      setShowForm(false)
-      setTitle('')
-      setSubtitle('')
-      setFullDescription('')
-      setStockProductCode('')
-      setStockProductName('')
-      setSelectedStockInfo(null)
-      setStockSearch('')
-      setStockSuggestions([])
-      setStockSearchOpen(false)
-      setStockHighlightedIndex(-1)
-      setPrice('')
-      setMaxQty('10')
-      setStockQty('1')
-      setPaymentMode('PIX')
-      setGlobalGatewayKast(true)
-      setGlobalGatewayMercury(true)
-      setCopyAutoFilledFromStock(false)
-      setBadge('ENTREGA AUTOMÁTICA')
-      load()
-    } else {
+
+      if (res.ok) {
+        if (data.slug) {
+          const generatedMode = data.paymentMode ?? paymentMode
+          const link = generatedMode === 'GLOBAL'
+            ? buildPublicGlobalCheckoutUrl(data.slug)
+            : buildPublicCheckoutUrl(data.slug)
+          setGeneratedLink(link)
+          setGeneratedLinkTitle(data.title ?? title.trim())
+          setGeneratedLinkCopied(false)
+        }
+        setShowForm(false)
+        setTitle('')
+        setSubtitle('')
+        setFullDescription('')
+        setStockProductCode('')
+        setStockProductName('')
+        setSelectedStockInfo(null)
+        setStockSearch('')
+        setStockSuggestions([])
+        setStockSearchOpen(false)
+        setStockHighlightedIndex(-1)
+        setPrice('')
+        setMaxQty('10')
+        setStockQty('1')
+        setPaymentMode('PIX')
+        setGlobalGatewayKast(true)
+        setGlobalGatewayMercury(true)
+        setCopyAutoFilledFromStock(false)
+        setBadge('ENTREGA AUTOMÁTICA')
+        load()
+        return
+      }
+
+      if (data.code === 'STOCK_QTY_ABOVE_SUGGESTED') {
+        alert(`${data.error ?? 'Estoque do link acima do sugerido pela base.'}\nAjuste o estoque ou use forçar (ADMIN/CEO).`)
+        return
+      }
+
       alert(data.error ?? 'Erro ao criar listing')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const syncListingStock = async (listing: Listing) => {
+    setSyncingStockListingId(listing.id)
+    try {
+      const res = await fetch(`/api/admin/listings/${listing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ syncStockQty: true }),
+      })
+      const data = await res.json().catch(() => ({})) as {
+        error?: string
+        stockQtyConfigured?: number | null
+        suggestedStockQty?: number
+      }
+      if (!res.ok) {
+        alert(data.error ?? 'Erro ao sincronizar estoque do link.')
+        return
+      }
+      await load()
+      alert(
+        `Estoque do link sincronizado com a base: ${data.stockQtyConfigured ?? data.suggestedStockQty ?? listing.stockQtyConfigured ?? 1}.`,
+      )
+    } finally {
+      setSyncingStockListingId(null)
     }
   }
 
@@ -1177,6 +1246,16 @@ export function VendaRapidaTab() {
                         {typeof l.stockQtyRemaining === 'number' ? ` · restante: ${l.stockQtyRemaining}` : ''}
                       </p>
                     ) : null}
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => syncListingStock(l)}
+                        disabled={syncingStockListingId === l.id}
+                        className="px-2 py-1 rounded-md border border-zinc-600 text-zinc-200 hover:bg-zinc-800 transition text-[11px] disabled:opacity-60"
+                      >
+                        {syncingStockListingId === l.id ? 'Sincronizando estoque...' : 'Sincronizar estoque do link com base atual'}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">

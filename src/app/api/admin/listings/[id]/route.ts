@@ -15,9 +15,77 @@ import {
 } from '@/lib/quick-sale-payments'
 
 const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
+const STOCK_QTY_ABOVE_SUGGESTED_CODE = 'STOCK_QTY_ABOVE_SUGGESTED'
+const FORCE_STOCK_QTY_NOT_ALLOWED_CODE = 'FORCE_STOCK_QTY_NOT_ALLOWED'
 
 function listingStockQtyKey(listingId: string) {
   return `${LISTING_STOCK_QTY_PREFIX}${listingId}`
+}
+
+function normalizeStockCode(v: string | null | undefined) {
+  const normalized = (v ?? '').trim().toUpperCase()
+  return normalized || null
+}
+
+function normalizeStockName(v: string | null | undefined) {
+  const normalized = (v ?? '').trim()
+  return normalized || null
+}
+
+async function resolveSuggestedLinkStockQty(input: {
+  assetCategory: string
+  stockProductCode?: string | null
+  stockProductName?: string | null
+}) {
+  const code = normalizeStockCode(input.stockProductCode)
+  let name = normalizeStockName(input.stockProductName)
+  let category = input.assetCategory
+
+  if (code) {
+    const stockAsset = await prisma.asset.findFirst({
+      where: {
+        adsId: code,
+        vendor: { suspended: false },
+      },
+      select: {
+        displayName: true,
+        category: true,
+      },
+    })
+    if (stockAsset) {
+      category = stockAsset.category
+      if (!name) name = stockAsset.displayName
+    }
+  }
+
+  const [availableInCategory, availableForName, totalInBaseForName] = await Promise.all([
+    prisma.asset.count({
+      where: {
+        category,
+        status: 'AVAILABLE',
+        vendor: { suspended: false },
+      },
+    }),
+    name
+      ? prisma.asset.count({
+          where: {
+            displayName: name,
+            status: 'AVAILABLE',
+            vendor: { suspended: false },
+          },
+        })
+      : Promise.resolve(0),
+    name
+      ? prisma.asset.count({
+          where: {
+            displayName: name,
+            vendor: { suspended: false },
+          },
+        })
+      : Promise.resolve(0),
+  ])
+
+  return Math.max(1, availableForName || availableInCategory || totalInBaseForName || 1)
 }
 
 async function requireAdmin() {
@@ -36,6 +104,8 @@ const patchSchema = z.object({
   badge:        z.string().max(100).nullable().optional(),
   stockProductCode: z.string().max(40).nullable().optional(),
   stockProductName: z.string().max(200).nullable().optional(),
+  forceStockQty: z.boolean().optional().default(false),
+  syncStockQty: z.boolean().optional().default(false),
   paymentMode: z.enum(['PIX', 'GLOBAL']).optional(),
   globalGateways: z.array(z.enum(['KAST', 'MERCURY'])).optional(),
   active:       z.boolean().optional(),
@@ -57,7 +127,72 @@ export async function PATCH(
   if (!parsed.success)
     return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
 
-  const { stockQty, paymentMode, globalGateways, ...listingPatch } = parsed.data
+  const {
+    stockQty,
+    forceStockQty,
+    syncStockQty,
+    paymentMode,
+    globalGateways,
+    ...listingPatch
+  } = parsed.data
+
+  const canForceStockQty = ['ADMIN', 'CEO'].includes(user.role ?? '')
+  if (forceStockQty && !canForceStockQty) {
+    return NextResponse.json({
+      error: 'Somente ADMIN/CEO pode forçar estoque acima do sugerido pela base.',
+      code: FORCE_STOCK_QTY_NOT_ALLOWED_CODE,
+    }, { status: 403 })
+  }
+  if (syncStockQty && typeof stockQty === 'number') {
+    return NextResponse.json({
+      error: 'Envie apenas syncStockQty ou stockQty manual, não os dois juntos.',
+    }, { status: 422 })
+  }
+
+  const existingListing = await prisma.productListing.findUnique({
+    where: { id: params.id },
+    select: {
+      id: true,
+      assetCategory: true,
+      stockProductCode: true,
+      stockProductName: true,
+    },
+  })
+  if (!existingListing) return NextResponse.json({ error: 'Listing não encontrado' }, { status: 404 })
+
+  const finalCategory = existingListing.assetCategory
+  const finalStockProductCode = listingPatch.stockProductCode === undefined
+    ? existingListing.stockProductCode
+    : listingPatch.stockProductCode
+  const finalStockProductName = listingPatch.stockProductName === undefined
+    ? existingListing.stockProductName
+    : listingPatch.stockProductName
+
+  let suggestedStockQty: number | null = null
+  let stockQtyToPersist: number | null | undefined = undefined
+  if (syncStockQty || typeof stockQty === 'number') {
+    suggestedStockQty = await resolveSuggestedLinkStockQty({
+      assetCategory: finalCategory,
+      stockProductCode: finalStockProductCode,
+      stockProductName: finalStockProductName,
+    })
+  }
+  if (syncStockQty) {
+    stockQtyToPersist = suggestedStockQty
+  } else if (typeof stockQty === 'number') {
+    stockQtyToPersist = stockQty
+    if (suggestedStockQty != null && stockQty > suggestedStockQty && !forceStockQty) {
+      return NextResponse.json({
+        error: `Estoque do link acima do sugerido pela base (${suggestedStockQty}).`,
+        code: STOCK_QTY_ABOVE_SUGGESTED_CODE,
+        requestedStockQty: stockQty,
+        suggestedStockQty,
+        canForce: canForceStockQty,
+      }, { status: 409 })
+    }
+  } else if (stockQty === null) {
+    stockQtyToPersist = null
+  }
 
   const listing = await prisma.productListing.update({
     where: { id: params.id },
@@ -66,24 +201,28 @@ export async function PATCH(
 
   if (!listing) return NextResponse.json({ error: 'Listing não encontrado' }, { status: 404 })
 
-  if (stockQty == null) {
+  if (stockQtyToPersist == null && !syncStockQty) {
     // Se não houver alterações de gateway/modo, mantém configurações atuais
     if (!paymentMode && !globalGateways) {
       return NextResponse.json(listing)
     }
   }
 
-  if (typeof stockQty === 'number' && stockQty > 0) {
+  if (typeof stockQtyToPersist === 'number' && stockQtyToPersist > 0) {
     await prisma.systemSetting.upsert({
       where: { key: listingStockQtyKey(listing.id) },
       create: {
         key: listingStockQtyKey(listing.id),
-        value: String(stockQty),
+        value: String(stockQtyToPersist),
       },
       update: {
-        value: String(stockQty),
+        value: String(stockQtyToPersist),
       },
     })
+  } else if (stockQtyToPersist === null) {
+    await prisma.systemSetting.delete({
+      where: { key: listingStockQtyKey(listing.id) },
+    }).catch(() => null)
   }
 
   if (paymentMode) {
@@ -115,7 +254,9 @@ export async function PATCH(
 
   return NextResponse.json({
     ...listing,
-    stockQtyConfigured: stockQty,
+    stockQtyConfigured: stockQtyToPersist ?? null,
+    suggestedStockQty: suggestedStockQty ?? undefined,
+    stockQtySynced: syncStockQty ? true : undefined,
     paymentMode: paymentMode ?? undefined,
     globalGateways: globalGateways ?? undefined,
   })
