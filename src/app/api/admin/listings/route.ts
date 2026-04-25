@@ -16,6 +16,7 @@ import {
   resolveQuickSalePaymentMethods,
   serializeQuickSaleGlobalGateways,
 } from '@/lib/quick-sale-payments'
+import { buildQuickSaleInvisibleLink } from '@/lib/invisible-checkout'
 
 const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
 const STOCK_QTY_ABOVE_SUGGESTED_CODE = 'STOCK_QTY_ABOVE_SUGGESTED'
@@ -211,6 +212,10 @@ export async function GET() {
         paymentMode,
         globalGateways,
         paymentMethods,
+        secureCheckoutUrl:
+          paymentMode === 'GLOBAL'
+            ? buildQuickSaleInvisibleLink('GLOBAL', l.slug)
+            : buildQuickSaleInvisibleLink('PIX', l.slug),
         available: effectiveAvailable,
         stockQtyConfigured: configuredStockQty,
         stockQtyRemaining: remainingStockQty,

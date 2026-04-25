@@ -8,6 +8,7 @@ import {
   parseQuickSalePaymentMode,
   type QuickSalePaymentMethod,
 } from '@/lib/quick-sale-payments'
+import { createInvisibleCheckoutLink } from '@/lib/invisible-checkout'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,8 +102,22 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const items = checkouts.map((checkout) => ({
-      checkoutMode: checkoutModeByListingId.get(checkout.listing.id) ?? 'PIX',
+    const items = await Promise.all(checkouts.map(async (checkout) => {
+      const checkoutMode = checkoutModeByListingId.get(checkout.listing.id) ?? 'PIX'
+      const legacyUrl =
+        checkoutMode === 'GLOBAL'
+          ? `/loja-global/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`
+          : `/loja/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`
+      const secure = await createInvisibleCheckoutLink({
+        checkoutId: checkout.id,
+        listingSlug: checkout.listing.slug,
+        mode: checkoutMode,
+        ttlMinutes: 15,
+        maxUses: 1,
+        closeOnPaid: true,
+      }).catch(() => null)
+      return {
+      checkoutMode,
       id: checkout.id,
       orderNumber: orderNumberByCheckoutId.get(checkout.id) ?? null,
       paymentMethod: paymentMethodByCheckoutId.get(checkout.id) ?? 'PIX',
@@ -121,10 +136,11 @@ export async function GET(req: NextRequest) {
       paidAt: checkout.paidAt,
       expiresAt: checkout.expiresAt,
       listing: checkout.listing,
-      checkoutUrl:
-        (checkoutModeByListingId.get(checkout.listing.id) ?? 'PIX') === 'GLOBAL'
-          ? `/loja-global/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`
-          : `/loja/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`,
+      checkoutUrl: secure?.secureUrl ?? legacyUrl,
+      secureCheckoutUrl: secure?.secureUrl ?? null,
+      secureCheckoutLegacyUrl: secure?.legacyUrl ?? legacyUrl,
+      secureCheckoutToken: secure?.token ?? null,
+      }
     }))
 
     const filteredItems = searchQuery

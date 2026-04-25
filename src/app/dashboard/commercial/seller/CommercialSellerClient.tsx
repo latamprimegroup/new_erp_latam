@@ -106,6 +106,25 @@ function normalizeWhatsapp(raw: string): string {
   return `+55${digits}`
 }
 
+function buildInvisibleCheckoutUrl(input: {
+  slug: string
+  mode: 'PIX' | 'GLOBAL'
+  sellerRef?: string
+  utms?: Record<string, string>
+}) {
+  const base = typeof window !== 'undefined' ? window.location.origin : ''
+  const params = new URLSearchParams({
+    slug: input.slug,
+    mode: input.mode,
+  })
+  if (input.sellerRef) params.set('ref', input.sellerRef)
+  for (const [key, value] of Object.entries(input.utms ?? {})) {
+    if (!value) continue
+    params.set(key, value)
+  }
+  return `${base}/pay/one/new?${params.toString()}`
+}
+
 function statusChip(status: string): string {
   if (status === 'PAID') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
   if (status === 'PENDING') return 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
@@ -352,16 +371,18 @@ export function CommercialSellerClient({
   }
 
   function getPersonalizedLink(listing: StockListing): string {
-    const base   = typeof window !== 'undefined' ? window.location.origin : ''
-    const utmName = encodeURIComponent(sellerName.toLowerCase().replace(/\s+/g, '_').slice(0, 30))
-    const utmCampaign = encodeURIComponent(listing.slug.slice(0, 50))
-    const params = new URLSearchParams({
-      ref:          sellerId,
-      utm_source:   utmName,
-      utm_medium:   'whatsapp',
-      utm_campaign: utmCampaign,
+    const utmName = sellerName.toLowerCase().replace(/\s+/g, '_').slice(0, 30)
+    const utmCampaign = listing.slug.slice(0, 50)
+    return buildInvisibleCheckoutUrl({
+      slug: listing.slug,
+      mode: 'PIX',
+      sellerRef: sellerId,
+      utms: {
+        utm_source: utmName,
+        utm_medium: 'whatsapp',
+        utm_campaign: utmCampaign,
+      },
     })
-    return `${base}/loja/${listing.slug}?${params.toString()}`
   }
 
   async function copyLink(listing: StockListing) {
@@ -372,7 +393,7 @@ export function CommercialSellerClient({
   }
 
   function sendLinkWhatsapp(listing: StockListing) {
-    const url     = getPersonalizedLink(listing)
+    const url = getPersonalizedLink(listing)
     const message = [
       `🛡️ *Ads Ativos — ${listing.title}*`,
       '',
@@ -649,6 +670,9 @@ export function CommercialSellerClient({
                         {getPersonalizedLink(item)}
                       </span>
                     </div>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-300">
+                      Link efêmero: cada clique gera token descartável (15 min) e com cloaking antifraude.
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"

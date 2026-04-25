@@ -77,13 +77,37 @@ function getRuntimeBaseUrl() {
 }
 
 function buildPublicCheckoutUrl(slug: string) {
-  const base = getRuntimeBaseUrl()
-  return `${base}/loja/${slug}`
+  return buildInvisibleCheckoutUrl(slug, 'PIX')
 }
 
 function buildPublicGlobalCheckoutUrl(slug: string) {
+  return buildInvisibleCheckoutUrl(slug, 'GLOBAL')
+}
+
+function buildInvisibleCheckoutUrl(slug: string, mode?: 'PIX' | 'GLOBAL') {
   const base = getRuntimeBaseUrl()
-  return `${base}/loja-global/${slug}`
+  const search = new URLSearchParams({
+    slug,
+    mode: mode === 'GLOBAL' ? 'GLOBAL' : 'PIX',
+  })
+  return `${base}/pay/one/new?${search.toString()}`
+}
+
+async function issueInvisibleCheckoutUrl(input: { slug: string; mode?: 'PIX' | 'GLOBAL' }) {
+  const mode = input.mode === 'GLOBAL' ? 'GLOBAL' : 'PIX'
+  const params = new URLSearchParams({
+    slug: input.slug,
+    mode,
+  })
+  const res = await fetch(`/api/invisible-checkout/issue?${params.toString()}`, { cache: 'no-store' })
+  const data = await res.json().catch(() => ({})) as {
+    secureCheckoutUrl?: string
+    error?: string
+  }
+  if (!res.ok || !data.secureCheckoutUrl) {
+    throw new Error(data.error ?? 'Não foi possível gerar link efêmero agora.')
+  }
+  return data.secureCheckoutUrl
 }
 
 function formatCpf(v: string) {
@@ -294,12 +318,15 @@ export function VendaRapidaTab() {
   }, [maxPixQty])
 
   const copyLink = async (slug: string, mode?: 'PIX' | 'GLOBAL') => {
-    const url = mode === 'GLOBAL'
-      ? buildPublicGlobalCheckoutUrl(slug)
-      : buildPublicCheckoutUrl(slug)
-    await navigator.clipboard.writeText(url)
-    setCopiedId(slug)
-    setTimeout(() => setCopiedId(null), 2500)
+    try {
+      const url = await issueInvisibleCheckoutUrl({ slug, mode })
+      await navigator.clipboard.writeText(url)
+      setCopiedId(slug)
+      setTimeout(() => setCopiedId(null), 2500)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao gerar link efêmero.'
+      alert(message)
+    }
   }
 
   const toggleActive = async (id: string, active: boolean) => {
@@ -366,9 +393,10 @@ export function VendaRapidaTab() {
       if (res.ok) {
         if (data.slug) {
           const generatedMode = data.paymentMode ?? paymentMode
-          const link = generatedMode === 'GLOBAL'
-            ? buildPublicGlobalCheckoutUrl(data.slug)
-            : buildPublicCheckoutUrl(data.slug)
+          const link = await issueInvisibleCheckoutUrl({
+            slug: data.slug,
+            mode: generatedMode,
+          }).catch(() => buildInvisibleCheckoutUrl(data.slug as string, generatedMode))
           setGeneratedLink(link)
           setGeneratedLinkTitle(data.title ?? title.trim())
           setGeneratedLinkCopied(false)
@@ -652,7 +680,7 @@ export function VendaRapidaTab() {
             <button
               type="button"
               onClick={() => {
-                const msg = `Segue seu link para preencher dados e gerar o PIX:\n${generatedLink}`
+                const msg = `Segue seu link seguro para pagamento:\n${generatedLink}`
                 window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer')
               }}
               className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
