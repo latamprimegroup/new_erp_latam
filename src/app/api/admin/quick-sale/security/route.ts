@@ -28,6 +28,17 @@ type SecurityPayload = {
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
   linkSharingAttempts: number
+  recentLinkSharingAttempts: Array<{
+    id: string
+    createdAt: string
+    token: string | null
+    checkoutId: string | null
+    listingId: string | null
+    ip: string | null
+    originalIp: string | null
+    sharingAttemptIp: string | null
+    userAgent: string | null
+  }>
   pendingKycCount: number
   adspowerGroupMap: Record<string, string>
   utmifyTokenPreview: string | null
@@ -41,8 +52,42 @@ function maskToken(token: string | null) {
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`
 }
 
+function readString(input: unknown): string | null {
+  if (typeof input !== 'string') return null
+  const normalized = input.trim()
+  return normalized || null
+}
+
+function parseLinkSharingDetails(raw: unknown) {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      token: null,
+      checkoutId: null,
+      listingId: null,
+      ip: null,
+      originalIp: null,
+      userAgent: null,
+    }
+  }
+
+  const details = raw as Record<string, unknown>
+  const extra = details.extra && typeof details.extra === 'object'
+    ? details.extra as Record<string, unknown>
+    : null
+
+  return {
+    token: readString(details.token),
+    checkoutId: readString(details.checkoutId),
+    listingId: readString(details.listingId),
+    ip: readString(details.ip),
+    originalIp: readString(extra?.originalIp),
+      sharingAttemptIp: readString(extra?.sharingAttemptIp),
+    userAgent: readString(details.userAgent),
+  }
+}
+
 async function buildSecurityPayload(): Promise<SecurityPayload> {
-  const [minValueForKycBrl, linkExpirationTime, suspiciousEmailDomains, antiFraudBlocks, linkSharingAttempts, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
+  const [minValueForKycBrl, linkExpirationTime, suspiciousEmailDomains, antiFraudBlocks, linkSharingAttempts, recentLinkSharingAttempts, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
     getMinValueForKycBrl(),
     getInvisibleCheckoutTtlMinutes(),
     getSuspiciousEmailDomains(),
@@ -50,6 +95,16 @@ async function buildSecurityPayload(): Promise<SecurityPayload> {
     prisma.auditLog.count({
       where: { action: 'QUICK_SALE_LINK_SHARING_ATTEMPT' },
     }).catch(() => 0),
+    prisma.auditLog.findMany({
+      where: { action: 'QUICK_SALE_LINK_SHARING_ATTEMPT' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        createdAt: true,
+        details: true,
+      },
+    }).catch(() => []),
     prisma.quickSaleCheckout.count({
       where: {
         status: 'PAID',
@@ -78,6 +133,20 @@ async function buildSecurityPayload(): Promise<SecurityPayload> {
     suspiciousEmailDomains,
     antiFraudBlocks,
     linkSharingAttempts,
+    recentLinkSharingAttempts: recentLinkSharingAttempts.map((attempt) => {
+      const parsed = parseLinkSharingDetails(attempt.details)
+      return {
+        id: attempt.id,
+        createdAt: attempt.createdAt.toISOString(),
+        token: parsed.token,
+        checkoutId: parsed.checkoutId,
+        listingId: parsed.listingId,
+        ip: parsed.ip,
+        originalIp: parsed.originalIp,
+        sharingAttemptIp: parsed.sharingAttemptIp ?? null,
+        userAgent: parsed.userAgent,
+      }
+    }),
     pendingKycCount,
     adspowerGroupMap,
     utmifyTokenPreview: maskToken(utmifyToken ?? process.env.UTMIFY_API_TOKEN ?? SMART_DELIVERY_DEFAULTS.utmifyToken),
