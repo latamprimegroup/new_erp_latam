@@ -18,6 +18,8 @@ import {
 } from '@/lib/quick-sale-payments'
 
 const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
+const STOCK_QTY_ABOVE_SUGGESTED_CODE = 'STOCK_QTY_ABOVE_SUGGESTED'
+const FORCE_STOCK_QTY_NOT_ALLOWED_CODE = 'FORCE_STOCK_QTY_NOT_ALLOWED'
 
 function listingStockQtyKey(listingId: string) {
   return `${LISTING_STOCK_QTY_PREFIX}${listingId}`
@@ -27,6 +29,72 @@ function parseStockQty(raw: string | null | undefined): number | null {
   const n = Number.parseInt(String(raw ?? '').trim(), 10)
   if (!Number.isFinite(n) || n <= 0) return null
   return n
+}
+
+function normalizeStockCode(v: string | null | undefined) {
+  const normalized = (v ?? '').trim().toUpperCase()
+  return normalized || null
+}
+
+function normalizeStockName(v: string | null | undefined) {
+  const normalized = (v ?? '').trim()
+  return normalized || null
+}
+
+async function resolveSuggestedLinkStockQty(input: {
+  assetCategory: string
+  stockProductCode?: string | null
+  stockProductName?: string | null
+}) {
+  const code = normalizeStockCode(input.stockProductCode)
+  let name = normalizeStockName(input.stockProductName)
+  let category = input.assetCategory
+
+  if (code) {
+    const stockAsset = await prisma.asset.findFirst({
+      where: {
+        adsId: code,
+        vendor: { suspended: false },
+      },
+      select: {
+        displayName: true,
+        category: true,
+      },
+    })
+    if (stockAsset) {
+      category = stockAsset.category
+      if (!name) name = stockAsset.displayName
+    }
+  }
+
+  const [availableInCategory, availableForName, totalInBaseForName] = await Promise.all([
+    prisma.asset.count({
+      where: {
+        category,
+        status: 'AVAILABLE',
+        vendor: { suspended: false },
+      },
+    }),
+    name
+      ? prisma.asset.count({
+          where: {
+            displayName: name,
+            status: 'AVAILABLE',
+            vendor: { suspended: false },
+          },
+        })
+      : Promise.resolve(0),
+    name
+      ? prisma.asset.count({
+          where: {
+            displayName: name,
+            vendor: { suspended: false },
+          },
+        })
+      : Promise.resolve(0),
+  ])
+
+  return Math.max(1, availableForName || availableInCategory || totalInBaseForName || 1)
 }
 
 async function requireAccess() {
@@ -47,6 +115,7 @@ const createSchema = z.object({
   pricePerUnit:  z.number().positive(),
   maxQty:        z.number().int().min(1).max(100).default(10),
   stockQty:      z.number().int().min(1).max(100000).optional(),
+  forceStockQty: z.boolean().optional().default(false),
   paymentMode:   z.enum(['PIX', 'GLOBAL']).optional().default('PIX'),
   globalGateways: z.array(z.enum(['KAST', 'MERCURY'])).optional(),
   badge:         z.string().max(100).optional(),
@@ -181,6 +250,30 @@ export async function POST(req: globalThis.Request) {
     return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
 
   const d = parsed.data
+  const canForceStockQty = ['ADMIN', 'CEO'].includes(user.role ?? '')
+  if (d.forceStockQty && !canForceStockQty) {
+    return NextResponse.json({
+      error: 'Somente ADMIN/CEO pode forçar estoque acima do sugerido pela base.',
+      code: FORCE_STOCK_QTY_NOT_ALLOWED_CODE,
+    }, { status: 403 })
+  }
+
+  if (typeof d.stockQty === 'number' && d.stockQty > 0) {
+    const suggestedStockQty = await resolveSuggestedLinkStockQty({
+      assetCategory: d.assetCategory,
+      stockProductCode: d.stockProductCode,
+      stockProductName: d.stockProductName,
+    })
+    if (d.stockQty > suggestedStockQty && !d.forceStockQty) {
+      return NextResponse.json({
+        error: `Estoque do link acima do sugerido pela base (${suggestedStockQty}).`,
+        code: STOCK_QTY_ABOVE_SUGGESTED_CODE,
+        requestedStockQty: d.stockQty,
+        suggestedStockQty,
+        canForce: canForceStockQty,
+      }, { status: 409 })
+    }
+  }
 
   // Gera slug único
   let baseSlug = slugify(d.title)
