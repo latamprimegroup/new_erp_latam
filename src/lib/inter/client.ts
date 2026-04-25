@@ -1,74 +1,134 @@
 /**
- * Banco Inter — Integração API v2 (PIX Cobrança)
+ * Banco Inter — Integração API v2 (PIX Cobrança + OAuth2 + mTLS)
  *
- * Autenticação: OAuth2 + mTLS (certificado .crt + .key)
  * Docs: https://developers.bancointer.com.br/reference/
  *
- * Variáveis de ambiente necessárias:
- *   INTER_CLIENT_ID       — Client ID do app Inter
- *   INTER_CLIENT_SECRET   — Client Secret do app Inter
- *   INTER_CERT_CRT        — Conteúdo do arquivo .crt (PEM, base64 ou multiline)
- *   INTER_CERT_KEY        — Conteúdo do arquivo .key (PEM, base64 ou multiline)
- *   INTER_ACCOUNT_NUMBER  — Número da conta corrente (para webhooks)
- *   INTER_PIX_KEY         — Chave PIX cadastrada (CPF, CNPJ, email, aleatória)
+ * Autenticação: OAuth2 Client Credentials + mTLS obrigatório
+ *
+ * Certificados (busca nesta ordem de prioridade):
+ *   1. Arquivos: /certs/inter.crt  e  /certs/inter.key
+ *   2. Variáveis de ambiente: INTER_CERT_CRT  e  INTER_CERT_KEY (PEM ou base64)
+ *
+ * Credenciais (env vars):
+ *   INTER_CLIENT_ID       — 503c4506-0838-4b6e-95a5-6aaa95493719
+ *   INTER_CLIENT_SECRET   — 251f7799-be77-4b00-a2f0-3717274c17b6
+ *   INTER_ACCOUNT_NUMBER  — Número da conta corrente
+ *   INTER_PIX_KEY         — Chave PIX cadastrada (CNPJ, email, aleatória)
+ *   INTER_PIX_WEBHOOK_SECRET — Segredo compartilhado (header x-inter-webhook-secret)
  */
 
-import https from 'https'
+import fs   from 'fs'
+import path from 'path'
+import { Agent } from 'undici'
 
 const BASE_URL  = 'https://cdpj.partners.bancointer.com.br'
 const TOKEN_URL = 'https://cdpj.partners.bancointer.com.br/oauth/v2/token'
 
+// ─── Tipos de erro estruturados ───────────────────────────────────────────────
+
+export class InterApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly body: string,
+    public readonly endpoint: string,
+  ) {
+    super(`Inter API ${endpoint} → ${statusCode}: ${body}`)
+    this.name = 'InterApiError'
+  }
+}
+
 // ─── Cache de token em memória ────────────────────────────────────────────────
+
 let _cachedToken: { token: string; expiresAt: number } | null = null
 
-// ─── Utilitários ──────────────────────────────────────────────────────────────
+// ─── Leitura de certificados ──────────────────────────────────────────────────
 
-function decodePem(raw: string): string {
-  // Suporta base64 puro (sem headers PEM) ou PEM completo com \n ou \\n
+function normalizePem(raw: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
   const trimmed = raw.trim()
-  if (trimmed.startsWith('-----')) {
-    return trimmed.replace(/\\n/g, '\n')
-  }
+  // Já é PEM completo (com ou sem \n escapados)
+  if (trimmed.startsWith('-----')) return trimmed.replace(/\\n/g, '\n')
   // Assume base64 puro — reconstrói PEM
-  const body = trimmed.replace(/\s/g, '')
+  const body  = trimmed.replace(/\s/g, '')
   const lines = body.match(/.{1,64}/g)?.join('\n') ?? body
-  return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----`
+  return `-----BEGIN ${type}-----\n${lines}\n-----END ${type}-----`
 }
 
-function decodeKeyPem(raw: string): string {
-  const trimmed = raw.trim()
-  if (trimmed.startsWith('-----')) {
-    return trimmed.replace(/\\n/g, '\n')
+/**
+ * Carrega os certificados mTLS.
+ * Tenta primeiro /certs/inter.crt|key, depois as env vars.
+ */
+function loadCerts(): { cert: string; key: string } {
+  const certsDir = path.join(process.cwd(), 'certs')
+
+  const crtPath = path.join(certsDir, 'inter.crt')
+  const keyPath = path.join(certsDir, 'inter.key')
+
+  let certRaw = ''
+  let keyRaw  = ''
+
+  // Tenta carregar do sistema de arquivos
+  if (fs.existsSync(crtPath)) {
+    certRaw = fs.readFileSync(crtPath, 'utf-8')
+    console.log('[Inter] Certificado carregado de certs/inter.crt')
+  } else if (process.env.INTER_CERT_CRT) {
+    certRaw = process.env.INTER_CERT_CRT
+    console.log('[Inter] Certificado carregado de INTER_CERT_CRT')
   }
-  const body = trimmed.replace(/\s/g, '')
-  const lines = body.match(/.{1,64}/g)?.join('\n') ?? body
-  return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`
+
+  if (fs.existsSync(keyPath)) {
+    keyRaw = fs.readFileSync(keyPath, 'utf-8')
+    console.log('[Inter] Chave privada carregada de certs/inter.key')
+  } else if (process.env.INTER_CERT_KEY) {
+    keyRaw = process.env.INTER_CERT_KEY
+    console.log('[Inter] Chave privada carregada de INTER_CERT_KEY')
+  }
+
+  if (!certRaw || !keyRaw) {
+    throw new InterApiError(
+      0,
+      'Certificado mTLS não encontrado. Coloque inter.crt e inter.key em /certs/ ou defina INTER_CERT_CRT e INTER_CERT_KEY',
+      'loadCerts',
+    )
+  }
+
+  return {
+    cert: normalizePem(certRaw, 'CERTIFICATE'),
+    key:  normalizePem(keyRaw, 'PRIVATE KEY'),
+  }
 }
 
-/** Cria agente HTTPS com mTLS (certificado + chave cliente) */
-function createMtlsAgent(): https.Agent {
-  const cert = decodePem(process.env.INTER_CERT_CRT ?? '')
-  const key  = decodeKeyPem(process.env.INTER_CERT_KEY ?? '')
-  return new https.Agent({ cert, key, rejectUnauthorized: true })
+/**
+ * Cria um Undici Agent com mTLS para comunicação segura com o Banco Inter.
+ * Cada chamada re-usa o agent por enquanto (sem cache global para evitar reuso de socket expirado).
+ */
+function createMtlsAgent(): Agent {
+  const { cert, key } = loadCerts()
+  return new Agent({
+    connect: {
+      cert,
+      key,
+      rejectUnauthorized: true,
+    },
+  })
 }
 
 // ─── OAuth2 Token ─────────────────────────────────────────────────────────────
 
 /**
  * Obtém (ou retorna do cache) o access_token OAuth2 do Inter.
- * Scope: cob.write cob.read pix.read
+ * Scopes: cob.write cob.read pix.read webhook.read webhook.write
  */
 export async function getInterToken(): Promise<string> {
   const now = Date.now()
-  if (_cachedToken && _cachedToken.expiresAt > now + 30_000) {
+  if (_cachedToken && _cachedToken.expiresAt > now + 60_000) {
     return _cachedToken.token
   }
 
-  const clientId     = process.env.INTER_CLIENT_ID ?? ''
+  const clientId     = process.env.INTER_CLIENT_ID     ?? ''
   const clientSecret = process.env.INTER_CLIENT_SECRET ?? ''
 
   if (!clientId || !clientSecret) {
-    throw new Error('INTER_CLIENT_ID ou INTER_CLIENT_SECRET não configurados')
+    throw new InterApiError(0, 'INTER_CLIENT_ID ou INTER_CLIENT_SECRET não configurados', '/oauth/v2/token')
   }
 
   const body = new URLSearchParams({
@@ -84,173 +144,289 @@ export async function getInterToken(): Promise<string> {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body:    body.toString(),
-    // @ts-expect-error — Node.js fetch aceita agent via dispatcher ou undici
-    agent,
+    // undici dispatcher (mTLS)
+    // @ts-expect-error — undici dispatcher não está no tipo fetch global do TS
+    dispatcher: agent,
   })
 
   if (!res.ok) {
     const txt = await res.text()
-    throw new Error(`Inter OAuth2 falhou (${res.status}): ${txt}`)
+    // Invalida cache corrompido
+    _cachedToken = null
+    throw new InterApiError(res.status, txt, '/oauth/v2/token')
   }
 
   const data = await res.json() as { access_token: string; expires_in: number }
   _cachedToken = { token: data.access_token, expiresAt: now + data.expires_in * 1000 }
+
+  console.log(`[Inter] Token OAuth2 obtido — expira em ${data.expires_in}s`)
   return _cachedToken.token
 }
 
 // ─── Tipos PIX ────────────────────────────────────────────────────────────────
 
-export type PixCalendario = {
-  expiracao: number  // segundos — padrão 1800 (30 min)
-}
-
-export type PixDevedor = {
-  nome: string
-  cpf:  string        // apenas dígitos
-}
-
-export type PixValor = {
-  original: string    // "150.00"
-}
-
-export type PixChargeRequest = {
-  calendario:  PixCalendario
-  devedor:     PixDevedor
-  valor:       PixValor
-  chave:       string          // chave PIX do recebedor
-  solicitacaoPagador: string   // descrição visível ao pagador
-  infoAdicionais?: { nome: string; valor: string }[]
-}
+export type PixDevedor =
+  | { nome: string; cpf: string }
+  | { nome: string; cnpj: string }
 
 export type PixChargeResponse = {
-  txid:         string
-  status:       'ATIVA' | 'CONCLUIDA' | 'REMOVIDA_PELO_USUARIO_RECEBEDOR' | 'REMOVIDA_PELO_PSP'
-  calendario:   { criacao: string; expiracao: number }
-  devedor:      PixDevedor
-  valor:        PixValor
-  chave:        string
+  txid:          string
+  status:        'ATIVA' | 'CONCLUIDA' | 'REMOVIDA_PELO_USUARIO_RECEBEDOR' | 'REMOVIDA_PELO_PSP'
+  calendario:    { criacao: string; expiracao: number }
+  devedor:       PixDevedor
+  valor:         { original: string }
+  chave:         string
   pixCopiaECola: string
-  location:     string
+  location:      string
 }
 
 export type PixQrCodeResponse = {
-  imagemQrcode:  string  // base64 PNG
-  qrcode:        string  // copia-e-cola (igual ao pixCopiaECola)
+  imagemQrcode: string   // PNG em base64
+  qrcode:       string   // igual ao pixCopiaECola
 }
 
-// ─── Funções PIX ─────────────────────────────────────────────────────────────
+export type CreatePixChargeResult = {
+  txid:          string
+  pixCopyPaste:  string
+  qrCodeBase64:  string
+  expiresAt:     Date
+  location:      string
+}
+
+// ─── createImmediateCharge (alias semântico de generatePixCharge) ─────────────
 
 /**
- * Gera uma cobrança PIX dinâmica (cob) no Banco Inter.
- * Retorna o txid, pix copia-e-cola e QR code em base64.
+ * Cria uma cobrança PIX dinâmica imediata (COB) no Banco Inter.
+ *
+ * Nomenclatura adotada no projeto:
+ *   createImmediateCharge — público / intenção clara
+ *   generatePixCharge     — mantido para retrocompatibilidade
+ *
+ * Retorna: txid, pixCopyPaste, qrCodeBase64, expiresAt, location
  */
-export async function generatePixCharge(params: {
-  txid:        string   // UUID sem hífens — máx 35 chars
-  amount:      number   // valor em R$ (ex: 150.00)
-  buyerName:   string
-  buyerCpf:    string   // apenas dígitos
-  description: string
-  expiracaoSec?: number // padrão: 1800 (30 min)
-}): Promise<{ txid: string; pixCopyPaste: string; qrCodeBase64: string; expiresAt: Date }> {
-  const token = await getInterToken()
-  const agent = createMtlsAgent()
-  const chave = process.env.INTER_PIX_KEY ?? ''
+export async function createImmediateCharge(params: {
+  txid:          string   // UUID sem hífens — máx 35 chars alfanumérico
+  amount:        number   // valor em R$ (ex: 1500.00)
+  buyerName:     string
+  buyerCpf?:     string   // CPF 11 dígitos (PF) — exclusivo com buyerCnpj
+  buyerCnpj?:    string   // CNPJ 14 dígitos (PJ)
+  description:   string   // visível ao pagador no aplicativo bancário
+  expiracaoSec?: number   // padrão 1800 (30 min)
+  extra?:        { nome: string; valor: string }[]  // infoAdicionais
+}): Promise<CreatePixChargeResult> {
+  const token      = await getInterToken()
+  const agent      = createMtlsAgent()
+  const chavePix   = process.env.INTER_PIX_KEY ?? ''
 
-  if (!chave) throw new Error('INTER_PIX_KEY não configurada')
+  if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'createImmediateCharge')
 
   const expiracao = params.expiracaoSec ?? 1800
-  const txid      = params.txid.replace(/-/g, '').slice(0, 35)
+  // txid: [a-zA-Z0-9]{26,35} — remove hífens, garante mínimo de 26 e máximo de 35 chars
+  const rawTxid   = params.txid.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+  const txid      = rawTxid.length >= 26
+    ? rawTxid.slice(0, 35)
+    : rawTxid.padEnd(26, '0').slice(0, 35) // pad com zeros se CUID for curto demais
 
-  const payload: PixChargeRequest = {
-    calendario:          { expiracao },
-    devedor:             { nome: params.buyerName, cpf: params.buyerCpf.replace(/\D/g, '') },
-    valor:               { original: params.amount.toFixed(2) },
-    chave,
-    solicitacaoPagador:  params.description,
+  const cnpjClean = params.buyerCnpj?.replace(/\D/g, '') ?? ''
+  const cpfClean  = params.buyerCpf?.replace(/\D/g, '')  ?? ''
+  const devedor: PixDevedor = cnpjClean.length === 14
+    ? { nome: params.buyerName, cnpj: cnpjClean }
+    : { nome: params.buyerName, cpf: cpfClean }
+
+  const payload = {
+    calendario:         { expiracao },
+    devedor,
+    valor:              { original: params.amount.toFixed(2) },
+    chave:              chavePix,
+    solicitacaoPagador: params.description.slice(0, 140),
     infoAdicionais: [
-      { nome: 'Sistema', valor: 'Ads Ativos War Room' },
+      { nome: 'Sistema', valor: 'War Room OS — Ads Ativos' },
+      ...(params.extra ?? []),
     ],
   }
 
   // PUT /pix/v2/cob/{txid}
   const cobRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
     method:  'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization:   `Bearer ${token}`,
+      'Content-Type':  'application/json',
+      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+    },
     body:    JSON.stringify(payload),
-    // @ts-expect-error
-    agent,
+    // @ts-expect-error — undici dispatcher
+    dispatcher: agent,
   })
 
   if (!cobRes.ok) {
     const txt = await cobRes.text()
-    throw new Error(`Inter PUT /cob falhou (${cobRes.status}): ${txt}`)
+    throw new InterApiError(cobRes.status, txt, `PUT /pix/v2/cob/${txid}`)
   }
 
   const cob = await cobRes.json() as PixChargeResponse
+  console.log(`[Inter] Cobrança PIX criada — txid: ${txid} — valor: R$${params.amount.toFixed(2)}`)
 
   // GET /pix/v2/cob/{txid}/qrcode
+  let qrCodeBase64 = ''
   const qrRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
-    headers: { Authorization: `Bearer ${token}` },
-    // @ts-expect-error
-    agent,
+    headers: {
+      Authorization:      `Bearer ${token}`,
+      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+    },
+    // @ts-expect-error — undici dispatcher
+    dispatcher: agent,
   })
 
-  let qrCodeBase64 = ''
   if (qrRes.ok) {
-    const qr = await qrRes.json() as PixQrCodeResponse
+    const qr     = await qrRes.json() as PixQrCodeResponse
     qrCodeBase64 = qr.imagemQrcode
+  } else {
+    console.warn(`[Inter] QR Code não obtido (${qrRes.status}) — pixCopyPaste ainda válido`)
   }
 
-  const expiresAt = new Date(Date.now() + expiracao * 1000)
-
   return {
-    txid:          cob.txid ?? txid,
-    pixCopyPaste:  cob.pixCopiaECola,
+    txid:         cob.txid ?? txid,
+    pixCopyPaste: cob.pixCopiaECola,
     qrCodeBase64,
-    expiresAt,
+    expiresAt:    new Date(Date.now() + expiracao * 1000),
+    location:     cob.location ?? '',
   }
 }
 
-/**
- * Consulta o status de uma cobrança PIX pelo txid.
- */
+/** Alias retrocompatível */
+export const generatePixCharge = createImmediateCharge
+
+// ─── Consulta de Cobrança ─────────────────────────────────────────────────────
+
+/** Consulta o status de uma cobrança pelo txid */
 export async function getPixChargeStatus(txid: string): Promise<PixChargeResponse> {
   const token = await getInterToken()
   const agent = createMtlsAgent()
 
   const res = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization:      `Bearer ${token}`,
+      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+    },
     // @ts-expect-error
-    agent,
+    dispatcher: agent,
   })
 
   if (!res.ok) {
     const txt = await res.text()
-    throw new Error(`Inter GET /cob/${txid} falhou (${res.status}): ${txt}`)
+    throw new InterApiError(res.status, txt, `GET /pix/v2/cob/${txid}`)
   }
 
   return res.json() as Promise<PixChargeResponse>
 }
 
+// ─── Webhook ──────────────────────────────────────────────────────────────────
+
 /**
- * Registra o webhook do Inter para receber confirmações de PIX recebido.
- * Chame uma vez na configuração da conta.
+ * Registra a URL de callback para receber notificações de PIX recebido.
+ * Chame uma vez durante setup ou quando a URL de produção mudar.
  */
-export async function registerInterWebhook(callbackUrl: string): Promise<void> {
-  const token   = await getInterToken()
-  const agent   = createMtlsAgent()
+export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: boolean; message: string }> {
+  const token    = await getInterToken()
+  const agent    = createMtlsAgent()
   const chavePix = process.env.INTER_PIX_KEY ?? ''
+
+  if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'registerWebhook')
 
   const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     method:  'PUT',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ webhookUrl: callbackUrl }),
+    headers: {
+      Authorization:      `Bearer ${token}`,
+      'Content-Type':     'application/json',
+      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+    },
+    body: JSON.stringify({ webhookUrl: callbackUrl }),
     // @ts-expect-error
-    agent,
+    dispatcher: agent,
   })
 
   if (!res.ok) {
     const txt = await res.text()
-    throw new Error(`Inter PUT /webhook falhou (${res.status}): ${txt}`)
+    throw new InterApiError(res.status, txt, 'PUT /pix/v2/webhook')
+  }
+
+  console.log(`[Inter] Webhook registrado em: ${callbackUrl}`)
+  return { ok: true, message: `Webhook registrado em: ${callbackUrl}` }
+}
+
+/**
+ * Consulta o webhook cadastrado para a chave PIX.
+ */
+export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; criacao: string } | null> {
+  const token    = await getInterToken()
+  const agent    = createMtlsAgent()
+  const chavePix = process.env.INTER_PIX_KEY ?? ''
+
+  const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+    headers: {
+      Authorization:      `Bearer ${token}`,
+      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+    },
+    // @ts-expect-error
+    dispatcher: agent,
+  })
+
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const txt = await res.text()
+    throw new InterApiError(res.status, txt, 'GET /pix/v2/webhook')
+  }
+
+  return res.json() as Promise<{ webhookUrl: string; criacao: string }>
+}
+
+// ─── Diagnóstico de Saúde ─────────────────────────────────────────────────────
+
+export type InterHealthReport = {
+  timestamp:     string
+  tokenOk:       boolean
+  certsFound:    boolean
+  webhookUrl:    string | null
+  lastError:     string | null
+  latencyMs:     number
+}
+
+/**
+ * Verifica a saúde da integração Inter em produção.
+ * Usado pelo painel admin do CEO.
+ */
+export async function checkInterHealth(): Promise<InterHealthReport> {
+  const t0        = Date.now()
+  const timestamp = new Date().toISOString()
+  let tokenOk     = false
+  let certsFound  = false
+  let webhookUrl: string | null = null
+  let lastError:  string | null = null
+
+  try {
+    loadCerts()
+    certsFound = true
+  } catch (e) {
+    lastError = (e as Error).message
+  }
+
+  if (certsFound) {
+    try {
+      await getInterToken()
+      tokenOk    = true
+      const wh   = await getRegisteredWebhook()
+      webhookUrl = wh?.webhookUrl ?? null
+    } catch (e) {
+      lastError = (e as Error).message
+    }
+  }
+
+  return {
+    timestamp,
+    tokenOk,
+    certsFound,
+    webhookUrl,
+    lastError,
+    latencyMs: Date.now() - t0,
   }
 }

@@ -37,8 +37,12 @@ const bodySchema = z.object({
   imageBase64: z.string().optional(),
   mimeType:    z.string().optional().default('image/jpeg'),
   type:        z.enum(['RECEITA', 'DESPESA']).default('DESPESA'),
-  // Se já confirmado diretamente (quick mode)
   confirm:     z.boolean().default(false),
+  // Valores editados manualmente pelo usuário no review screen
+  manualAmount:        z.number().positive().optional(),
+  manualCategory:      z.string().max(50).optional(),
+  manualDescription:   z.string().max(500).optional(),
+  manualPaymentMethod: z.string().max(50).optional(),
 })
 
 export async function POST(req: globalThis.Request) {
@@ -52,7 +56,8 @@ export async function POST(req: globalThis.Request) {
   const parsed = bodySchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 422 })
 
-  const { text, imageBase64, mimeType, type, confirm } = parsed.data
+  const { text, imageBase64, mimeType, type, confirm,
+          manualAmount, manualCategory, manualDescription, manualPaymentMethod } = parsed.data
   if (!text && !imageBase64) return NextResponse.json({ error: 'Forneça texto ou imagem' }, { status: 400 })
 
   // ── Extração via IA ──────────────────────────────────────────────────────
@@ -105,6 +110,12 @@ Retorne SOMENTE JSON válido:
       paymentMethod: 'OUTRO', category: detectPersonalCategory(text ?? ''), description: text?.slice(0, 200) ?? '', confidence: 30,
     }
   }
+
+  // Valores manuais do usuário têm prioridade sobre os extraídos pela IA
+  if (manualAmount != null)        extracted.amount        = manualAmount
+  if (manualCategory)              extracted.category      = manualCategory as SocioCategory
+  if (manualDescription)           extracted.description   = manualDescription
+  if (manualPaymentMethod)         extracted.paymentMethod = manualPaymentMethod
 
   // Se confirm = true, cria diretamente sem aguardar confirmação do usuário
   if (confirm && extracted.amount && extracted.amount > 0) {

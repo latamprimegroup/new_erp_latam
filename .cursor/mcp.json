@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "war-room-erp-db": {
+      "command": "npx",
+      "args": ["-y", "@prisma/mcp-server"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    },
+    "war-room-filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}/src"]
+    }
+  }
+}

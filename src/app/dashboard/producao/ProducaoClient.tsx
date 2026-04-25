@@ -2944,6 +2944,49 @@ export function ProducaoClient() {
                                 Proxy configurado
                               </label>
                             </div>
+                            {/* Cartão CNPJ inline na aba Dados */}
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium mb-1">Cartão CNPJ (PDF)</label>
+                              {a.cnpjPdfUrl ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+                                    <FileText className="w-3.5 h-3.5" /> PDF enviado
+                                  </span>
+                                  <button type="button" onClick={() => setPdfPreviewId(a.id)} className="btn-secondary text-xs">
+                                    Visualizar
+                                  </button>
+                                  <a href={`/api/producao/${a.id}/arquivo/cnpj-pdf?download=1`} className="btn-secondary text-xs">
+                                    Baixar
+                                  </a>
+                                  <label className="flex items-center gap-1 px-2.5 py-1 rounded border border-dashed border-gray-300 text-xs text-gray-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                                    <FileText className="w-3 h-3" />
+                                    {editCnpjPdfFile ? editCnpjPdfFile.name : 'Substituir PDF'}
+                                    <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setEditCnpjPdfFile(e.target.files?.[0] || null)} />
+                                  </label>
+                                  {editCnpjPdfFile && (
+                                    <button type="button" onClick={() => handleEditCnpjUpload(a.id)} disabled={uploadingCnpj}
+                                      className="btn-primary text-xs flex items-center gap-1">
+                                      {uploadingCnpj ? <><Loader2 className="w-3 h-3 animate-spin" />Enviando...</> : 'Substituir'}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs text-amber-600 font-medium">Não enviado</span>
+                                  <label className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-dashed border-primary-400 text-xs text-primary-600 cursor-pointer hover:bg-primary-50 dark:hover:bg-primary-950/20 transition-colors">
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {editCnpjPdfFile ? editCnpjPdfFile.name : 'Selecionar PDF'}
+                                    <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setEditCnpjPdfFile(e.target.files?.[0] || null)} />
+                                  </label>
+                                  {editCnpjPdfFile && (
+                                    <button type="button" onClick={() => handleEditCnpjUpload(a.id)} disabled={uploadingCnpj}
+                                      className="btn-primary text-xs flex items-center gap-1">
+                                      {uploadingCnpj ? <><Loader2 className="w-3 h-3 animate-spin" />Enviando...</> : 'Enviar cartão CNPJ'}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                         <div className="flex gap-2 mt-4">

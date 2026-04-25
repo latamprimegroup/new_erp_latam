@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   Target, Zap, TrendingUp, Users, Cpu, AlertTriangle, CheckCircle2,
   Circle, Loader2, Plus, X, Pencil, ChevronDown, ChevronUp,
   Flame, Star, RefreshCw, Eye, EyeOff, Trophy, ArrowUp, ArrowDown,
-  Sparkles, Bot,
+  Sparkles, Bot, ShieldAlert,
 } from 'lucide-react'
 import { AlfredoIA } from './AlfredoIA'
 import { BriefingCard } from './BriefingCard'
@@ -356,6 +357,12 @@ export function CeoCommandCenter() {
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border transition-colors ${showAlfredo ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white border-primary-600 shadow-md' : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 hover:bg-zinc-50'}`}>
             <Bot className="w-4 h-4" />ALFREDO IA
           </button>
+          <Link
+            href="/dashboard/admin/supplier-health"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border border-zinc-200 dark:border-zinc-700 text-zinc-600 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 dark:hover:bg-amber-950/20 dark:hover:text-amber-300 transition-colors"
+          >
+            <ShieldAlert className="w-4 h-4" />Saúde Fornecedores
+          </Link>
         </div>
       </div>
 
@@ -369,6 +376,9 @@ export function CeoCommandCenter() {
           ))}
         </div>
       )}
+
+      {/* ── Alerta de Fornecedor Crítico (Stop-Loss) ────────────────────────── */}
+      <SupplierHealthAlert />
 
       {/* ── Scale to Billion ─────────────────────────────────────────────── */}
       {activeView === 'scale' && <ScaleBillionDashboard />}
@@ -587,5 +597,62 @@ export function CeoCommandCenter() {
 
       </> /* fim do bloco activeView === 'tasks' */}
     </div>
+  )
+}
+
+// ─── Banner de Alerta de Fornecedor Crítico ───────────────────────────────────
+
+type VendorHealthSummary = {
+  suspendedVendors: number
+  criticalVendors: number
+  warningVendors: number
+  totalPendingCredits: number
+}
+
+function SupplierHealthAlert() {
+  const [summary, setSummary] = useState<VendorHealthSummary | null>(null)
+
+  useEffect(() => {
+    fetch('/api/rma/vendor-qa')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d?.summary ? setSummary(d.summary as VendorHealthSummary) : null)
+      .catch(() => null)
+  }, [])
+
+  if (!summary) return null
+  if (summary.criticalVendors === 0 && summary.suspendedVendors === 0 && summary.warningVendors === 0) return null
+
+  const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+
+  if (summary.criticalVendors > 0 || summary.suspendedVendors > 0) {
+    return (
+      <Link
+        href="/dashboard/admin/supplier-health"
+        className="flex items-center gap-3 rounded-xl border-2 border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/10 px-4 py-3 text-sm text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/20 transition-colors"
+      >
+        <Zap className="w-5 h-5 text-red-600 shrink-0" />
+        <span>
+          <strong>⛔ STOP-LOSS ATIVO:</strong>{' '}
+          {summary.suspendedVendors > 0 && `${summary.suspendedVendors} fornecedor${summary.suspendedVendors !== 1 ? 'es' : ''} suspenso${summary.suspendedVendors !== 1 ? 's' : ''}. `}
+          {summary.criticalVendors > 0 && `${summary.criticalVendors} com RMA crítico. `}
+          {summary.totalPendingCredits > 0 && `${brl(summary.totalPendingCredits)} em créditos pendentes.`}
+        </span>
+        <span className="ml-auto shrink-0 text-xs font-bold underline">Ver Dashboard →</span>
+      </Link>
+    )
+  }
+
+  return (
+    <Link
+      href="/dashboard/admin/supplier-health"
+      className="flex items-center gap-3 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/20 transition-colors"
+    >
+      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+      <span>
+        <strong>⚠️ Atenção:</strong> {summary.warningVendors} fornecedor{summary.warningVendors !== 1 ? 'es' : ''} com taxa de RMA elevada.
+        {summary.totalPendingCredits > 0 && ` ${brl(summary.totalPendingCredits)} em créditos pendentes.`}
+      </span>
+      <span className="ml-auto shrink-0 text-xs font-bold underline">Ver Saúde →</span>
+    </Link>
   )
 }

@@ -18,9 +18,9 @@ import type { RMAStatus } from '@prisma/client'
 const ADMIN_ROLES = ['ADMIN', 'PURCHASING']
 
 const patchSchema = z.object({
-  action:            z.enum(['APPROVE', 'REJECT', 'SEND_REPLACEMENT', 'CLOSE', 'CREDIT']),
+  action:             z.enum(['APPROVE', 'REJECT', 'SEND_REPLACEMENT', 'CLOSE', 'CREDIT', 'SELF_REPLACE']),
   replacementAssetId: z.string().optional(),
-  notes:             z.string().max(1000).optional(),
+  notes:              z.string().max(1000).optional(),
 })
 
 export async function GET(_req: globalThis.Request, { params }: { params: { id: string } }) {
@@ -160,6 +160,66 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { id:
       where: { id: params.id },
       data:  { status: 'CREDITED', closedById: session.user.id },
     })
+    return NextResponse.json(updated)
+  }
+
+  // ── SELF_REPLACE (1-clique para vendedor/produtor dentro da garantia) ───────
+  if (action === 'SELF_REPLACE') {
+    const selfReplaceRoles = ['COMMERCIAL', 'PRODUCER', 'PRODUCTION_MANAGER', 'ADMIN', 'PURCHASING']
+    if (!selfReplaceRoles.includes(session.user.role))
+      return NextResponse.json({ error: 'Sem permissão para auto-substituição' }, { status: 403 })
+    if (!ticket.withinWarranty)
+      return NextResponse.json({ error: 'Ativo fora do prazo de garantia. Solicite aprovação manual.' }, { status: 409 })
+    if (!['OPEN', 'UNDER_REVIEW'].includes(ticket.status))
+      return NextResponse.json({ error: `Ticket em status ${ticket.status} não pode ser substituído agora` }, { status: 409 })
+
+    // Busca melhor ativo disponível na mesma categoria
+    const replacement = replacementAssetId
+      ? await prisma.asset.findUnique({ where: { id: replacementAssetId, status: 'AVAILABLE' } })
+      : ticket.originalAsset
+        ? await prisma.asset.findFirst({
+            where:   { status: 'AVAILABLE', category: ticket.originalAsset.category, id: { not: ticket.originalAssetId ?? undefined } },
+            orderBy: { vendor: { rating: 'desc' } },
+          })
+        : null
+
+    if (!replacement)
+      return NextResponse.json({ error: 'Nenhum ativo disponível para reposição nesta categoria' }, { status: 409 })
+
+    const replacementCost = Number(replacement.costPrice)
+    const vendorCredit    = ticket.isVendorFault ? replacementCost : 0
+
+    const [updated] = await Promise.all([
+      prisma.rMATicket.update({
+        where: { id: params.id },
+        data: {
+          status:             'REPLACEMENT_SENT',
+          replacementAssetId: replacement.id,
+          replacementCost,
+          vendorCreditAmount: vendorCredit,
+          approvedById:       session.user.id,
+          approvedAt:         new Date(),
+          resolvedAt:         new Date(),
+          notes: notes ?? ticket.notes,
+        },
+      }),
+      prisma.asset.update({ where: { id: replacement.id }, data: { status: 'SOLD' } }),
+    ])
+
+    // Contabiliza perda operacional na ALFREDO IA
+    await prisma.alfredoMemory.create({
+      data: {
+        type:    'INSIGHT',
+        title:   `RMA Auto-Substituição: ${ticket.ticketNumber}`,
+        content: `Reposição automática dentro da garantia. Ativo: ${replacement.adsId}. Custo: R$${replacementCost.toLocaleString('pt-BR')}. Crédito vs fornecedor: R$${vendorCredit.toLocaleString('pt-BR')}.`,
+        metadata: { ticketId: ticket.id, vendorId: ticket.vendorId, replacementCost, vendorCredit },
+        userId: session.user.id,
+      },
+    }).catch(() => null)
+
+    // Verifica blacklist do fornecedor após substituição
+    if (ticket.vendorId) await checkVendorBlacklist(ticket.vendorId, session.user.id)
+
     return NextResponse.json(updated)
   }
 
