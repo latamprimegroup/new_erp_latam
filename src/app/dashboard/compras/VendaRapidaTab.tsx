@@ -527,9 +527,10 @@ export function VendaRapidaTab() {
                 />
               </Field>
               <Field label="Subtítulo (opcional)">
-                <input
+                <textarea
                   value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
-                  placeholder="Ex: Conta aquecida e pronta para uso"
+                  rows={5}
+                  placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
                   className="input-dark"
                 />
               </Field>

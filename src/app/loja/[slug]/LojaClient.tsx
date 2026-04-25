@@ -718,7 +718,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             <p className="text-red-400 text-sm font-medium mt-1">ESGOTADO</p>
           ) : null}
           {product?.subtitle ? (
-            <p className="text-zinc-500 text-xs mt-1">{product.subtitle}</p>
+            <p className="text-zinc-500 text-xs mt-1 whitespace-pre-line">{product.subtitle}</p>
           ) : null}
         </div>
 
