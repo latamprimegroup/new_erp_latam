@@ -31,7 +31,9 @@ interface StockProductSuggestion {
   displayName: string
   category: string
   salePrice: number
+  isAvailable: boolean
   availableInCategory: number
+  availableForName: number
 }
 
 interface GeneratedPix {
@@ -131,6 +133,7 @@ export function VendaRapidaTab() {
   const [category, setCategory]     = useState('GOOGLE_ADS')
   const [stockProductCode, setStockProductCode] = useState('')
   const [stockProductName, setStockProductName] = useState('')
+  const [selectedStockInfo, setSelectedStockInfo] = useState<StockProductSuggestion | null>(null)
   const [stockSearch, setStockSearch] = useState('')
   const [stockSuggestions, setStockSuggestions] = useState<StockProductSuggestion[]>([])
   const [stockSearching, setStockSearching] = useState(false)
@@ -300,6 +303,7 @@ export function VendaRapidaTab() {
       setFullDescription('')
       setStockProductCode('')
       setStockProductName('')
+      setSelectedStockInfo(null)
       setStockSearch('')
       setStockSuggestions([])
       setStockSearchOpen(false)
@@ -324,6 +328,7 @@ export function VendaRapidaTab() {
     setStockProductCode(item.adsId)
     setStockProductName(item.displayName)
     setCategory(item.category)
+    setSelectedStockInfo(item)
     setStockSearch(`${item.adsId} · ${item.displayName}`)
     setStockSearchOpen(false)
     setStockHighlightedIndex(-1)
@@ -740,147 +745,171 @@ export function VendaRapidaTab() {
             </p>
 
             <form onSubmit={handleCreate} className="space-y-4 overflow-y-auto pr-1 max-h-[68vh]">
-              <Field label="Nome do produto">
-                <input
-                  required value={title} onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Ex: TikTok Verificada, Google Ads Premium"
-                  className="input-dark"
-                />
-              </Field>
-              <Field label="Buscar no estoque por código ou nome">
-                <div ref={stockSearchWrapRef} className="relative">
-                  <input
-                    value={stockSearch}
-                    onChange={(e) => {
-                      setStockSearch(e.target.value)
-                      setStockSearchOpen(true)
-                    }}
-                    onFocus={() => setStockSearchOpen(true)}
-                    onKeyDown={handleStockSearchKeyDown}
-                    placeholder="Digite AA-CONT-000001 ou nome do produto..."
-                    className="input-dark"
-                  />
-                  {stockSearchOpen && stockSearch.trim().length >= 2 ? (
-                    <div
-                      ref={stockDropdownRef}
-                      className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto"
-                    >
-                      {stockSearching ? (
-                        <p className="px-3 py-2 text-xs text-zinc-400">Buscando no estoque...</p>
-                      ) : stockSuggestions.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-zinc-500">Nenhum produto encontrado.</p>
-                      ) : (
-                        stockSuggestions.map((item, idx) => (
-                          <button
-                            key={item.assetId}
-                            type="button"
-                            data-stock-idx={idx}
-                            onClick={() => applyStockSuggestion(item)}
-                            className={`w-full text-left px-3 py-2 transition border-b border-zinc-800 last:border-b-0 ${
-                              idx === stockHighlightedIndex ? 'bg-zinc-800' : 'hover:bg-zinc-800'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-xs text-zinc-200 font-medium">
-                                  {renderHighlightedText(item.adsId, stockSearch)} · {renderHighlightedText(item.displayName, stockSearch)}
-                                </p>
-                                <p className="text-[11px] text-zinc-500">
-                                  {item.category.replace('_', ' ')} · R$ {item.salePrice.toFixed(2)}
-                                </p>
+              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-white">1) Produto da base de dados / estoque</h4>
+                <p className="text-xs text-zinc-500">
+                  Primeiro selecione o produto da base. O sistema puxa código, nome e categoria automaticamente.
+                </p>
+                <Field label="Buscar no estoque por código ou nome">
+                  <div ref={stockSearchWrapRef} className="relative">
+                    <input
+                      value={stockSearch}
+                      onChange={(e) => {
+                        setStockSearch(e.target.value)
+                        setStockSearchOpen(true)
+                        setSelectedStockInfo(null)
+                      }}
+                      onFocus={() => setStockSearchOpen(true)}
+                      onKeyDown={handleStockSearchKeyDown}
+                      placeholder="Digite AA-CONT-000001 ou nome do produto..."
+                      className="input-dark"
+                    />
+                    {stockSearchOpen && stockSearch.trim().length >= 2 ? (
+                      <div
+                        ref={stockDropdownRef}
+                        className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto"
+                      >
+                        {stockSearching ? (
+                          <p className="px-3 py-2 text-xs text-zinc-400">Buscando na base de dados...</p>
+                        ) : stockSuggestions.length === 0 ? (
+                          <p className="px-3 py-2 text-xs text-zinc-500">Nenhum produto encontrado.</p>
+                        ) : (
+                          stockSuggestions.map((item, idx) => (
+                            <button
+                              key={item.assetId}
+                              type="button"
+                              data-stock-idx={idx}
+                              onClick={() => applyStockSuggestion(item)}
+                              className={`w-full text-left px-3 py-2 transition border-b border-zinc-800 last:border-b-0 ${
+                                idx === stockHighlightedIndex ? 'bg-zinc-800' : 'hover:bg-zinc-800'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-xs text-zinc-200 font-medium">
+                                    {renderHighlightedText(item.adsId, stockSearch)} · {renderHighlightedText(item.displayName, stockSearch)}
+                                  </p>
+                                  <p className="text-[11px] text-zinc-500">
+                                    {item.category.replace('_', ' ')} · R$ {item.salePrice.toFixed(2)}
+                                  </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                    item.isAvailable
+                                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                      : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                                  }`}>
+                                    {item.isAvailable ? 'Disponível agora' : 'Sem disponibilidade imediata'}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-400">
+                                    Cat.: {item.availableInCategory} · Nome: {item.availableForName}
+                                  </span>
+                                </div>
                               </div>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                item.availableInCategory > 0
-                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                                  : 'border-red-500/40 bg-red-500/10 text-red-300'
-                              }`}>
-                                Estoque: {item.availableInCategory}
-                              </span>
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Categoria do ativo">
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
-                    {ASSET_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c.replace('_', ' ')}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Preço por unidade (R$)">
-                  <input
-                    required type="number" min="1" step="0.01"
-                    value={price} onChange={(e) => setPrice(e.target.value)}
-                    placeholder="150.00"
-                    className="input-dark"
-                  />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Máx. unidades por pedido">
-                  <input
-                    type="number" min="1" max="100"
-                    value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
-                    className="input-dark"
-                  />
-                </Field>
-                <Field label="Badge (topo da página)">
-                  <input
-                    value={badge} onChange={(e) => setBadge(e.target.value)}
-                    placeholder="ENTREGA AUTOMÁTICA"
-                    className="input-dark"
-                  />
-                </Field>
-              </div>
-              <details className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-zinc-200 select-none">
-                  Opções avançadas (descrição e vínculo manual)
-                </summary>
-                <div className="space-y-3 mt-3">
-                  <Field label="Subtítulo (opcional)">
-                    <textarea
-                      value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
-                      rows={2}
-                      placeholder="Resumo rápido do produto para o card"
-                      className="input-dark"
-                    />
-                  </Field>
-                  <Field label="Descrição completa (copiar e colar)">
-                    <textarea
-                      value={fullDescription} onChange={(e) => setFullDescription(e.target.value)}
-                      rows={4}
-                      placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
-                      className="input-dark"
-                    />
-                  </Field>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <Field label="Código do produto no estoque (opcional)">
-                      <input
-                        value={stockProductCode}
-                        onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
-                        placeholder="AA-CONT-000001"
-                        className="input-dark"
-                      />
-                    </Field>
-                    <Field label="Nome do produto no estoque (opcional)">
-                      <input
-                        value={stockProductName}
-                        onChange={(e) => setStockProductName(e.target.value)}
-                        placeholder="Perfil Real Verificado"
-                        className="input-dark"
-                      />
-                    </Field>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="text-xs text-zinc-500">
-                    Se preencher código ou nome, a Venda Rápida tenta atrelar e baixar estoque automaticamente no pagamento.
+                </Field>
+                {selectedStockInfo ? (
+                  <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2 text-xs text-zinc-300">
+                    <p>Produto selecionado: <span className="text-white font-medium">{selectedStockInfo.adsId}</span> · {selectedStockInfo.displayName}</p>
+                    <p className="text-zinc-400 mt-1">Categoria: {selectedStockInfo.category.replace('_', ' ')} · Disponível agora: {selectedStockInfo.isAvailable ? 'SIM' : 'NÃO'}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
+                    Selecione um produto da base para garantir vínculo correto na venda.
                   </p>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-white">2) Copy comercial (copiar e colar)</h4>
+                <Field label="Nome do produto para o cliente">
+                  <input
+                    required value={title} onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Ex: TikTok Verificada, Google Ads Premium"
+                    className="input-dark"
+                  />
+                </Field>
+                <Field label="Subtítulo (opcional)">
+                  <textarea
+                    value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
+                    rows={2}
+                    placeholder="Resumo rápido do produto para o card"
+                    className="input-dark"
+                  />
+                </Field>
+                <Field label="Descrição completa (copiar e colar)">
+                  <textarea
+                    value={fullDescription} onChange={(e) => setFullDescription(e.target.value)}
+                    rows={4}
+                    placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
+                    className="input-dark"
+                  />
+                </Field>
+              </section>
+
+              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                <h4 className="text-sm font-semibold text-white">3) Configuração da venda e geração do link</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Código do produto no estoque (manual)">
+                    <input
+                      value={stockProductCode}
+                      onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
+                      placeholder="AA-CONT-000001"
+                      className="input-dark"
+                    />
+                  </Field>
+                  <Field label="Nome do produto no estoque (manual)">
+                    <input
+                      value={stockProductName}
+                      onChange={(e) => setStockProductName(e.target.value)}
+                      placeholder="Perfil Real Verificado"
+                      className="input-dark"
+                    />
+                  </Field>
                 </div>
-              </details>
+                <p className="text-xs text-zinc-500">
+                  Esses campos já são preenchidos automaticamente ao selecionar item da base acima.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Categoria do ativo">
+                    <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
+                      {ASSET_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c.replace('_', ' ')}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Preço por unidade (R$)">
+                    <input
+                      required type="number" min="1" step="0.01"
+                      value={price} onChange={(e) => setPrice(e.target.value)}
+                      placeholder="150.00"
+                      className="input-dark"
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Máx. unidades por pedido">
+                    <input
+                      type="number" min="1" max="100"
+                      value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
+                      className="input-dark"
+                    />
+                  </Field>
+                  <Field label="Badge (topo da página)">
+                    <input
+                      value={badge} onChange={(e) => setBadge(e.target.value)}
+                      placeholder="ENTREGA AUTOMÁTICA"
+                      className="input-dark"
+                    />
+                  </Field>
+                </div>
+              </section>
 
               <div className="flex gap-3 pt-2 sticky bottom-0 bg-zinc-900/95 backdrop-blur-sm pb-1">
                 <button

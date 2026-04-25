@@ -16,11 +16,10 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const q = (searchParams.get('q') ?? '').trim()
-  const limit = Math.min(20, Math.max(1, Number(searchParams.get('limit') ?? 8)))
+  const limit = Math.min(30, Math.max(1, Number(searchParams.get('limit') ?? 12)))
 
   const assets = await prisma.asset.findMany({
     where: {
-      status: 'AVAILABLE',
       vendor: { suspended: false },
       ...(q
         ? {
@@ -38,7 +37,9 @@ export async function GET(req: NextRequest) {
       category: true,
       subCategory: true,
       salePrice: true,
+      status: true,
       updatedAt: true,
+      createdAt: true,
     },
     orderBy: [
       { updatedAt: 'desc' },
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
   const categories = Array.from(new Set(assets.map((a) => a.category)))
   const names = Array.from(new Set(assets.map((a) => a.displayName)))
 
-  const [categoryCountsRaw, nameCountsRaw] = await Promise.all([
+  const [categoryCountsRaw, nameCountsRaw, nameTotalsRaw] = await Promise.all([
     Promise.all(categories.map(async (cat) => ({
       cat,
       count: await prisma.asset.count({
@@ -75,10 +76,20 @@ export async function GET(req: NextRequest) {
         },
       }),
     }))),
+    Promise.all(names.map(async (name) => ({
+      name,
+      count: await prisma.asset.count({
+        where: {
+          displayName: name,
+          vendor: { suspended: false },
+        },
+      }),
+    }))),
   ])
 
   const categoryCounts = Object.fromEntries(categoryCountsRaw.map((row) => [row.cat, row.count]))
-  const nameCounts = Object.fromEntries(nameCountsRaw.map((row) => [row.name, row.count]))
+  const nameAvailableCounts = Object.fromEntries(nameCountsRaw.map((row) => [row.name, row.count]))
+  const nameTotals = Object.fromEntries(nameTotalsRaw.map((row) => [row.name, row.count]))
 
   return NextResponse.json({
     items: assets.map((asset) => ({
@@ -88,8 +99,10 @@ export async function GET(req: NextRequest) {
       category: asset.category,
       subCategory: asset.subCategory,
       salePrice: Number(asset.salePrice),
+      status: asset.status,
       availableInCategory: categoryCounts[asset.category] ?? 0,
-      availableForName: nameCounts[asset.displayName] ?? 0,
+      availableForName: nameAvailableCounts[asset.displayName] ?? 0,
+      totalInBaseForName: nameTotals[asset.displayName] ?? 0,
     })),
   })
 }
