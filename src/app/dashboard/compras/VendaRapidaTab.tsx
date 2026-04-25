@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Copy, ExternalLink, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Copy, ExternalLink, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -22,12 +22,59 @@ interface Listing {
   createdAt:      string
 }
 
+interface GeneratedPix {
+  checkoutId:   string
+  txid:         string
+  pixCopyPaste: string
+  qrCodeBase64: string
+  expiresAt:    string
+  totalAmount:  number
+  qty:          number
+  title:        string
+  resumeUrl:    string
+}
+
 const ASSET_CATEGORIES = [
   'GOOGLE_ADS', 'META_ADS', 'TIKTOK_ADS', 'AMAZON_ADS',
   'LINKEDIN_ADS', 'PINTEREST_ADS', 'SNAPCHAT_ADS', 'OTHER',
 ]
 
 const BASE_URL = typeof window !== 'undefined' ? window.location.origin : ''
+
+function formatCpf(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 11)
+  return d
+    .replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+    .replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})$/, '$1.$2.$3-$4')
+    .replace(/(\d{3})(\d{3})(\d{1,3})$/, '$1.$2.$3')
+    .replace(/(\d{3})(\d{1,3})$/, '$1.$2')
+    .replace(/(\d{1,3})$/, '$1')
+}
+
+function formatCnpj(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 14)
+  return d
+    .replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
+    .replace(/(\d{2})(\d{3})(\d{3})(\d{1,4})$/, '$1.$2.$3/$4')
+    .replace(/(\d{2})(\d{3})(\d{1,3})$/, '$1.$2.$3')
+    .replace(/(\d{2})(\d{1,3})$/, '$1.$2')
+    .replace(/(\d{1,2})$/, '$1')
+}
+
+function formatPhone(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return `(${d}`
+  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
+
+function normalizeWhatsapp(raw: string) {
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.startsWith('55')) return `+${digits}`
+  if (digits.length >= 10) return `+55${digits}`
+  return ''
+}
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
@@ -45,18 +92,51 @@ export function VendaRapidaTab() {
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
+  const [selectedListingId, setSelectedListingId] = useState('')
+
+  // Teste rápido PIX integrado
+  const [pixBuyerName, setPixBuyerName] = useState('')
+  const [pixBuyerWhatsapp, setPixBuyerWhatsapp] = useState('')
+  const [pixBuyerEmail, setPixBuyerEmail] = useState('')
+  const [pixDocType, setPixDocType] = useState<'cpf' | 'cnpj'>('cpf')
+  const [pixDoc, setPixDoc] = useState('')
+  const [pixQty, setPixQty] = useState(1)
+  const [pixLoading, setPixLoading] = useState(false)
+  const [pixError, setPixError] = useState<string | null>(null)
+  const [pixResult, setPixResult] = useState<GeneratedPix | null>(null)
+  const [copiedPix, setCopiedPix] = useState(false)
+
+  const selectedListing = useMemo(
+    () => listings.find((l) => l.id === selectedListingId) ?? null,
+    [listings, selectedListingId],
+  )
+
+  const maxPixQty = selectedListing ? Math.min(selectedListing.maxQty, selectedListing.available) : 0
+  const safePixQty = maxPixQty > 0 ? Math.max(1, Math.min(pixQty, maxPixQty)) : 0
+  const estimatedPixTotal = selectedListing ? selectedListing.pricePerUnit * safePixQty : 0
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const r = await fetch('/api/admin/listings')
-      if (r.ok) setListings(await r.json())
+      if (r.ok) {
+        const rows = (await r.json()) as Listing[]
+        setListings(rows)
+        setSelectedListingId((prev) => {
+          if (prev && rows.some((l) => l.id === prev)) return prev
+          return rows[0]?.id ?? ''
+        })
+      }
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (maxPixQty <= 0) return
+    setPixQty((prev) => Math.max(1, Math.min(prev, maxPixQty)))
+  }, [maxPixQty])
 
   const copyLink = async (slug: string) => {
     const url = `${BASE_URL}/loja/${slug}`
@@ -107,6 +187,73 @@ export function VendaRapidaTab() {
     }
   }
 
+  const handleCreatePixTest = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedListing) {
+      setPixError('Selecione um listing para gerar o PIX.')
+      return
+    }
+    if (selectedListing.available <= 0) {
+      setPixError('Esse listing está sem estoque disponível no momento.')
+      return
+    }
+
+    const docDigits = pixDoc.replace(/\D/g, '')
+    if (pixDocType === 'cpf' && docDigits.length !== 11) {
+      setPixError('CPF inválido. Informe 11 dígitos.')
+      return
+    }
+    if (pixDocType === 'cnpj' && docDigits.length !== 14) {
+      setPixError('CNPJ inválido. Informe 14 dígitos.')
+      return
+    }
+
+    const finalWhatsapp = normalizeWhatsapp(pixBuyerWhatsapp)
+    if (!finalWhatsapp) {
+      setPixError('WhatsApp inválido. Use um número BR válido.')
+      return
+    }
+
+    setPixLoading(true)
+    setPixError(null)
+    setPixResult(null)
+    setCopiedPix(false)
+    try {
+      const finalQty = Math.max(1, Math.min(pixQty, selectedListing.maxQty, selectedListing.available))
+      const payload: Record<string, unknown> = {
+        name: pixBuyerName.trim(),
+        whatsapp: finalWhatsapp,
+        email: pixBuyerEmail.trim() || undefined,
+        qty: finalQty,
+      }
+      if (pixDocType === 'cnpj') payload.cnpj = formatCnpj(pixDoc)
+      else payload.cpf = formatCpf(pixDoc)
+
+      const res = await fetch(`/api/loja/${selectedListing.slug}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = (await res.json()) as GeneratedPix | { error?: string }
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Falha ao gerar PIX de teste')
+      }
+      setPixResult(data as GeneratedPix)
+      await load()
+    } catch (err) {
+      setPixError(err instanceof Error ? err.message : 'Erro ao gerar PIX de teste')
+    } finally {
+      setPixLoading(false)
+    }
+  }
+
+  const copyPixCode = async () => {
+    if (!pixResult?.pixCopyPaste) return
+    await navigator.clipboard.writeText(pixResult.pixCopyPaste)
+    setCopiedPix(true)
+    window.setTimeout(() => setCopiedPix(false), 2500)
+  }
+
   const totalRevenue   = listings.reduce((s, l) => s + l.revenue, 0)
   const totalPaid      = listings.reduce((s, l) => s + l.paidCheckouts, 0)
   const totalCheckouts = listings.reduce((s, l) => s + l.totalCheckouts, 0)
@@ -134,6 +281,197 @@ export function VendaRapidaTab() {
           Novo Link
         </button>
       </div>
+
+      {/* Teste rápido de PIX integrado */}
+      <section className="border border-zinc-800 rounded-2xl p-5 space-y-4 bg-zinc-900/40">
+        <div>
+          <h3 className="font-bold text-white">Teste rápido — Gerar PIX integrado</h3>
+          <p className="text-zinc-500 text-sm">
+            Gera o PIX na hora usando o listing selecionado, sem sair do menu de venda rápida.
+          </p>
+        </div>
+
+        {listings.length === 0 ? (
+          <p className="text-sm text-zinc-500">Crie um listing para habilitar o teste de geração PIX.</p>
+        ) : (
+          <form className="space-y-3" onSubmit={handleCreatePixTest}>
+            <Field label="Listing para teste">
+              <select
+                className="input-dark"
+                value={selectedListingId}
+                onChange={(e) => {
+                  setSelectedListingId(e.target.value)
+                  setPixResult(null)
+                  setPixError(null)
+                }}
+              >
+                {listings.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.title} · disp. {l.available} · R$ {l.pricePerUnit.toFixed(2)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="Nome do cliente">
+                <input
+                  required
+                  className="input-dark"
+                  placeholder="Nome completo"
+                  value={pixBuyerName}
+                  onChange={(e) => setPixBuyerName(e.target.value)}
+                />
+              </Field>
+              <Field label="WhatsApp">
+                <input
+                  required
+                  className="input-dark"
+                  placeholder="(11) 99999-9999"
+                  value={pixBuyerWhatsapp}
+                  onChange={(e) => setPixBuyerWhatsapp(formatPhone(e.target.value))}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="E-mail (opcional)">
+                <input
+                  className="input-dark"
+                  placeholder="cliente@email.com"
+                  value={pixBuyerEmail}
+                  onChange={(e) => setPixBuyerEmail(e.target.value)}
+                />
+              </Field>
+              <Field label="Quantidade">
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, maxPixQty)}
+                  className="input-dark"
+                  value={pixQty}
+                  onChange={(e) => setPixQty(Number(e.target.value) || 1)}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="Tipo de documento">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setPixDocType('cpf'); setPixDoc('') }}
+                    className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
+                      pixDocType === 'cpf'
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    CPF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPixDocType('cnpj'); setPixDoc('') }}
+                    className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
+                      pixDocType === 'cnpj'
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    CNPJ
+                  </button>
+                </div>
+              </Field>
+              <Field label={pixDocType === 'cnpj' ? 'CNPJ' : 'CPF'}>
+                <input
+                  required
+                  className="input-dark"
+                  placeholder={pixDocType === 'cnpj' ? '00.000.000/0001-00' : '000.000.000-00'}
+                  value={pixDoc}
+                  onChange={(e) =>
+                    setPixDoc(pixDocType === 'cnpj' ? formatCnpj(e.target.value) : formatCpf(e.target.value))
+                  }
+                />
+              </Field>
+            </div>
+
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-300 flex items-center justify-between">
+              <span>
+                {selectedListing ? `Listing: ${selectedListing.title}` : 'Selecione um listing'}
+              </span>
+              <span className="font-semibold text-emerald-400">
+                {maxPixQty > 0
+                  ? `Total estimado: R$ ${estimatedPixTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                  : 'Sem estoque disponível'}
+              </span>
+            </div>
+
+            {pixError ? (
+              <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg">{pixError}</p>
+            ) : null}
+
+            <button
+              type="submit"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition disabled:opacity-50"
+              disabled={pixLoading || !selectedListing || maxPixQty <= 0}
+            >
+              {pixLoading ? 'Gerando PIX integrado...' : 'Gerar PIX de teste'}
+            </button>
+          </form>
+        )}
+
+        {pixResult ? (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-semibold text-emerald-300">PIX gerado com sucesso</p>
+              <span className="text-xs text-zinc-400">TXID: {pixResult.txid.slice(0, 12)}...</span>
+            </div>
+
+            <div className="grid md:grid-cols-[160px_1fr] gap-3 items-start">
+              <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-2 flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:image/png;base64,${pixResult.qrCodeBase64}`}
+                  alt="QR Code PIX"
+                  className="w-36 h-36 rounded"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs text-zinc-400">
+                  Valor: <span className="text-emerald-300 font-semibold">R$ {pixResult.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  {' '}· Quantidade: {pixResult.qty}
+                </p>
+                <p className="text-xs text-zinc-400">
+                  Expira em: {new Date(pixResult.expiresAt).toLocaleString('pt-BR')}
+                </p>
+                <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-2">
+                  <p className="text-[11px] text-zinc-500 mb-1">PIX copia e cola</p>
+                  <p className="text-xs text-zinc-200 font-mono break-all">{pixResult.pixCopyPaste}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={copyPixCode}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-medium"
+                  >
+                    <Copy className="w-3.5 h-3.5 inline mr-1" />
+                    {copiedPix ? 'PIX copiado!' : 'Copiar PIX'}
+                  </button>
+                  <a
+                    href={pixResult.resumeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+                  >
+                    <QrCode className="w-3.5 h-3.5 inline mr-1" />
+                    Abrir checkout/status
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       {/* Modal de criação */}
       {showForm && (
