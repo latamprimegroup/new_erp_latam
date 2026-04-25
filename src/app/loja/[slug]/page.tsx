@@ -21,6 +21,15 @@ export default function LojaPage({ params, searchParams }: Props) {
   ) as Record<string, string | undefined>
   const initialCheckoutId =
     typeof searchParams.checkoutId === 'string' ? searchParams.checkoutId : undefined
+  const sellerRef =
+    typeof searchParams.ref === 'string' ? searchParams.ref : undefined
 
-  return <LojaClient slug={params.slug} urlUtms={utms} checkoutId={initialCheckoutId} />
+  return (
+    <LojaClient
+      slug={params.slug}
+      urlUtms={utms}
+      checkoutId={initialCheckoutId}
+      sellerRef={sellerRef}
+    />
+  )
 }

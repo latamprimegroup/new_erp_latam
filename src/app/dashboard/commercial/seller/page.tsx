@@ -23,7 +23,10 @@ export default async function CommercialSellerPage() {
           dos últimos checkouts gerados no fechamento.
         </p>
       </div>
-      <CommercialSellerClient />
+      <CommercialSellerClient
+        sellerId={session.user.id}
+        sellerName={session.user.name ?? session.user.email ?? 'vendedor'}
+      />
     </div>
   )
 }

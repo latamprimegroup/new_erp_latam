@@ -56,7 +56,26 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/admin': ['ADMIN'],
   '/dashboard/admin/config': ['ADMIN'],
   '/dashboard/admin/contas-ofertadas': ['ADMIN'],
-  '/dashboard/admin/clientes': ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'FINANCE', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/admin/clientes':         ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'FINANCE', 'PRODUCER', 'PRODUCTION_MANAGER'],
+  '/dashboard/admin/client-profiles':  ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/admin/product-listings': ['ADMIN', 'COMMERCIAL'],
+  '/api/admin/product-listings':       ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/admin/subscriptions':    ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/admin/revenue-8d':       ['ADMIN'],
+  '/api/admin/subscriptions':          ['ADMIN', 'COMMERCIAL'],
+  '/api/admin/revenue-overview':       ['ADMIN', 'COMMERCIAL'],
+  '/api/jobs/billing-cron':            ['ADMIN'],
+  '/api/webhooks/pagsmile':            [], // público (Pagsmile envia sem auth de sessão)
+  '/api/admin/client-profile-type':    ['ADMIN', 'COMMERCIAL'],
+  '/api/admin/god-view':               ['ADMIN'],
+  '/api/admin/mercury':                ['ADMIN'],
+  '/api/admin/war-room':               ['ADMIN'],
+  '/dashboard/admin/mercury-health':   ['ADMIN'],
+  '/api/webhooks/mercury':             [], // público — Mercury envia sem session
+  '/api/webhooks/kast':                [], // público — NOWPayments envia sem session
+  '/api/crypto/invoice':               [], // público — checkout externo pode chamar
+  '/api/admin/kast':                   ['ADMIN'],
+  '/dashboard/admin/kast-health':      ['ADMIN'],
   '/dashboard/admin/contestacoes': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/tickets': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/solicitacoes': ['ADMIN', 'COMMERCIAL'],

@@ -55,11 +55,12 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
   })
   if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
 
-  // Conta estoque disponível
+  // Conta estoque disponível — exclui ativos de fornecedores suspensos (stop-loss)
   const available = await prisma.asset.count({
     where: {
       category: listing.assetCategory as never,
       status:   'AVAILABLE',
+      vendor:   { suspended: false },
     },
   })
 
@@ -77,18 +78,29 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
 
 // ─── POST: gera PIX ───────────────────────────────────────────────────────────
 
+const CPF_REGEX  = /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/
+const CNPJ_REGEX = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/
+
 const schema = z.object({
   name:         z.string().min(2).max(200),
-  cpf:          z.string().regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, 'CPF inválido'),
+  // Aceita CPF (PF) ou CNPJ (PJ) — validação por regex básico
+  cpf:          z.string().regex(CPF_REGEX, 'CPF inválido').optional(),
+  cnpj:         z.string().regex(CNPJ_REGEX, 'CNPJ inválido').optional(),
   whatsapp:     z.string().regex(/^\+?55\d{10,11}$/, 'WhatsApp inválido (+5511999999999)'),
   email:        z.string().email().optional().or(z.literal('')),
   qty:          z.number().int().min(1).max(50),
+  sellerRef:    z.string().max(100).optional(), // sellerId codificado pelo vendedor
   utm_source:   z.string().max(100).optional(),
   utm_medium:   z.string().max(100).optional(),
   utm_campaign: z.string().max(200).optional(),
   utm_content:  z.string().max(200).optional(),
   utm_term:     z.string().max(200).optional(),
-})
+  src:          z.string().max(200).optional(),
+  utmSrc:       z.string().max(200).optional(), // alias do campo src
+  fbclid:       z.string().max(512).optional(),
+  gclid:        z.string().max(512).optional(),
+  referrer:     z.string().max(500).optional(),
+}).refine((d) => d.cpf || d.cnpj, { message: 'Informe CPF (PF) ou CNPJ (PJ)', path: ['cpf'] })
 
 export async function POST(req: globalThis.Request, { params }: { params: { slug: string } }) {
   const listing = await prisma.productListing.findUnique({
@@ -108,24 +120,44 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   const {
     name,
     cpf,
+    cnpj,
     whatsapp,
     email,
     qty,
+    sellerRef,
     utm_source,
     utm_medium,
     utm_campaign,
     utm_content,
     utm_term,
+    src,
+    utmSrc,
+    fbclid,
+    gclid,
+    referrer,
   } = parsed.data
-  const waE164   = whatsapp.startsWith('+') ? whatsapp : `+${whatsapp}`
-  const cpfClean = cpf.replace(/\D/g, '')
+  const waE164    = whatsapp.startsWith('+') ? whatsapp : `+${whatsapp}`
+  const cpfClean  = cpf?.replace(/\D/g, '')  ?? ''
+  const cnpjClean = cnpj?.replace(/\D/g, '') ?? ''
+  // Documento armazenado no campo buyerCpf (suporta CPF=11 ou CNPJ=14 dígitos)
+  const buyerDoc  = cnpjClean.length === 14 ? cnpjClean : cpfClean
+
   const session = await getServerSession(authOptions).catch(() => null)
-  const checkoutSellerId =
+  let checkoutSellerId: string | null =
     session?.user?.role === 'COMMERCIAL' || session?.user?.role === 'ADMIN'
       ? session.user.id
       : null
   const checkoutManagerId =
     session?.user?.role === 'COMMERCIAL' ? session.user.leaderId ?? null : null
+
+  // Se o link veio com ?ref= do vendedor e a sessão não tem seller, resolve pelo sellerRef
+  if (!checkoutSellerId && sellerRef) {
+    const sellerUser = await prisma.user.findFirst({
+      where: { id: sellerRef, role: { in: ['COMMERCIAL', 'ADMIN'] } },
+      select: { id: true },
+    }).catch(() => null)
+    if (sellerUser) checkoutSellerId = sellerUser.id
+  }
 
   const totalAmount = Number(listing.pricePerUnit) * qty
   const txid        = randomUUID().replace(/-/g, '').slice(0, 35)
@@ -137,7 +169,9 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       txid,
       amount:       totalAmount,
       buyerName:    name,
-      buyerCpf:     cpfClean,
+      ...(cnpjClean.length === 14
+        ? { buyerCnpj: cnpjClean }
+        : { buyerCpf:  cpfClean }),
       description:  `${qty}x ${listing.title} — Ads Ativos`,
       expiracaoSec: 1800,
     })
@@ -180,7 +214,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         data: {
           listingId:        listing.id,
           buyerName:        name,
-          buyerCpf:         cpfClean,
+          buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
           buyerWhatsapp:    waE164,
           buyerEmail:       email || null,
           qty,
@@ -196,6 +230,12 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           utmSource:        utm_source   ?? null,
           utmMedium:        utm_medium   ?? null,
           utmCampaign:      utm_campaign ?? null,
+          utmContent:       utm_content  ?? null,
+          utmTerm:          utm_term     ?? null,
+          utmSrc:           src ?? utmSrc ?? null,
+          fbclid:           fbclid       ?? null,
+          gclid:            gclid        ?? null,
+          referrer:         referrer     ?? null,
         },
       })
     }, {
@@ -227,7 +267,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       name,
       email: email || '',
       whatsapp: waE164,
-      cpf: cpfClean,
+      cpf: buyerDoc,
     },
     utms: {
       utm_source,

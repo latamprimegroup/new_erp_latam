@@ -9,6 +9,12 @@ out
 dist
 build
 
+# Certificados mTLS — NUNCA commitar chaves privadas
+certs/*.key
+certs/*.crt
+certs/*.pem
+certs/*.p12
+
 # Environment
 .env
 .env.deploy

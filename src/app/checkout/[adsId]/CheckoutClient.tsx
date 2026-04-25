@@ -6,6 +6,7 @@ import {
   ShieldCheck, Loader2, CheckCircle2, Copy, CheckCheck,
   AlertCircle, Clock, Zap, Lock,
 } from 'lucide-react'
+import { captureUtms, buildUtmPayload, type UtmData } from '@/lib/utm-tracker'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -18,46 +19,16 @@ interface AssetInfo {
   specs:       Record<string, unknown>
 }
 
-type UtmMap = Record<string, string | undefined>
-
 interface CheckoutClientProps {
   asset: AssetInfo
-  utms:  UtmMap
+  utms:  Record<string, string | undefined>
 }
 
-// ─── UTM localStorage ─────────────────────────────────────────────────────────
-
-const UTM_KEYS = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','src'] as const
-const LS_KEY   = 'ads_utms'
-
-/** Persiste UTMs no localStorage para sobreviver a redirecionamentos */
-function persistUtms(utms: UtmMap) {
-  try {
-    const toSave: UtmMap = {}
-    for (const k of UTM_KEYS) if (utms[k]) toSave[k] = utms[k]
-    if (Object.keys(toSave).length > 0)
-      localStorage.setItem(LS_KEY, JSON.stringify({ ...toSave, _savedAt: Date.now() }))
-  } catch { /* SSR / privado */ }
-}
-
-/** Restaura UTMs do localStorage (válidos por 24h) */
-function restoreUtms(): UtmMap {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return {}
-    const data = JSON.parse(raw) as UtmMap & { _savedAt?: number }
-    if (data._savedAt && Date.now() - (data._savedAt as number) > 86_400_000) {
-      localStorage.removeItem(LS_KEY)
-      return {}
-    }
-    return data
-  } catch { return {} }
-}
+// ─── UTM helpers removidos — centralizado em @/lib/utm-tracker (30 dias, cookie+LS)
 
 /** Mescla UTMs da URL (prioridade) com os do localStorage */
-function mergeUtms(fromUrl: UtmMap): UtmMap {
-  const saved = restoreUtms()
-  const merged: UtmMap = { ...saved }
+function mergeUtms(fromUrl: Record<string, string | undefined>): Record<string, string | undefined> {
+  const merged: Record<string, string | undefined> = { ...fromUrl }
   for (const k of UTM_KEYS) if (fromUrl[k]) merged[k] = fromUrl[k]
   return merged
 }
@@ -117,16 +88,12 @@ export default function CheckoutClient({ asset, utms: utmsFromUrl }: CheckoutCli
   const [error, setError]     = useState<string | null>(null)
   const [polling, setPolling] = useState(false)
 
-  // UTMs mesclados (URL tem prioridade; localStorage como fallback)
-  const utmsRef = useRef<UtmMap>({})
+  // UTMs: captura URL + restaura 30 dias (cookie first-party + localStorage)
+  const utmsRef = useRef<UtmData | null>(null)
 
   useEffect(() => {
-    const merged = mergeUtms(utmsFromUrl)
-    utmsRef.current = merged
-    if (Object.keys(utmsFromUrl).some((k) => utmsFromUrl[k])) {
-      persistUtms(merged)
-    }
-  }, [utmsFromUrl])
+    utmsRef.current = captureUtms()
+  }, [])
 
   // Campos do formulário
   const [name, setName]         = useState('')
@@ -142,9 +109,9 @@ export default function CheckoutClient({ asset, utms: utmsFromUrl }: CheckoutCli
     setError(null)
     setLoading(true)
 
-    const waRaw  = whatsapp.replace(/\D/g, '')
-    const waE164 = waRaw.startsWith('55') ? `+${waRaw}` : `+55${waRaw}`
-    const utms   = utmsRef.current
+    const waRaw     = whatsapp.replace(/\D/g, '')
+    const waE164    = waRaw.startsWith('55') ? `+${waRaw}` : `+55${waRaw}`
+    const utmPayload = utmsRef.current ? buildUtmPayload(utmsRef.current) : {}
 
     const res = await fetch('/api/checkout/pix', {
       method:  'POST',
@@ -155,7 +122,7 @@ export default function CheckoutClient({ asset, utms: utmsFromUrl }: CheckoutCli
         cpf:      cpf.replace(/\D/g, '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'),
         whatsapp: waE164,
         email:    email || undefined,
-        ...utms,
+        ...utmPayload,
       }),
     })
 
