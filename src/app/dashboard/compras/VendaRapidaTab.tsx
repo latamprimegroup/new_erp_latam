@@ -654,35 +654,22 @@ export function VendaRapidaTab() {
       {/* Modal de criação */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg p-6 space-y-5">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-xl max-h-[90vh] p-5 sm:p-6 space-y-4 flex flex-col">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-lg">Criar Link de Venda</h3>
               <button onClick={() => setShowForm(false)} className="text-zinc-500 hover:text-white transition">
                 <X className="w-5 h-5" />
               </button>
             </div>
+            <p className="text-xs text-zinc-500">
+              Formulário compacto: campos avançados ficam recolhidos para agilizar o lançamento.
+            </p>
 
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleCreate} className="space-y-4 overflow-y-auto pr-1 max-h-[68vh]">
               <Field label="Nome do produto">
                 <input
                   required value={title} onChange={(e) => setTitle(e.target.value)}
                   placeholder="Ex: TikTok Verificada, Google Ads Premium"
-                  className="input-dark"
-                />
-              </Field>
-              <Field label="Subtítulo (opcional)">
-                <textarea
-                  value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
-                  rows={3}
-                  placeholder="Resumo rápido do produto para o card"
-                  className="input-dark"
-                />
-              </Field>
-              <Field label="Descrição completa (copiar e colar)">
-                <textarea
-                  value={fullDescription} onChange={(e) => setFullDescription(e.target.value)}
-                  rows={6}
-                  placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
                   className="input-dark"
                 />
               </Field>
@@ -743,27 +730,6 @@ export function VendaRapidaTab() {
                   ) : null}
                 </div>
               </Field>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Field label="Código do produto no estoque (opcional)">
-                  <input
-                    value={stockProductCode}
-                    onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
-                    placeholder="AA-CONT-000001"
-                    className="input-dark"
-                  />
-                </Field>
-                <Field label="Nome do produto no estoque (opcional)">
-                  <input
-                    value={stockProductName}
-                    onChange={(e) => setStockProductName(e.target.value)}
-                    placeholder="Perfil Real Verificado"
-                    className="input-dark"
-                  />
-                </Field>
-              </div>
-              <p className="text-xs text-zinc-500">
-                Se preencher código ou nome, a Venda Rápida vai tentar atrelar e baixar o estoque desse produto automaticamente no pagamento.
-              </p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Categoria do ativo">
                   <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
@@ -797,8 +763,52 @@ export function VendaRapidaTab() {
                   />
                 </Field>
               </div>
+              <details className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
+                <summary className="cursor-pointer text-sm font-medium text-zinc-200 select-none">
+                  Opções avançadas (descrição e vínculo manual)
+                </summary>
+                <div className="space-y-3 mt-3">
+                  <Field label="Subtítulo (opcional)">
+                    <textarea
+                      value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
+                      rows={2}
+                      placeholder="Resumo rápido do produto para o card"
+                      className="input-dark"
+                    />
+                  </Field>
+                  <Field label="Descrição completa (copiar e colar)">
+                    <textarea
+                      value={fullDescription} onChange={(e) => setFullDescription(e.target.value)}
+                      rows={4}
+                      placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
+                      className="input-dark"
+                    />
+                  </Field>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Field label="Código do produto no estoque (opcional)">
+                      <input
+                        value={stockProductCode}
+                        onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
+                        placeholder="AA-CONT-000001"
+                        className="input-dark"
+                      />
+                    </Field>
+                    <Field label="Nome do produto no estoque (opcional)">
+                      <input
+                        value={stockProductName}
+                        onChange={(e) => setStockProductName(e.target.value)}
+                        placeholder="Perfil Real Verificado"
+                        className="input-dark"
+                      />
+                    </Field>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Se preencher código ou nome, a Venda Rápida tenta atrelar e baixar estoque automaticamente no pagamento.
+                  </p>
+                </div>
+              </details>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-3 pt-2 sticky bottom-0 bg-zinc-900/95 backdrop-blur-sm pb-1">
                 <button
                   type="button" onClick={() => setShowForm(false)}
                   className="flex-1 py-3 rounded-xl border border-zinc-700 text-zinc-400 text-sm hover:text-white transition"
