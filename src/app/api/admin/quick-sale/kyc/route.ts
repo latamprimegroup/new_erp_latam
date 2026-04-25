@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoles } from '@/lib/api-auth'
 import { prisma } from '@/lib/prisma'
+import { sendUtmifyQuickSaleConversion } from '@/lib/utmify'
+import { sendWhatsApp, sendWhatsAppEliteDelivery } from '@/lib/notifications/channels/whatsapp'
+import { buildDeliveryEmail, sendEmail } from '@/lib/notifications/channels/email'
 import {
   adspowerMoveProfile,
   getQuickSaleAdspowerProfileRef,
@@ -10,6 +13,27 @@ import {
 } from '@/lib/smart-delivery-system'
 
 export const runtime = 'nodejs'
+
+function parseReservedAssetIds(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+}
+
+function normalizeCredentialMap(rawData: unknown) {
+  if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) return undefined
+  const entries = Object.entries(rawData as Record<string, unknown>)
+  const mapped = entries.reduce<Record<string, string>>((acc, [key, value]) => {
+    if (value == null) return acc
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const text = String(value).trim()
+      if (text) acc[key] = text
+    }
+    return acc
+  }, {})
+  return Object.keys(mapped).length > 0 ? mapped : undefined
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireRoles(['ADMIN', 'COMMERCIAL'])
@@ -127,6 +151,26 @@ export async function PATCH(req: NextRequest) {
       buyerEmail: true,
       buyerWhatsapp: true,
       buyerCpf: true,
+      totalAmount: true,
+      qty: true,
+      createdAt: true,
+      paidAt: true,
+      warrantyEndsAt: true,
+      utmifySent: true,
+      utmSource: true,
+      utmMedium: true,
+      utmCampaign: true,
+      utmContent: true,
+      utmTerm: true,
+      utmSrc: true,
+      reservedAssetIds: true,
+      listing: {
+        select: {
+          title: true,
+          slug: true,
+          destinationProfile: true,
+        },
+      },
     },
   }).catch(() => null)
 
@@ -191,6 +235,121 @@ export async function PATCH(req: NextRequest) {
     },
   }).catch(() => {})
 
+  let utmifySynced = Boolean(checkout.utmifySent)
+  if (!checkout.utmifySent) {
+    const paidAt = checkout.paidAt ?? new Date()
+    const utmifyResult = await sendUtmifyQuickSaleConversion({
+      checkoutId: checkout.id,
+      listingTitle: checkout.listing.title,
+      listingSlug: checkout.listing.slug,
+      totalAmount: Number(checkout.totalAmount),
+      qty: checkout.qty,
+      paidAt,
+      createdAt: checkout.createdAt,
+      profileType: checkout.listing.destinationProfile ?? null,
+      buyer: {
+        name: checkout.buyerName,
+        email: checkout.buyerEmail,
+        whatsapp: checkout.buyerWhatsapp,
+        document: checkout.buyerCpf,
+      },
+      utms: {
+        utm_source: checkout.utmSource ?? undefined,
+        utm_medium: checkout.utmMedium ?? undefined,
+        utm_campaign: checkout.utmCampaign ?? undefined,
+        utm_content: checkout.utmContent ?? undefined,
+        utm_term: checkout.utmTerm ?? undefined,
+        src: checkout.utmSrc ?? undefined,
+      },
+    }).catch((e) => {
+      console.error('[QuickSaleKYC] Utmify lead_verified falhou:', e)
+      return { ok: false }
+    })
+
+    utmifySynced = Boolean(utmifyResult.ok)
+    if (utmifyResult.ok) {
+      await prisma.quickSaleCheckout.update({
+        where: { id: checkout.id },
+        data: {
+          utmifySent: true,
+          utmifyOrderId: ('utmifyOrderId' in utmifyResult ? utmifyResult.utmifyOrderId : null) ?? null,
+        },
+      }).catch(() => {})
+    }
+  }
+
+  const appBase = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const panelUrl = appBase
+    ? `${appBase}/loja/${checkout.listing.slug}?checkoutId=${encodeURIComponent(checkout.id)}`
+    : ''
+  const reservedAssetIds = parseReservedAssetIds(checkout.reservedAssetIds)
+  const deliveredAsset = reservedAssetIds.length > 0
+    ? await prisma.asset.findFirst({
+      where: { id: { in: reservedAssetIds } },
+      select: { displayName: true, rawData: true },
+    }).catch(() => null)
+    : null
+
+  const credentials = deliveredAsset?.rawData && typeof deliveredAsset.rawData === 'object'
+    ? (deliveredAsset.rawData as Record<string, unknown>)
+    : null
+  const emailCredentials = normalizeCredentialMap(deliveredAsset?.rawData)
+
+  let whatsappSent = false
+  let emailSent = false
+
+  if (moveResult.moved) {
+    whatsappSent = await sendWhatsAppEliteDelivery({
+      whatsapp: checkout.buyerWhatsapp,
+      buyerName: checkout.buyerName,
+      productTitle: checkout.listing.title,
+      checkoutId: checkout.id,
+      credentials,
+      warrantyEndsAt: checkout.warrantyEndsAt ?? null,
+      memberAreaUrl: panelUrl || undefined,
+    }).catch((e) => {
+      console.error('[QuickSaleKYC] WhatsApp final pós-aprovação falhou:', e)
+      return false
+    })
+  } else {
+    const fallbackMessage = [
+      '✅ *KYC aprovado na Ads Ativos*',
+      '',
+      `Pedido: #${checkout.id}`,
+      `Produto: ${checkout.listing.title}`,
+      '',
+      'Seu pagamento foi validado, porém a entrega automática não conseguiu concluir o movimento no AdsPower.',
+      panelUrl || 'Acesse o painel da loja para acompanhar a liberação.',
+      '',
+      'Nossa equipe já foi notificada para finalizar a liberação manual.',
+    ].join('\n')
+    whatsappSent = await sendWhatsApp({
+      phone: checkout.buyerWhatsapp,
+      message: fallbackMessage,
+    }).catch(() => false)
+  }
+
+  if (checkout.buyerEmail) {
+    const deliveryEmail = buildDeliveryEmail({
+      buyerName: checkout.buyerName,
+      buyerEmail: checkout.buyerEmail,
+      productTitle: checkout.listing.title,
+      orderId: checkout.id,
+      credentials: emailCredentials,
+      warrantyEndsAt: checkout.warrantyEndsAt ?? null,
+      panelUrl: panelUrl || undefined,
+    })
+    emailSent = await sendEmail({
+      to: checkout.buyerEmail,
+      subject: deliveryEmail.subject,
+      html: deliveryEmail.html,
+      text: deliveryEmail.text,
+    }).catch((e) => {
+      console.error('[QuickSaleKYC] E-mail final pós-aprovação falhou:', e)
+      return false
+    })
+  }
+
   await prisma.auditLog.create({
     data: {
       action: 'QUICK_SALE_KYC_APPROVED',
@@ -201,6 +360,9 @@ export async function PATCH(req: NextRequest) {
         checkoutId: checkout.id,
         moveResult,
         note: input.note?.trim() || null,
+        utmifySynced,
+        whatsappSent,
+        emailSent,
       },
     },
   }).catch(() => {})
@@ -210,5 +372,8 @@ export async function PATCH(req: NextRequest) {
     checkoutId: checkout.id,
     action,
     moveResult,
+    utmifySynced,
+    whatsappSent,
+    emailSent,
   })
 }

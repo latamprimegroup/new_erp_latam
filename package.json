@@ -24,7 +24,8 @@
     "deploy:verify": "npm run lint && npm run typecheck && npx prisma validate && npx prisma generate",
     "deploy:full-check": "npm run deploy:verify && npm run build",
     "deploy:hostinger": "node scripts/deploy-hostinger.mjs",
-    "deploy:ship": "npm run deploy:verify && node scripts/git-push-main.mjs && node scripts/deploy-hostinger.mjs"
+    "deploy:ship": "npm run deploy:verify && node scripts/git-push-main.mjs && node scripts/deploy-hostinger.mjs",
+    "inter:med:webhook:smoke": "node scripts/inter-med-webhook-smoke.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.699.0",

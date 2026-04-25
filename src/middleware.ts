@@ -78,6 +78,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/api/admin/kast':                   ['ADMIN'],
   '/dashboard/admin/kast-health':      ['ADMIN'],
   '/dashboard/admin/contestacoes': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/admin/vendas-pendentes': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/tickets': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/solicitacoes': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/admin/contas-entregues': ['ADMIN', 'COMMERCIAL'],
