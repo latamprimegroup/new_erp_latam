@@ -8,6 +8,7 @@ import { randomUUID }  from 'crypto'
 import { getServerSession } from 'next-auth/next'
 import { prisma }      from '@/lib/prisma'
 import { authOptions } from '@/lib/auth'
+import type { Prisma } from '@prisma/client'
 import { generatePixCharge } from '@/lib/inter/client'
 import { sendUtmifyPixGerado } from '@/lib/utmify'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
@@ -29,6 +30,13 @@ function normalizeStockCode(v: string | null | undefined) {
 function normalizeStockName(v: string | null | undefined) {
   const normalized = (v ?? '').trim()
   return normalized || null
+}
+
+function isMissingColumnError(err: unknown) {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: string }).code
+  const msg = String((err as { message?: string }).message ?? '')
+  return code === 'P2022' || msg.includes('Unknown column')
 }
 
 function buildAssetWhere(listing: {
@@ -66,6 +74,108 @@ function buildAssetWhere(listing: {
   return base
 }
 
+type ListingLite = {
+  id: string
+  slug: string
+  title: string
+  subtitle: string | null
+  badge: string | null
+  assetCategory: string
+  pricePerUnit: Prisma.Decimal
+  maxQty: number
+  fullDescription: string | null
+  stockProductCode: string | null
+  stockProductName: string | null
+}
+
+async function getListingBySlug(slug: string): Promise<ListingLite | null> {
+  try {
+    return await prisma.productListing.findFirst({
+      where: { slug, active: true },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        subtitle: true,
+        badge: true,
+        assetCategory: true,
+        pricePerUnit: true,
+        maxQty: true,
+        fullDescription: true,
+        stockProductCode: true,
+        stockProductName: true,
+      },
+    })
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err
+    const legacy = await prisma.productListing.findFirst({
+      where: { slug, active: true },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        subtitle: true,
+        badge: true,
+        assetCategory: true,
+        pricePerUnit: true,
+        maxQty: true,
+      },
+    })
+    if (!legacy) return null
+    return {
+      ...legacy,
+      fullDescription: null,
+      stockProductCode: null,
+      stockProductName: null,
+    }
+  }
+}
+
+async function createQuickCheckoutWithFallback(
+  tx: Prisma.TransactionClient,
+  data: {
+    listingId: string
+    buyerName: string
+    buyerCpf: string
+    buyerWhatsapp: string
+    buyerEmail: string | null
+    qty: number
+    stockProductCodeSnapshot: string | null
+    stockProductNameSnapshot: string | null
+    totalAmount: number
+    status: 'PENDING'
+    interTxid: string
+    pixCopyPaste: string
+    pixQrCode: string
+    expiresAt: Date
+    reservedAssetIds: string[]
+    sellerId: string | null
+    managerId: string | null
+    utmSource: string | null
+    utmMedium: string | null
+    utmCampaign: string | null
+    utmContent: string | null
+    utmTerm: string | null
+    utmSrc: string | null
+    fbclid: string | null
+    gclid: string | null
+    referrer: string | null
+  },
+) {
+  try {
+    return await tx.quickSaleCheckout.create({
+      data: {
+        ...data,
+        deliveryFlowStatus: DELIVERY_FLOW.PENDING_PAYMENT,
+        deliveryStatusNote: 'Aguardando pagamento PIX para liberar etapa de entrega.',
+      },
+    })
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err
+    return tx.quickSaleCheckout.create({ data })
+  }
+}
+
 // ─── GET: retorna info do produto OU status do checkout ───────────────────────
 
 export async function GET(req: globalThis.Request, { params }: { params: { slug: string } }) {
@@ -74,25 +184,69 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
 
   // Polling de status do checkout
   if (checkoutId) {
-    const co = await prisma.quickSaleCheckout.findUnique({
-      where:  { id: checkoutId },
-      select: {
-        status: true,
-        paidAt: true,
-        expiresAt: true,
-        pixCopyPaste: true,
-        pixQrCode: true,
-        totalAmount: true,
-        qty: true,
-        deliveryFlowStatus: true,
-        adspowerEmail: true,
-        adspowerProfileReleased: true,
-        deliveryRequestedAt: true,
-        deliveryStatusNote: true,
-        deliverySent: true,
-        listing: { select: { slug: true, title: true } },
-      },
-    })
+    let co: {
+      status: string
+      paidAt: Date | null
+      expiresAt: Date | null
+      pixCopyPaste: string | null
+      pixQrCode: string | null
+      totalAmount: Prisma.Decimal
+      qty: number
+      listing: { slug: string; title: string }
+      deliveryFlowStatus: string
+      adspowerEmail: string | null
+      adspowerProfileReleased: boolean
+      deliveryRequestedAt: Date | null
+      deliveryStatusNote: string | null
+      deliverySent: boolean
+    } | null = null
+    try {
+      co = await prisma.quickSaleCheckout.findUnique({
+        where: { id: checkoutId },
+        select: {
+          status: true,
+          paidAt: true,
+          expiresAt: true,
+          pixCopyPaste: true,
+          pixQrCode: true,
+          totalAmount: true,
+          qty: true,
+          deliveryFlowStatus: true,
+          adspowerEmail: true,
+          adspowerProfileReleased: true,
+          deliveryRequestedAt: true,
+          deliveryStatusNote: true,
+          deliverySent: true,
+          listing: { select: { slug: true, title: true } },
+        },
+      }) as typeof co
+    } catch (err) {
+      if (!isMissingColumnError(err)) throw err
+      const legacy = await prisma.quickSaleCheckout.findUnique({
+        where: { id: checkoutId },
+        select: {
+          status: true,
+          paidAt: true,
+          expiresAt: true,
+          pixCopyPaste: true,
+          pixQrCode: true,
+          totalAmount: true,
+          qty: true,
+          listing: { select: { slug: true, title: true } },
+        },
+      })
+      co = legacy
+        ? {
+            ...legacy,
+            deliveryFlowStatus: legacy.status === 'PAID' ? DELIVERY_FLOW.WAITING_CUSTOMER_DATA : DELIVERY_FLOW.PENDING_PAYMENT,
+            adspowerEmail: null,
+            adspowerProfileReleased: false,
+            deliveryRequestedAt: null,
+            deliveryStatusNote: null,
+            deliverySent: false,
+          }
+        : null
+    }
     if (!co) return NextResponse.json({ error: 'Checkout não encontrado' }, { status: 404 })
     if (co.listing.slug !== params.slug) {
       return NextResponse.json({ error: 'Checkout não pertence a este produto' }, { status: 404 })
@@ -117,9 +271,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     })
   }
 
-  const listing = await prisma.productListing.findUnique({
-    where: { slug: params.slug, active: true },
-  })
+  const listing = await getListingBySlug(params.slug)
   if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
 
   // Conta estoque disponível — exclui ativos de fornecedores suspensos (stop-loss)
@@ -172,9 +324,7 @@ const schema = z.object({
 }).refine((d) => d.cpf || d.cnpj, { message: 'Informe CPF (PF) ou CNPJ (PJ)', path: ['cpf'] })
 
 export async function POST(req: globalThis.Request, { params }: { params: { slug: string } }) {
-  const listing = await prisma.productListing.findUnique({
-    where: { slug: params.slug, active: true },
-  })
+  const listing = await getListingBySlug(params.slug)
   if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
 
   let body: unknown
@@ -279,37 +429,33 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         throw new Error(`STOCK_RACE:${count}`)
       }
 
-      return tx.quickSaleCheckout.create({
-        data: {
-          listingId:        listing.id,
-          buyerName:        name,
-          buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
-          buyerWhatsapp:    waE164,
-          buyerEmail:       email || null,
-          qty,
-          stockProductCodeSnapshot: normalizeStockCode(listing.stockProductCode),
-          stockProductNameSnapshot: normalizeStockName(listing.stockProductName),
-          totalAmount,
-          status:           'PENDING',
-          interTxid:        pixData.txid,
-          pixCopyPaste:     pixData.pixCopyPaste,
-          pixQrCode:        pixData.qrCodeBase64,
-          expiresAt:        pixData.expiresAt,
-          reservedAssetIds: assetIds,
-          sellerId:         checkoutSellerId,
-          managerId:        checkoutManagerId,
-          deliveryFlowStatus: DELIVERY_FLOW.PENDING_PAYMENT,
-          deliveryStatusNote: 'Aguardando pagamento PIX para liberar etapa de entrega.',
-          utmSource:        utm_source   ?? null,
-          utmMedium:        utm_medium   ?? null,
-          utmCampaign:      utm_campaign ?? null,
-          utmContent:       utm_content  ?? null,
-          utmTerm:          utm_term     ?? null,
-          utmSrc:           src ?? utmSrc ?? null,
-          fbclid:           fbclid       ?? null,
-          gclid:            gclid        ?? null,
-          referrer:         referrer     ?? null,
-        },
+      return createQuickCheckoutWithFallback(tx, {
+        listingId:        listing.id,
+        buyerName:        name,
+        buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
+        buyerWhatsapp:    waE164,
+        buyerEmail:       email || null,
+        qty,
+        stockProductCodeSnapshot: normalizeStockCode(listing.stockProductCode),
+        stockProductNameSnapshot: normalizeStockName(listing.stockProductName),
+        totalAmount,
+        status:           'PENDING',
+        interTxid:        pixData.txid,
+        pixCopyPaste:     pixData.pixCopyPaste,
+        pixQrCode:        pixData.qrCodeBase64,
+        expiresAt:        pixData.expiresAt,
+        reservedAssetIds: assetIds,
+        sellerId:         checkoutSellerId,
+        managerId:        checkoutManagerId,
+        utmSource:        utm_source   ?? null,
+        utmMedium:        utm_medium   ?? null,
+        utmCampaign:      utm_campaign ?? null,
+        utmContent:       utm_content  ?? null,
+        utmTerm:          utm_term     ?? null,
+        utmSrc:           src ?? utmSrc ?? null,
+        fbclid:           fbclid       ?? null,
+        gclid:            gclid        ?? null,
+        referrer:         referrer     ?? null,
       })
     }, {
       // Isolamento máximo para evitar double-sell
@@ -406,15 +552,39 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { slu
     }, { status: 422 })
   }
 
-  const checkout = await prisma.quickSaleCheckout.findUnique({
-    where: { id: checkoutId },
-    select: {
-      id: true,
-      status: true,
-      listing: { select: { slug: true } },
-      deliveryFlowStatus: true,
-    },
-  })
+  let checkout: {
+    id: string
+    status: string
+    listing: { slug: string }
+    deliveryFlowStatus: string
+  } | null = null
+  try {
+    checkout = await prisma.quickSaleCheckout.findUnique({
+      where: { id: checkoutId },
+      select: {
+        id: true,
+        status: true,
+        listing: { select: { slug: true } },
+        deliveryFlowStatus: true,
+      },
+    }) as typeof checkout
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err
+    const legacy = await prisma.quickSaleCheckout.findUnique({
+      where: { id: checkoutId },
+      select: {
+        id: true,
+        status: true,
+        listing: { select: { slug: true } },
+      },
+    })
+    checkout = legacy
+      ? {
+          ...legacy,
+          deliveryFlowStatus: legacy.status === 'PAID' ? DELIVERY_FLOW.WAITING_CUSTOMER_DATA : DELIVERY_FLOW.PENDING_PAYMENT,
+        }
+      : null
+  }
 
   if (!checkout) return NextResponse.json({ error: 'Checkout não encontrado' }, { status: 404 })
   if (checkout.listing.slug !== params.slug) {
@@ -431,25 +601,41 @@ export async function PATCH(req: globalThis.Request, { params }: { params: { slu
         ? DELIVERY_FLOW.DELIVERY_IN_PROGRESS
         : DELIVERY_FLOW.DELIVERY_REQUESTED
 
-  const updated = await prisma.quickSaleCheckout.update({
-    where: { id: checkout.id },
-    data: {
-      adspowerEmail: normalizeEmail(adspowerEmail),
-      adspowerProfileReleased: true,
-      deliveryRequestedAt: new Date(),
-      deliveryFlowStatus: nextFlow,
-      deliveryStatusNote: 'Dados de entrega recebidos. Equipe Ads Ativos validando e separando acesso.',
-    },
-    select: {
-      id: true,
-      deliveryFlowStatus: true,
-      adspowerEmail: true,
-      adspowerProfileReleased: true,
-      deliveryRequestedAt: true,
-      deliveryStatusNote: true,
-      deliverySent: true,
-    },
-  })
+  let updated: {
+    id: string
+    deliveryFlowStatus: string
+    adspowerEmail: string | null
+    adspowerProfileReleased: boolean
+    deliveryRequestedAt: Date | null
+    deliveryStatusNote: string | null
+    deliverySent: boolean
+  }
+  try {
+    updated = await prisma.quickSaleCheckout.update({
+      where: { id: checkout.id },
+      data: {
+        adspowerEmail: normalizeEmail(adspowerEmail),
+        adspowerProfileReleased: true,
+        deliveryRequestedAt: new Date(),
+        deliveryFlowStatus: nextFlow,
+        deliveryStatusNote: 'Dados de entrega recebidos. Equipe Ads Ativos validando e separando acesso.',
+      },
+      select: {
+        id: true,
+        deliveryFlowStatus: true,
+        adspowerEmail: true,
+        adspowerProfileReleased: true,
+        deliveryRequestedAt: true,
+        deliveryStatusNote: true,
+        deliverySent: true,
+      },
+    })
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err
+    return NextResponse.json({
+      error: 'Módulo de entrega em atualização. Tente novamente em instantes.',
+    }, { status: 503 })
+  }
 
   return NextResponse.json({
     ok: true,
