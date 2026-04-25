@@ -75,7 +75,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   if (cloak.blocked) {
     await trackInvisibleCheckoutProbe({
       token,
-      reason: cloak.reason,
+      reason: cloak.reason ?? 'CLOAK_BLOCKED',
       checkoutId: tokenData.checkoutId,
       listingId: tokenData.listingId,
       ip,
