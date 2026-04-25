@@ -13,6 +13,7 @@
  *   - Dispara entrega automática via WhatsApp (Evolution API / Z-API)
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { hash } from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
 import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
@@ -24,79 +25,150 @@ import {
   notifyProductionManagerStockSold,
 } from '@/lib/notifications/admin-events'
 import { sendSaleIncentiveNotifications } from '@/lib/notifications/sales-incentive'
-import { sendUtmifyConversion } from '@/lib/utmify'
+import { sendUtmifyConversion, sendUtmifyQuickSaleConversion } from '@/lib/utmify'
+import {
+  sendWhatsAppConfirmation,
+  sendWhatsAppEliteDelivery,
+  sendWhatsApp,
+} from '@/lib/notifications/channels/whatsapp'
 import {
   calculateQuickSaleIncentiveBreakdown,
   registerQuickSaleProductionBonus,
   getSalesCheckoutIncentiveBreakdown,
 } from '@/lib/incentive-engine'
+import { handlePostPaymentOnboarding } from '@/lib/onboarding-engine'
 
 export const runtime = 'nodejs'
 
-// ─── Utilitário: extrai todos os txids do payload ────────────────────────────
+// ─── Log de auditoria de cada evento PIX ─────────────────────────────────────
 
-function collectTxids(obj: unknown, out: Set<string>) {
-  if (obj == null) return
-  if (typeof obj === 'string' && /[a-z0-9-]{10,}/i.test(obj)) {
-    const s = obj.trim()
-    if (s.length >= 10 && s.length <= 120) out.add(s)
+async function logPixEvent(data: {
+  txid:       string
+  e2eid?:     string
+  amount?:    number
+  status:     'PROCESSED' | 'DUPLICATE' | 'NOT_FOUND' | 'ERROR'
+  flowType?:  string
+  relatedId?: string
+  rawPayload?: string
+  errorMsg?:  string
+}) {
+  await prisma.interPixLog.create({
+    data: {
+      txid:       data.txid,
+      e2eid:      data.e2eid ?? null,
+      amount:     data.amount ?? null,
+      status:     data.status,
+      flowType:   data.flowType ?? null,
+      relatedId:  data.relatedId ?? null,
+      rawPayload: data.rawPayload ? data.rawPayload.slice(0, 2000) : null,
+      errorMsg:   data.errorMsg  ?? null,
+      processedAt: new Date(),
+    },
+  }).catch((e) => console.error('[InterPixLog] Falha ao gravar log:', e))
+}
+
+// ─── Auto-criação de conta de cliente ────────────────────────────────────────
+
+/**
+ * Garante que o comprador tem uma conta CLIENT no sistema.
+ * Se não existir, cria User + ClientProfile e retorna a senha temporária gerada.
+ * Retorna null se o e-mail não for informado ou a conta já existir.
+ */
+async function ensureClientAccount(params: {
+  name:      string
+  email:     string | null
+  whatsapp:  string
+}): Promise<{ isNew: boolean; tempPassword?: string; userId: string } | null> {
+  if (!params.email) return null
+
+  const emailNorm = params.email.trim().toLowerCase()
+
+  const existing = await prisma.user.findUnique({
+    where:  { email: emailNorm },
+    select: { id: true },
+  })
+
+  if (existing) return { isNew: false, userId: existing.id }
+
+  const tempPassword = Math.random().toString(36).slice(2, 10).toUpperCase()
+  const passwordHash = await hash(tempPassword, 10)
+
+  const newUser = await prisma.user.create({
+    data: {
+      email:        emailNorm,
+      name:         params.name,
+      phone:        params.whatsapp,
+      role:         'CLIENT',
+      status:       'ACTIVE',
+      passwordHash,
+      emailVerified: new Date(),
+      clientProfile: {
+        create: {
+          whatsapp:       params.whatsapp,
+          notifyEmail:    true,
+          notifyWhatsapp: true,
+        },
+      },
+    },
+    select: { id: true },
+  })
+
+  return { isNew: true, tempPassword, userId: newUser.id }
+}
+
+// ─── Parser do payload Inter PIX ─────────────────────────────────────────────
+//
+// Payload oficial do webhook (GET /pix/v2 — docs Inter):
+// {
+//   "pix": [{
+//     "endToEndId": "E60746948202212091600ccafd993ea7",
+//     "txid":       "7978c0c97ea847e78e8849634473c1f1",
+//     "valor":      "110.00",
+//     "horario":    "2021-09-01T20:00:00.00Z",
+//     "infoPagador": "0123456789"
+//   }]
+// }
+
+type InterPixItem = {
+  txid?:        string
+  endToEndId?:  string
+  valor?:       string
+  horario?:     string
+  infoPagador?: string
+}
+
+type InterWebhookPayload = {
+  pix?: InterPixItem[]
+}
+
+/**
+ * Extrai lista de itens PIX do payload do webhook Inter.
+ * Prioriza o campo `pix[]` oficial; usa fallback recursivo para formatos
+ * não padronizados de parceiros/sandbox.
+ */
+function extractPixItems(raw: unknown): InterPixItem[] {
+  const typed = raw as InterWebhookPayload | null
+  if (typed?.pix && Array.isArray(typed.pix) && typed.pix.length > 0) {
+    return typed.pix.filter((p) => typeof p.txid === 'string' && p.txid.length >= 10)
   }
-  if (Array.isArray(obj)) {
-    for (const x of obj) collectTxids(x, out)
-    return
-  }
-  if (typeof obj === 'object') {
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      if (/txid|endToEnd|e2e/i.test(k) && typeof v === 'string') out.add(v.trim())
-      collectTxids(v, out)
+
+  // Fallback: busca recursiva por objetos com campo txid
+  const items: InterPixItem[] = []
+  function scan(obj: unknown) {
+    if (obj == null || typeof obj !== 'object') return
+    if (Array.isArray(obj)) { obj.forEach(scan); return }
+    const o = obj as Record<string, unknown>
+    if (typeof o.txid === 'string' && o.txid.length >= 10) {
+      items.push({ txid: o.txid, endToEndId: o.endToEndId as string, valor: o.valor as string })
+    } else {
+      Object.values(o).forEach(scan)
     }
   }
+  scan(raw)
+  return items
 }
 
-// ─── Entrega WhatsApp (Evolution API ou Z-API) ────────────────────────────────
-
-async function sendWhatsAppDelivery(params: {
-  whatsapp:    string   // E.164
-  buyerName:   string
-  adsId:       string
-  displayName: string
-  checkoutId:  string
-}): Promise<void> {
-  const evolutionUrl    = process.env.EVOLUTION_API_URL
-  const evolutionApiKey = process.env.EVOLUTION_API_KEY
-  const evolutionInst   = process.env.EVOLUTION_INSTANCE ?? 'adsativos'
-
-  if (!evolutionUrl || !evolutionApiKey) {
-    console.warn('[WhatsApp] EVOLUTION_API_URL ou EVOLUTION_API_KEY não configurados — pulando entrega')
-    return
-  }
-
-  const number = params.whatsapp.replace(/\D/g, '')
-  const message = [
-    `✅ *PAGAMENTO CONFIRMADO — ADS ATIVOS*`,
-    ``,
-    `Olá *${params.buyerName}*! Seu PIX foi recebido com sucesso.`,
-    ``,
-    `🛡️ *Conta adquirida:*`,
-    `⚡ ID: \`${params.adsId}\``,
-    `📦 ${params.displayName}`,
-    ``,
-    `🔐 O acesso será entregue em instantes pelo nosso suporte.`,
-    `ID da compra: \`${params.checkoutId}\``,
-    ``,
-    `👉 Qualquer dúvida, responda esta mensagem.`,
-  ].join('\n')
-
-  await fetch(`${evolutionUrl}/message/sendText/${evolutionInst}`, {
-    method:  'POST',
-    headers: { apikey: evolutionApiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      number,
-      options: { delay: 1000, presence: 'composing' },
-      textMessage: { text: message },
-    }),
-  }).catch((e) => console.error('[WhatsApp] Erro ao enviar mensagem:', e))
-}
+// sendWhatsAppDelivery agora usa sendWhatsAppConfirmation do canal centralizado
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 
@@ -108,25 +180,39 @@ export async function POST(req: NextRequest) {
   }
 
   let payload: unknown
-  try { payload = await req.json() }
-  catch { return NextResponse.json({ error: 'JSON inválido' }, { status: 400 }) }
+  let rawPayload = ''
+  try {
+    const text = await req.text()
+    rawPayload  = text
+    payload     = JSON.parse(text)
+  } catch {
+    return NextResponse.json({ error: 'JSON inválido' }, { status: 400 })
+  }
 
-  const txids = new Set<string>()
-  collectTxids(payload, txids)
+  const pixItems = extractPixItems(payload)
 
-  // Extrai e2eid do payload (campo endToEndId / e2eid do Inter)
-  const pixArr = (payload as Record<string, unknown>)?.pix
-  const e2eid = (Array.isArray(pixArr) ? (pixArr[0] as Record<string, unknown>)?.endToEndId : undefined) as string | undefined
+  if (pixItems.length === 0) {
+    await logPixEvent({ txid: 'UNKNOWN', status: 'NOT_FOUND', rawPayload, errorMsg: 'Nenhum txid encontrado no payload' })
+    // Retorna 200 para o Inter não reenviar — simplesmente não há cobrança correspondente
+    return NextResponse.json({ ok: true, txidsFound: 0 })
+  }
 
-  let ordersUpdated   = 0
+  let ordersUpdated    = 0
   let checkoutsUpdated = 0
 
-  for (const txid of txids) {
+  for (const item of pixItems) {
+    const txid      = item.txid!
+    const e2eid     = item.endToEndId
+    const pixAmount = item.valor ? Number(item.valor) : undefined
+
     // ── 1. Fluxo legado: Order comercial ────────────────────────────────────
     const order = await prisma.order.findFirst({
       where: { interPixTxid: txid },
       select: { id: true, status: true, warrantyHours: true },
     })
+    if (order && (order.status === 'PAID' || order.status === 'DELIVERED')) {
+      await logPixEvent({ txid, e2eid, amount: pixAmount, status: 'DUPLICATE', flowType: 'ORDER', relatedId: order.id })
+    }
     if (order && order.status !== 'PAID' && order.status !== 'DELIVERED') {
       const paidAt = new Date()
       await prisma.order.update({
@@ -159,6 +245,8 @@ export async function POST(req: NextRequest) {
         .catch((e) => console.error('commercialBridge', e))
       handleSaleToFinancialBridge(order.id, 'webhook_inter')
         .catch((e) => console.error('financialBridge', e))
+
+      await logPixEvent({ txid, e2eid, amount: pixAmount, status: 'PROCESSED', flowType: 'ORDER', relatedId: order.id, rawPayload })
     }
 
     // ── 2. Fluxo novo: SalesCheckout PIX ────────────────────────────────────
@@ -167,6 +255,9 @@ export async function POST(req: NextRequest) {
       include: { lead: true },
     })
 
+    if (checkout && checkout.status !== 'PENDING') {
+      await logPixEvent({ txid, e2eid, amount: pixAmount, status: 'DUPLICATE', flowType: 'SALES_CHECKOUT', relatedId: checkout.id })
+    }
     if (checkout && checkout.status === 'PENDING') {
       const paidAt = new Date()
 
@@ -244,24 +335,40 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 2d. Entrega WhatsApp automática (fire-and-forget)
+      // 2d. Entrega Elite WhatsApp com credenciais (fire-and-forget, anti-duplicata via deliverySent)
       if (!checkout.deliverySent) {
         const assetData = checkout.assetId
-          ? await prisma.asset.findUnique({ where: { id: checkout.assetId }, select: { displayName: true } })
+          ? await prisma.asset.findUnique({
+              where:  { id: checkout.assetId },
+              select: { displayName: true, rawData: true },
+            })
           : null
 
-        sendWhatsAppDelivery({
-          whatsapp:    checkout.lead.whatsapp,
-          buyerName:   checkout.lead.name,
-          adsId:       checkout.adsId,
-          displayName: assetData?.displayName ?? checkout.adsId,
-          checkoutId:  checkout.id,
-        }).then(async () => {
-          await prisma.salesCheckout.update({
-            where: { id: checkout.id },
-            data:  { deliverySent: true },
-          })
-        }).catch((e) => console.error('[WhatsApp delivery]', e))
+        // Calcula prazo de garantia (7 dias padrão)
+        const warrantyEndsAt = new Date(paidAt.getTime() + 7 * 24 * 60 * 60 * 1000)
+        // Persiste prazo de garantia no checkout
+        prisma.salesCheckout.update({
+          where: { id: checkout.id },
+          data:  { warrantyEndsAt },
+        }).catch(() => {})
+
+        const hasRawData = assetData?.rawData && typeof assetData.rawData === 'object'
+
+        sendWhatsAppEliteDelivery({
+          whatsapp:      checkout.lead.whatsapp,
+          buyerName:     checkout.lead.name,
+          productTitle:  assetData?.displayName ?? checkout.adsId,
+          checkoutId:    checkout.id,
+          credentials:   hasRawData ? (assetData!.rawData as Record<string, unknown>) : null,
+          warrantyEndsAt,
+        }).then(async (sent) => {
+          if (sent) {
+            await prisma.salesCheckout.update({
+              where: { id: checkout.id },
+              data:  { deliverySent: true },
+            }).catch((e) => console.error('[WhatsApp] Falha ao persistir deliverySent:', e))
+          }
+        }).catch((e) => console.error('[WhatsApp delivery/SalesCheckout]', e))
       }
 
       if (checkoutIncentive.sellerId) {
@@ -286,14 +393,19 @@ export async function POST(req: NextRequest) {
           listingTitle: checkoutIncentive.displayName || checkout.adsId,
         }).catch((e) => console.error('[Checkout] notify production manager', e))
       }
+
+      await logPixEvent({ txid, e2eid, amount: Number(checkout.amount), status: 'PROCESSED', flowType: 'SALES_CHECKOUT', relatedId: checkout.id, rawPayload })
     }
 
     // ── 3. Fluxo Venda Rápida: QuickSaleCheckout ─────────────────────────────
     const quickCheckout = await prisma.quickSaleCheckout.findUnique({
       where:   { interTxid: txid },
-      include: { listing: { select: { title: true, assetCategory: true } } },
+      include: { listing: { select: { title: true, assetCategory: true, warrantyDays: true, destinationProfile: true } } },
     })
 
+    if (quickCheckout && quickCheckout.status !== 'PENDING') {
+      await logPixEvent({ txid, e2eid, amount: pixAmount, status: 'DUPLICATE', flowType: 'QUICK_CHECKOUT', relatedId: quickCheckout.id })
+    }
     if (quickCheckout && quickCheckout.status === 'PENDING') {
       const paidAt = new Date()
       const assetIds = Array.isArray(quickCheckout.reservedAssetIds)
@@ -362,37 +474,42 @@ export async function POST(req: NextRequest) {
         }).catch((e) => console.error('[QuickCheckout] Falha ao registrar movimentos:', e))
       }
 
-      // 3c. Utmify
-      let quickUtmifySynced = Boolean(quickCheckout.utmifySent)
+      // 3c. Utmify — S2S com retry, profileType tag e persistência de utmifyOrderId
       if (!quickCheckout.utmifySent) {
-        quickUtmifySynced = await sendUtmifyConversion({
-          checkoutId:  quickCheckout.id,
-          adsId:       quickCheckout.id,
-          displayName: quickCheckout.listing.title,
-          amountBrl:   Number(quickCheckout.totalAmount),
-          netProfitBrl: quickIncentive.netProfit,
+        const utmifyResult = await sendUtmifyQuickSaleConversion({
+          checkoutId:   quickCheckout.id,
+          listingTitle: quickCheckout.listing.title,
+          listingSlug:  quickCheckout.listingId,
+          totalAmount:  Number(quickCheckout.totalAmount),
+          netProfit:    quickIncentive.netProfit ?? undefined,
+          qty:          quickCheckout.qty,
           paidAt,
-          createdAt:   quickCheckout.createdAt,
+          createdAt:    quickCheckout.createdAt,
+          profileType:  quickCheckout.listing.destinationProfile ?? null,
           buyer: {
-            name:     quickCheckout.buyerName,
-            email:    quickCheckout.buyerEmail ?? '',
-            whatsapp: quickCheckout.buyerWhatsapp,
-            cpf:      quickCheckout.buyerCpf,
+            name:      quickCheckout.buyerName,
+            email:     quickCheckout.buyerEmail,
+            whatsapp:  quickCheckout.buyerWhatsapp,
+            document:  quickCheckout.buyerCpf,
           },
           utms: {
-            utm_source:   quickCheckout.utmSource   ?? undefined,
-            utm_medium:   quickCheckout.utmMedium   ?? undefined,
-            utm_campaign: quickCheckout.utmCampaign ?? undefined,
+            utm_source:   quickCheckout.utmSource                ?? undefined,
+            utm_medium:   quickCheckout.utmMedium                ?? undefined,
+            utm_campaign: quickCheckout.utmCampaign              ?? undefined,
+            utm_content:  quickCheckout.utmContent               ?? undefined,
+            utm_term:     quickCheckout.utmTerm                  ?? undefined,
+            src:          quickCheckout.utmSrc                   ?? undefined,
           },
-        }).catch((e) => {
-          console.error('[Utmify/Quick]', e)
-          return false
-        })
-        if (quickUtmifySynced) {
+        }).catch((e) => { console.error('[Utmify/Quick]', e); return { ok: false } })
+
+        if (utmifyResult.ok) {
           await prisma.quickSaleCheckout.update({
             where: { id: quickCheckout.id },
-            data:  { utmifySent: true },
-          }).catch((e) => console.error('[Utmify/Quick] Falha ao marcar sincronização:', e))
+            data: {
+              utmifySent:   true,
+              utmifyOrderId: utmifyResult.utmifyOrderId ?? null,
+            },
+          }).catch((e) => console.error('[Utmify/Quick] Falha ao persistir utmifyOrderId:', e))
         }
       }
 
@@ -431,56 +548,87 @@ export async function POST(req: NextRequest) {
         paidAt,
       }).catch((e) => console.error('[QuickCheckout] production bonus', e))
 
-      // 3d. WhatsApp — entrega automática multi-ativo (fire-and-forget)
-      if (!quickCheckout.deliverySent) {
-        const evolutionUrl    = process.env.EVOLUTION_API_URL
-        const evolutionApiKey = process.env.EVOLUTION_API_KEY
-        const evolutionInst   = process.env.EVOLUTION_INSTANCE ?? 'adsativos'
+      await logPixEvent({ txid, e2eid, amount: Number(quickCheckout.totalAmount), status: 'PROCESSED', flowType: 'QUICK_CHECKOUT', relatedId: quickCheckout.id, rawPayload })
 
-        if (evolutionUrl && evolutionApiKey) {
-          const number = quickCheckout.buyerWhatsapp.replace(/\D/g, '')
-          const assetSummary = assetIds.length > 1
-            ? `${assetIds.length} ativos reservados para você`
-            : `1 ativo reservado para você`
+      // 3d. Motor de Onboarding Automático + Entrega Elite WhatsApp
+      if (!quickCheckout.deliverySent && quickCheckout.buyerEmail) {
+        // Calcula prazo de garantia com base em warrantyDays do listing
+        const warrantyDays   = quickCheckout.listing.warrantyDays ?? 7
+        const warrantyEndsAt = new Date(paidAt.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
+        prisma.quickSaleCheckout.update({
+          where: { id: quickCheckout.id },
+          data:  { warrantyEndsAt },
+        }).catch(() => {})
 
-          const message = [
-            `✅ *PAGAMENTO CONFIRMADO — ADS ATIVOS*`,
-            ``,
-            `Olá *${quickCheckout.buyerName}*! Seu PIX foi recebido com sucesso.`,
-            ``,
-            `🛡️ *Produto:* ${quickCheckout.listing.title}`,
-            `📦 *Quantidade:* ${quickCheckout.qty} unidade(s)`,
-            `💰 *Total pago:* R$ ${Number(quickCheckout.totalAmount).toFixed(2)}`,
-            ``,
-            `📬 ${assetSummary}. Nossa equipe entrará em contato em instantes com os acessos.`,
-            ``,
-            `🔑 *ID do pedido:* \`${quickCheckout.id}\``,
-            ``,
-            `👉 Qualquer dúvida, responda esta mensagem.`,
-          ].join('\n')
+        // Busca rawData do ativo principal para incluir na entrega
+        const primaryAsset = assetIds.length > 0
+          ? await prisma.asset.findUnique({
+              where:  { id: assetIds[0] },
+              select: { rawData: true },
+            }).catch(() => null)
+          : null
+        const hasRawData = primaryAsset?.rawData && typeof primaryAsset.rawData === 'object'
 
-          fetch(`${evolutionUrl}/message/sendText/${evolutionInst}`, {
-            method:  'POST',
-            headers: { apikey: evolutionApiKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              number,
-              options: { delay: 1000, presence: 'composing' },
-              textMessage: { text: message },
-            }),
-          }).then(async () => {
+        // Perfil concedido pelo produto (ou TRADER_WHATSAPP como default)
+        const destinationProfile = quickCheckout.listing.destinationProfile ?? 'TRADER_WHATSAPP'
+
+        // Motor de Onboarding: cria/atualiza conta + envia notificações
+        const onboardingResult = await handlePostPaymentOnboarding({
+          email:              quickCheckout.buyerEmail,
+          name:               quickCheckout.buyerName,
+          whatsapp:           quickCheckout.buyerWhatsapp,
+          destinationProfile,
+          productTitle:       quickCheckout.listing.title,
+          productRef:         quickCheckout.listingId,
+          checkoutId:         quickCheckout.id,
+          credentials:        hasRawData ? (primaryAsset!.rawData as Record<string, unknown>) : null,
+          warrantyEndsAt,
+        }).catch((e) => { console.error('[Onboarding/Quick]', e); return null })
+
+        if (onboardingResult) {
+          await prisma.quickSaleCheckout.update({
+            where: { id: quickCheckout.id },
+            data:  { deliverySent: true },
+          }).catch((e) => console.error('[Onboarding/Quick] Falha ao persistir deliverySent:', e))
+        }
+      } else if (!quickCheckout.deliverySent) {
+        // Sem e-mail — entrega simples sem onboarding
+        const warrantyDays   = quickCheckout.listing.warrantyDays ?? 7
+        const warrantyEndsAt = new Date(paidAt.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
+        sendWhatsAppEliteDelivery({
+          whatsapp:      quickCheckout.buyerWhatsapp,
+          buyerName:     quickCheckout.buyerName,
+          productTitle:  quickCheckout.listing.title,
+          checkoutId:    quickCheckout.id,
+          credentials:   null,
+          warrantyEndsAt,
+        }).then(async (sent) => {
+          if (sent) {
             await prisma.quickSaleCheckout.update({
               where: { id: quickCheckout.id },
               data:  { deliverySent: true },
-            })
-          }).catch((e) => console.error('[WhatsApp/Quick]', e))
-        }
+            }).catch(() => {})
+          }
+        }).catch((e) => console.error('[Quick/NoEmail delivery]', e))
       }
+    }
+
+    // Se nenhum fluxo fez match para este txid, grava NOT_FOUND
+    if (!order && !checkout && !quickCheckout) {
+      await logPixEvent({
+        txid,
+        e2eid,
+        amount:    pixAmount,
+        status:    'NOT_FOUND',
+        rawPayload,
+        errorMsg:  'txid não encontrado em nenhum fluxo (Order / SalesCheckout / QuickCheckout)',
+      })
     }
   }
 
   return NextResponse.json({
     ok:                true,
-    txidsFound:        txids.size,
+    txidsFound:        pixItems.length,
     ordersMarkedPaid:  ordersUpdated,
     checkoutsPaid:     checkoutsUpdated,
   })

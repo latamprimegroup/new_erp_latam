@@ -37,21 +37,34 @@ export async function GET(req: NextRequest) {
 
   const categories = Array.from(new Set(listings.map((l) => l.assetCategory)))
 
-  const groupedAvailable = categories.length
-    ? await prisma.asset.groupBy({
-        by: ['category'],
-        where: {
-          status: 'AVAILABLE',
-          category: { in: categories as never[] },
-        },
-        _count: { _all: true },
-      })
-    : []
+  // Busca contagem de ativos disponíveis e distingue suspensos por fornecedor
+  const [groupedAvailable, groupedSuspended] = categories.length
+    ? await Promise.all([
+        prisma.asset.groupBy({
+          by: ['category'],
+          where: {
+            status: 'AVAILABLE',
+            category: { in: categories as never[] },
+            vendor: { suspended: false },  // só fornecedores ativos
+          },
+          _count: { _all: true },
+        }),
+        prisma.asset.groupBy({
+          by: ['category'],
+          where: {
+            status: 'AVAILABLE',
+            category: { in: categories as never[] },
+            vendor: { suspended: true },  // fornecedores suspensos (stop-loss)
+          },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []]
 
-  const availableMap = new Map<string, number>()
-  for (const row of groupedAvailable) {
-    availableMap.set(row.category, row._count._all)
-  }
+  const availableMap  = new Map<string, number>()
+  const suspendedMap  = new Map<string, number>()
+  for (const row of groupedAvailable)  availableMap.set(row.category, row._count._all)
+  for (const row of groupedSuspended)  suspendedMap.set(row.category, row._count._all)
 
   const previewByCategory = new Map<
     string,
@@ -96,19 +109,25 @@ export async function GET(req: NextRequest) {
     })
   )
 
-  const items = listings.map((listing) => ({
-    id: listing.id,
-    slug: listing.slug,
-    title: listing.title,
-    subtitle: listing.subtitle,
-    badge: listing.badge,
-    assetCategory: listing.assetCategory,
-    pricePerUnit: Number(listing.pricePerUnit),
-    maxQty: listing.maxQty,
-    active: listing.active,
-    available: availableMap.get(listing.assetCategory) ?? 0,
-    previewAssets: previewByCategory.get(listing.assetCategory) ?? [],
-  }))
+  const items = listings.map((listing) => {
+    const available       = availableMap.get(listing.assetCategory) ?? 0
+    const blockedByStopLoss = suspendedMap.get(listing.assetCategory) ?? 0
+    return {
+      id: listing.id,
+      slug: listing.slug,
+      title: listing.title,
+      subtitle: listing.subtitle,
+      badge: listing.badge,
+      assetCategory: listing.assetCategory,
+      pricePerUnit: Number(listing.pricePerUnit),
+      maxQty: listing.maxQty,
+      active: listing.active,
+      available,                // já exclui ativos de fornecedores suspensos
+      blockedByStopLoss,        // quantos ativos estão bloqueados por stop-loss
+      stopLossWarning: blockedByStopLoss > 0,
+      previewAssets: previewByCategory.get(listing.assetCategory) ?? [],
+    }
+  })
 
   return NextResponse.json({
     totals: {

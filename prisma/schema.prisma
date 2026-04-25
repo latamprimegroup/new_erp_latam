@@ -91,6 +91,9 @@ model User {
   blackOperations           BlackOperation[]
   blackPayments             BlackPayment[]
   plugPlayMonthlyStatements PlugPlayMonthlyStatement[]
+  transactionsSold          Transaction[]  @relation("TransactionSeller")
+  profileAccesses           UserProfileAccess[]
+  profileAccessesGranted    UserProfileAccess[] @relation("ProfileAccessGranter")
 
   deliveryGroupsAsResponsible DeliveryGroup[]
   deliveryRepositionsAsAnalyst DeliveryReposition[]
@@ -339,12 +342,33 @@ model ClientProfile {
   // Ex: ["VIP","HIGH_TICKET","CHURN_RISK","BLACK_FRIDAY","UPSELL_CANDIDATE"] — armazenado como JSON (MySQL)
   segmentationTags      Json     @default("[]") @map("segmentation_tags")
 
+  // ── Multi-Tenancy / RBAC por Perfil ──────────────────────────────────────
+  /// Perfil de acesso ATIVO — determina módulos visíveis e tema do painel
+  profileType           ClientProfileType  @default(TRADER_WHATSAPP) @map("profile_type")
+  /// Todos os perfis que o cliente possui (multi-perfil, cada compra adiciona um)
+  /// Ex: ["TRADER_WHATSAPP","MENTORADO"]
+  ownedProfiles         Json               @default("[]") @map("owned_profiles")
+  /// Módulos habilitados individualmente (override do padrão do perfil ativo)
+  /// Ex: ["store","orders","rma","tracking","creative_vault"]
+  activeModules         Json               @default("[]") @map("active_modules")
+  /// Percentual de spend cobrado mensalmente (INFRA_PARTNER / RENTAL_USER)
+  spendFeePct           Decimal?           @map("spend_fee_pct") @db.Decimal(5, 2)
+  /// Mensalidade recorrente (LOCAL_BUSINESS / MENTORADO / INFRA_PARTNER)
+  monthlyFeeBrl         Decimal?           @map("monthly_fee_brl") @db.Decimal(10, 2)
+  /// Próximo vencimento da mensalidade
+  nextBillingAt         DateTime?          @map("next_billing_at")
+
+  subscriptions         Subscription[]
+  transactions          Transaction[]
+  adAccountMonitoring   AdAccountMonitoring[]
+
   @@index([whatsapp])
   @@index([accountManagerId])
   @@index([trustScore])
   @@index([riskBlockCheckout])
   @@index([addressCity])
   @@index([addressState])
+  @@index([profileType])
 }
 
 /// Hall de patentes — pedidos de resgate de recompensas (logística comercial)
@@ -396,6 +420,22 @@ enum ClientNicheTag {
   BLACK
   NUTRA
   CASINO
+}
+
+/// Perfis de cliente — determina módulos visíveis e tema do painel
+enum ClientProfileType {
+  /// Comprador avulso via WhatsApp — vitrine + histórico + suporte
+  TRADER_WHATSAPP
+  /// Pequeno negócio local SaaS — gestão de anúncios + recorrência mensal
+  LOCAL_BUSINESS
+  /// Mentorado — ofertas validadas, templates, gateway próprio, tracking
+  MENTORADO
+  /// Operador em escala — volume de estoque, LTV, descontos por quantidade
+  DIRECT_RESPONSE_SCALE
+  /// Parceiro de infraestrutura — gestão de domínios, ambiente isolado, faturamento variável
+  INFRA_PARTNER
+  /// Usuário de aluguel — setup de conta, monitoramento de spend em tempo real
+  RENTAL_USER
 }
 
 /// Módulo 03 — Creative Vault: nicho do criativo de referência
@@ -5233,6 +5273,9 @@ model Lead {
   utmCampaign String?  @map("utm_campaign") @db.VarChar(200)
   utmContent  String?  @map("utm_content")  @db.VarChar(200)
   utmTerm     String?  @map("utm_term")     @db.VarChar(200)
+  fbclid      String?  @map("fbclid")       @db.VarChar(512)
+  gclid       String?  @map("gclid")        @db.VarChar(512)
+  referrer    String?  @map("referrer")     @db.VarChar(500)
   /// ID do ativo que o lead tentou comprar (para remarketing)
   adsId       String?  @map("ads_id")       @db.VarChar(50)
   createdAt   DateTime @default(now()) @map("created_at")
@@ -5241,6 +5284,8 @@ model Lead {
 
   @@index([cpf])
   @@index([whatsapp])
+  @@index([fbclid])
+  @@index([gclid])
   @@index([createdAt])
   @@map("leads")
 }
@@ -5275,6 +5320,10 @@ model SalesCheckout {
   utmifySent      Boolean        @default(false) @map("utmify_sent")
   /// Flag: acesso entregue via WhatsApp
   deliverySent    Boolean        @default(false) @map("delivery_sent")
+  /// Prazo final de garantia — calculado no momento do pagamento
+  warrantyEndsAt  DateTime?      @map("warranty_ends_at")
+  /// Timestamp do follow-up de up-sell enviado (48h pós-pagamento)
+  followUpSentAt  DateTime?      @map("follow_up_sent_at")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt      @map("updated_at")
 
@@ -5304,6 +5353,10 @@ model ProductListing {
   pricePerUnit Decimal  @map("price_per_unit") @db.Decimal(10, 2)
   /// Máximo de unidades por pedido
   maxQty       Int      @default(10) @map("max_qty")
+  /// Dias de garantia do produto (padrão: 7)
+  warrantyDays       Int                 @default(7) @map("warranty_days")
+  /// Perfil de acesso concedido ao comprador após o pagamento (Onboarding Motor)
+  destinationProfile ClientProfileType?  @map("destination_profile")
   /// Listing ativo ou pausado
   active       Boolean  @default(true)
   /// Badge exibido no topo (ex: "ENTREGA AUTOMÁTICA")
@@ -5361,10 +5414,25 @@ model QuickSaleCheckout {
   commercialAuditAt DateTime?   @map("commercial_audit_at")
   deliverySent   Boolean        @default(false) @map("delivery_sent")
   utmifySent     Boolean        @default(false) @map("utmify_sent")
-  /// UTMs capturados
+  /// ID de transação retornado pela Utmify após postback (anti-duplicata)
+  utmifyOrderId  String?        @map("utmify_order_id") @db.VarChar(120)
+  /// Prazo final de garantia — calculado no momento do pagamento
+  warrantyEndsAt DateTime?      @map("warranty_ends_at")
+  /// Timestamp do follow-up de up-sell enviado (48h pós-pagamento)
+  followUpSentAt DateTime?      @map("follow_up_sent_at")
+  /// UTMs capturados no checkout
   utmSource      String?        @map("utm_source")   @db.VarChar(100)
   utmMedium      String?        @map("utm_medium")   @db.VarChar(100)
   utmCampaign    String?        @map("utm_campaign") @db.VarChar(200)
+  utmContent     String?        @map("utm_content")  @db.VarChar(200)
+  utmTerm        String?        @map("utm_term")     @db.VarChar(200)
+  utmSrc         String?        @map("utm_src")      @db.VarChar(200)
+  /// ID de clique do Facebook Ads (fbclid) — capturado na URL de entrada
+  fbclid         String?        @map("fbclid")       @db.VarChar(512)
+  /// ID de clique do Google Ads (gclid) — capturado na URL de entrada
+  gclid          String?        @map("gclid")        @db.VarChar(512)
+  /// Referrer HTTP da sessão de entrada (para tráfego sem UTMs)
+  referrer       String?        @map("referrer")     @db.VarChar(500)
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt      @map("updated_at")
 
@@ -5374,5 +5442,333 @@ model QuickSaleCheckout {
   @@index([sellerId])
   @@index([managerId])
   @@index([createdAt])
+  @@index([fbclid])
+  @@index([gclid])
   @@map("quick_sale_checkouts")
+}
+
+// ─── Motor de Recorrência — Subscription ─────────────────────────────────────
+
+/// Assinatura recorrente de um cliente (SaaS / Mentoria / Infra / Aluguel)
+model Subscription {
+  id              String             @id @default(cuid())
+  clientId        String             @map("client_id")
+  client          ClientProfile      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Perfil de acesso vinculado a esta assinatura
+  profileType     ClientProfileType  @map("profile_type")
+  /// Nome do plano exibível (ex: "Mentoria Elite", "Infra Pro")
+  planName        String             @map("plan_name") @db.VarChar(120)
+  /// Status da assinatura
+  status          SubscriptionStatus @default(ACTIVE)
+  /// Moeda de cobrança
+  currency        String             @default("BRL") @db.VarChar(8)
+  /// Valor da recorrência (na moeda acima)
+  amount          Decimal            @db.Decimal(12, 2)
+  /// Plano do catálogo (opcional — assinatura pode ser avulsa sem plano formal)
+  planId          String?            @map("plan_id")
+  plan            Plan?              @relation(fields: [planId], references: [id], onDelete: SetNull)
+  /// Percentual de spend cobrado adicionalmente (Rental/Infra)
+  spendFeePct     Decimal?           @map("spend_fee_pct") @db.Decimal(5, 2)
+  /// Ciclo de cobrança
+  billingCycle    SubscriptionCycle  @default(MONTHLY) @map("billing_cycle")
+  /// Cancelar no fim do período atual (não renova, mas mantém acesso até nextBillingAt)
+  cancelAtPeriodEnd Boolean          @default(false) @map("cancel_at_period_end")
+  /// Método de pagamento preferido
+  paymentMethod   SubPaymentMethod   @default(PIX_INTER) @map("payment_method")
+  /// Gateway preferido para cobranças automáticas
+  gateway         String             @default("INTER") @db.VarChar(32)
+  /// Data de início da assinatura
+  startedAt       DateTime           @default(now()) @map("started_at")
+  /// Próxima data de cobrança (= currentPeriodEnd)
+  nextBillingAt   DateTime?          @map("next_billing_at")
+  /// PIX recorrente: interTxid da última cobrança gerada
+  lastPixTxid     String?            @map("last_pix_txid") @db.VarChar(120)
+  /// PIX recorrente: Copia e Cola enviado para o cliente
+  lastPixCopyPaste String?           @map("last_pix_copy_paste") @db.Text
+  /// PIX recorrente: vencimento do QR Code gerado
+  lastPixExpiresAt DateTime?         @map("last_pix_expires_at")
+  /// Cartão Pagsmile: token salvo (nunca o número real — PCI compliance)
+  cardToken       String?            @map("card_token") @db.VarChar(200)
+  /// Cartão Pagsmile: bandeira (VISA/MASTERCARD)
+  cardBrand       String?            @map("card_brand") @db.VarChar(20)
+  /// Cartão Pagsmile: últimos 4 dígitos (safe to store)
+  cardLastFour    String?            @map("card_last_four") @db.VarChar(4)
+  /// Contador de tentativas de cobrança falhas consecutivas
+  retryCount      Int                @default(0) @map("retry_count")
+  /// Mensagem de erro da última tentativa de cobrança
+  lastBillingError String?           @map("last_billing_error") @db.VarChar(500)
+  /// Data de cancelamento
+  cancelledAt     DateTime?          @map("cancelled_at")
+  /// Notas internas / motivo de cancelamento
+  notes           String?            @db.VarChar(500)
+  /// ID externo do plano no gateway (ex.: charge_id do Inter)
+  externalPlanId  String?            @map("external_plan_id") @db.VarChar(120)
+  createdById     String?            @map("created_by_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  transactions    Transaction[]
+
+  @@index([clientId, status])
+  @@index([status, nextBillingAt])
+  @@index([profileType])
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELLED
+}
+
+enum SubPaymentMethod {
+  PIX_INTER       // PIX recorrente via Banco Inter API v2
+  CARD_PAGSMILE   // Cartão salvo via Pagsmile (1-click recurring)
+  BOLETO          // Boleto (fallback manual)
+  MANUAL          // Cobrança manual — admin confirma
+}
+
+enum SubscriptionCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+// ─── Transação Unificada Multi-Gateway ───────────────────────────────────────
+
+/// Registro normalizado de cada evento financeiro aprovado, por gateway e moeda.
+/// É a fonte de verdade para o Revenue Breakdown do CEO (8-dígitos view).
+model Transaction {
+  id             String            @id @default(cuid())
+  /// Tipo de receita
+  type           TransactionType
+  /// Gateway de pagamento utilizado
+  gateway        TransactionGateway
+  /// Moeda da transação
+  currency       String            @default("BRL") @db.VarChar(8)
+  /// Valor bruto recebido
+  grossAmount    Decimal           @map("gross_amount") @db.Decimal(14, 4)
+  /// Taxa do gateway (juros, emissão PIX, swap cripto, etc.)
+  gatewayFee     Decimal           @default(0) @map("gateway_fee") @db.Decimal(14, 4)
+  /// Custo do ativo / fornecedor / produto (COGS)
+  costAmount     Decimal           @default(0) @map("cost_amount") @db.Decimal(14, 4)
+  /// Lucro líquido = grossAmount − gatewayFee − costAmount
+  profitAmount   Decimal           @map("profit_amount") @db.Decimal(14, 4)
+  /// Margem bruta % = profitAmount / grossAmount × 100
+  profitMarginPct Decimal          @map("profit_margin_pct") @db.Decimal(6, 2)
+  /// Câmbio BRL→USD no momento (para consolidação multi-moeda)
+  fxRateBrlUsd   Decimal?          @map("fx_rate_brl_usd") @db.Decimal(18, 8)
+  /// Perfil do comprador (atribuição de receita por vertical)
+  profileType    ClientProfileType? @map("profile_type")
+  /// Referência ao checkout/assinatura/pedido de origem
+  checkoutId     String?           @map("checkout_id") @db.VarChar(36)
+  subscriptionId String?           @map("subscription_id")
+  subscription   Subscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  orderId        String?           @map("order_id") @db.VarChar(36)
+  clientId       String?           @map("client_id")
+  client         ClientProfile?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  sellerId       String?           @map("seller_id")
+  seller         User?             @relation("TransactionSeller", fields: [sellerId], references: [id], onDelete: SetNull)
+  /// ID externo retornado pelo gateway (e2eid, txid, charge_id)
+  externalRef    String?           @map("external_ref") @db.VarChar(200)
+  /// Status do pagamento
+  status         TransactionStatus @default(APPROVED)
+  occurredAt     DateTime          @map("occurred_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([occurredAt])
+  @@index([type, occurredAt])
+  @@index([gateway, occurredAt])
+  @@index([profileType, occurredAt])
+  @@index([status])
+  @@index([clientId])
+  @@index([subscriptionId])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  ASSET_SALE        // Venda de ativo transacional
+  SUBSCRIPTION_FEE  // Mensalidade SaaS / Mentoria / Infra
+  SPEND_FEE         // % sobre spend (Rental / Infra)
+  SETUP_FEE         // Taxa de setup única
+  MENTORSHIP        // Venda de mentoria high-ticket
+  REFUND            // Estorno / reembolso
+}
+
+enum TransactionGateway {
+  INTER       // Banco Inter PJ (PIX principal)
+  KAST        // Kast (cripto — stablecoin / USDT)
+  MERCURY     // Mercury Bank (USD — operação LLC)
+  STRIPE      // Stripe (cartão internacional)
+  PIX_MANUAL  // PIX manual sem API (conciliação manual)
+  OTHER
+}
+
+enum TransactionStatus {
+  PENDING
+  APPROVED
+  REFUNDED
+  CHARGEBACK
+  CANCELLED
+}
+
+// ─── Catálogo de Planos ───────────────────────────────────────────────────────
+
+/// Plano de assinatura comercializável — vinculado a um ProfileType
+model Plan {
+  id              String             @id @default(cuid())
+  /// Nome exibível do plano (ex: "Mentoria Elite", "Infra Pro Mensal")
+  name            String             @db.VarChar(120)
+  /// Descrição curta para exibição no checkout
+  description     String?            @db.VarChar(500)
+  /// Perfil de acesso concedido ao assinar
+  profileType     ClientProfileType  @map("profile_type")
+  /// Preço em BRL (null = apenas USD)
+  priceBrl        Decimal?           @map("price_brl")  @db.Decimal(12, 2)
+  /// Preço em USD (null = apenas BRL)
+  priceUsd        Decimal?           @map("price_usd")  @db.Decimal(12, 2)
+  /// Ciclo de cobrança
+  interval        SubscriptionCycle  @default(MONTHLY)
+  /// Dias de trial gratuito antes da primeira cobrança
+  trialDays       Int                @default(0) @map("trial_days")
+  /// Percentual de spend cobrado adicionalmente (Rental/Infra)
+  spendFeePct     Decimal?           @map("spend_fee_pct") @db.Decimal(5, 2)
+  /// Recursos/módulos incluídos — exibidos na landing do plano
+  features        Json               @default("[]")
+  /// Plano ativo na loja
+  active          Boolean            @default(true)
+  /// Slug para URL do checkout do plano (ex: "mentoria-elite")
+  slug            String             @unique @db.VarChar(100)
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  subscriptions   Subscription[]
+
+  @@index([profileType, active])
+  @@index([slug])
+  @@map("plans")
+}
+
+// ─── Junction: Acesso por Perfil (histórico relacional) ───────────────────────
+
+/// Registro relacional de cada perfil concedido a um usuário.
+/// Complementa o campo JSON `ownedProfiles` com rastreabilidade completa.
+model UserProfileAccess {
+  id                String            @id @default(cuid())
+  userId            String            @map("user_id")
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileType       ClientProfileType @map("profile_type")
+  /// Concedido por (admin / sistema / checkout)
+  grantedById       String?           @map("granted_by_id")
+  grantedBy         User?             @relation("ProfileAccessGranter", fields: [grantedById], references: [id], onDelete: SetNull)
+  /// Checkout ou pagamento que originou o acesso
+  sourceCheckoutId  String?           @map("source_checkout_id") @db.VarChar(36)
+  sourceSubId       String?           @map("source_sub_id")
+  /// Data de expiração (null = vitalício / renovado por assinatura)
+  expiresAt         DateTime?         @map("expires_at")
+  /// Revogado manualmente
+  revokedAt         DateTime?         @map("revoked_at")
+  revokedById       String?           @map("revoked_by_id")
+  active            Boolean           @default(true)
+  notes             String?           @db.VarChar(300)
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  @@index([userId, profileType])
+  @@index([userId, active])
+  @@index([expiresAt])
+  @@map("user_profile_accesses")
+}
+
+// ─── Monitoramento de Contas de Anúncio (Rental / Infra) ─────────────────────
+
+/// Rastreamento de gasto diário por conta de anúncio.
+/// Base para cobrança automática de % sobre spend (Rental_User / Infra_Partner).
+model AdAccountMonitoring {
+  id                String            @id @default(cuid())
+  clientId          String            @map("client_id")
+  client            ClientProfile     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Plataforma: google_ads | meta | tiktok | taboola | etc.
+  platform          String            @db.VarChar(40)
+  /// ID da conta de anúncio na plataforma (ex: 863-498-6283)
+  adAccountId       String            @map("ad_account_id") @db.VarChar(60)
+  /// Nome exibível da conta
+  adAccountName     String?           @map("ad_account_name") @db.VarChar(200)
+  /// Gasto do dia corrente em BRL (atualizado via sync manual ou futuro webhook)
+  dailySpendBrl     Decimal           @default(0) @map("daily_spend_brl")   @db.Decimal(14, 2)
+  /// Gasto do dia corrente em USD (convertido na hora da leitura)
+  dailySpendUsd     Decimal           @default(0) @map("daily_spend_usd")   @db.Decimal(14, 2)
+  /// Gasto acumulado do mês corrente em BRL
+  monthlySpendBrl   Decimal           @default(0) @map("monthly_spend_brl") @db.Decimal(14, 2)
+  /// Gasto total histórico em BRL (lifetime)
+  totalSpendBrl     Decimal           @default(0) @map("total_spend_brl")   @db.Decimal(16, 2)
+  /// Taxa de comissão % sobre spend para esta conta (override do perfil)
+  commissionRatePct Decimal           @map("commission_rate_pct")           @db.Decimal(5, 2)
+  /// Último sync com a plataforma
+  lastSyncAt        DateTime?         @map("last_sync_at")
+  /// Conta ativa (monitoramento contínuo)
+  active            Boolean           @default(true)
+  /// Câmbio USD→BRL usado na última conversão
+  lastFxRateUsd     Decimal?          @map("last_fx_rate_usd") @db.Decimal(18, 8)
+  notes             String?           @db.VarChar(500)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  spendLogs         AdSpendLog[]
+
+  @@unique([clientId, platform, adAccountId])
+  @@index([clientId, active])
+  @@index([lastSyncAt])
+  @@map("ad_account_monitoring")
+}
+
+// ─── Log de Webhooks Inter PIX ───────────────────────────────────────────────
+
+/// Registro de cada notificação de PIX recebida pelo webhook do Banco Inter.
+/// Usado pelo CEO para monitorar saúde da integração em tempo real.
+model InterPixLog {
+  id          String    @id @default(cuid())
+  /// txid da cobrança PIX
+  txid        String    @db.VarChar(50)
+  /// endToEndId retornado pelo banco
+  e2eid       String?   @db.VarChar(50)
+  /// Valor recebido em BRL
+  amount      Decimal?  @db.Decimal(12, 2)
+  /// Resultado: PROCESSED | DUPLICATE | NOT_FOUND | ERROR
+  status      String    @db.VarChar(20)
+  /// Fluxo afetado: ORDER | SALES_CHECKOUT | QUICK_CHECKOUT | SUBSCRIPTION
+  flowType    String?   @db.VarChar(30) @map("flow_type")
+  /// ID do registro atualizado
+  relatedId   String?   @db.VarChar(36) @map("related_id")
+  /// Payload bruto (primeiros 2000 chars)
+  rawPayload  String?   @db.Text @map("raw_payload")
+  errorMsg    String?   @db.VarChar(500) @map("error_msg")
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+
+  @@index([txid])
+  @@index([receivedAt])
+  @@index([status])
+  @@map("inter_pix_logs")
+}
+
+/// Log diário de gasto por conta — série histórica para relatórios e cobrança
+model AdSpendLog {
+  id                   String              @id @default(cuid())
+  monitoringId         String              @map("monitoring_id")
+  monitoring           AdAccountMonitoring @relation(fields: [monitoringId], references: [id], onDelete: Cascade)
+  date                 DateTime            @db.Date
+  spendBrl             Decimal             @map("spend_brl") @db.Decimal(14, 2)
+  spendUsd             Decimal             @map("spend_usd") @db.Decimal(14, 2)
+  fxRateUsd            Decimal?            @map("fx_rate_usd") @db.Decimal(18, 8)
+  /// Comissão calculada neste dia = spendBrl * commissionRatePct / 100
+  commissionBrl        Decimal             @map("commission_brl") @db.Decimal(12, 2)
+  source               String              @default("MANUAL") @db.VarChar(30) // MANUAL | API_SYNC | WEBHOOK
+  createdAt            DateTime            @default(now()) @map("created_at")
+
+  @@unique([monitoringId, date])
+  @@index([date])
+  @@index([monitoringId, date])
+  @@map("ad_spend_logs")
 }

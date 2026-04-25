@@ -146,38 +146,82 @@ function Sparkline({ data }: { data: { month: string; income: number; expense: n
 // Fast-Entry pessoal
 // ─────────────────────────────────────────────────────────────────────────────
 
+const SOCIO_CATEGORIES = [
+  'MORADIA', 'ALIMENTACAO', 'LAZER', 'SAUDE', 'EDUCACAO',
+  'TRANSPORTE', 'INVESTIMENTO_EXTERNO', 'IMPOSTO_PESSOAL', 'OUTRO',
+] as const
+
+const PAYMENT_METHODS = ['PIX', 'CARTAO', 'DINHEIRO', 'TED', 'BOLETO', 'OUTRO'] as const
+
 export function PersonalFastEntry({ onSaved }: { onSaved: () => void }) {
   const [mode,  setMode]  = useState<'text' | 'image'>('text')
   const [type,  setType]  = useState<'RECEITA' | 'DESPESA'>('DESPESA')
   const [text,  setText]  = useState('')
   const [img,   setImg]   = useState<string | null>(null)
   const [proc,  setProc]  = useState(false)
-  const [draft, setDraft] = useState<{ amount: number | null; category: string; description: string; confidence: number } | null>(null)
   const [err,   setErr]   = useState('')
   const [ok,    setOk]    = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Rascunho editável — alimentado pela IA mas 100% editável pelo usuário
+  const [draft, setDraft] = useState<{
+    amount: number | null; category: string; description: string; confidence: number; paymentMethod?: string
+  } | null>(null)
+  const [editAmount,   setEditAmount]   = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editMethod,   setEditMethod]   = useState('PIX')
+
+  const applyDraft = (d: typeof draft) => {
+    if (!d) return
+    setDraft(d)
+    setEditAmount(d.amount != null && d.amount > 0 ? String(d.amount) : '')
+    setEditCategory(d.category || 'OUTRO')
+    setEditDesc(d.description || '')
+    setEditMethod(d.paymentMethod || 'PIX')
+  }
+
   const process = async () => {
     if (!text.trim() && !img) { setErr('Forneça texto ou imagem'); return }
     setProc(true); setErr('')
-    const r = await fetch('/api/socio/fast-entry', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text || undefined, imageBase64: img || undefined, type, confirm: false }),
-    })
-    if (r.ok) { const j = await r.json(); setDraft(j.extracted) }
-    else { const j = await r.json(); setErr(j.error ?? 'Erro ao processar') }
+    try {
+      const r = await fetch('/api/socio/fast-entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text || undefined, imageBase64: img || undefined, type, confirm: false }),
+      })
+      const j = await r.json()
+      if (r.ok) { applyDraft(j.extracted) }
+      else      { setErr(j.error ?? 'Erro ao processar') }
+    } catch { setErr('Erro de conexão') }
     setProc(false)
   }
 
-  const confirm = async () => {
-    if (!draft?.amount) return
-    setProc(true)
-    const r = await fetch('/api/socio/fast-entry', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text || undefined, imageBase64: img || undefined, type, confirm: true }),
-    })
-    if (r.ok) { setOk(true); setTimeout(() => { setOk(false); setDraft(null); setText(''); setImg(null); onSaved() }, 1500) }
-    else { const j = await r.json(); setErr(j.error ?? 'Erro ao confirmar') }
+  const confirmEntry = async () => {
+    const amount = parseFloat(editAmount.replace(',', '.'))
+    if (!amount || amount <= 0) { setErr('Informe um valor válido (maior que zero)'); return }
+    setProc(true); setErr('')
+    try {
+      const r = await fetch('/api/socio/fast-entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text:                text || undefined,
+          imageBase64:         img  || undefined,
+          type,
+          confirm:             true,
+          manualAmount:        amount,
+          manualCategory:      editCategory,
+          manualDescription:   editDesc  || undefined,
+          manualPaymentMethod: editMethod,
+        }),
+      })
+      const j = await r.json()
+      if (r.ok) {
+        setOk(true)
+        setTimeout(() => { setOk(false); setDraft(null); setText(''); setImg(null); onSaved() }, 1500)
+      } else {
+        setErr(j.error ?? 'Erro ao confirmar')
+      }
+    } catch { setErr('Erro de conexão') }
     setProc(false)
   }
 
@@ -201,52 +245,140 @@ export function PersonalFastEntry({ onSaved }: { onSaved: () => void }) {
         ))}
       </div>
 
-      {/* Modo */}
+      {/* Modo de entrada */}
       <div className="flex gap-1.5">
-        {[['text','Texto', <MessageSquare key="t" className="w-3 h-3" />], ['image','Foto', <Upload key="i" className="w-3 h-3" />]].map(([m, l, ic]) => (
-          <button key={m as string} onClick={() => setMode(m as 'text' | 'image')}
+        {([['text','Texto', <MessageSquare key="t" className="w-3 h-3" />], ['image','Foto', <Upload key="i" className="w-3 h-3" />]] as const).map(([m, l, ic]) => (
+          <button key={m} onClick={() => setMode(m as 'text' | 'image')}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${mode === m ? 'bg-primary-600 text-white border-primary-600' : 'border-zinc-200 dark:border-zinc-700 text-zinc-500'}`}>
-            {ic}{l as string}
+            {ic}{l}
           </button>
         ))}
       </div>
 
       {mode === 'text' && (
-        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Cole o comprovante pessoal... ex: 'Restaurante R$ 85 cartão de crédito'" className="input-field text-sm resize-none w-full" />
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3}
+          placeholder="Cole o comprovante pessoal... ex: 'Restaurante R$ 85 cartão de crédito'"
+          className="input-field text-sm resize-none w-full" />
       )}
       {mode === 'image' && (
-        <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer hover:border-primary-400">
+        <div onClick={() => fileRef.current?.click()}
+          className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer hover:border-primary-400 transition-colors">
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
             const f = e.target.files?.[0]; if (!f) return
             const reader = new FileReader()
             reader.onload = (ev) => setImg((ev.target?.result as string).split(',')[1])
             reader.readAsDataURL(f)
           }} />
-          {img ? <p className="text-green-600 font-bold text-sm">✅ Imagem carregada</p> : <p className="text-zinc-400 text-sm">📷 Selecione a foto do comprovante</p>}
+          {img
+            ? <p className="text-green-600 font-bold text-sm">✅ Imagem carregada — clique para trocar</p>
+            : <p className="text-zinc-400 text-sm">📷 Clique para selecionar o comprovante</p>}
         </div>
       )}
 
-      {err && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
+      {err && <p className="text-xs text-red-600 bg-red-50 dark:bg-red-950/30 px-3 py-2 rounded-lg">{err}</p>}
 
-      {!draft ? (
-        <button onClick={process} disabled={proc} className="w-full btn-primary text-sm py-2.5 flex items-center justify-center gap-2">
+      {/* Botão de processar — só aparece antes do draft */}
+      {!draft && (
+        <button onClick={process} disabled={proc || (!text.trim() && !img)}
+          className="w-full btn-primary text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50">
           {proc ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-          ALFREDO processar
+          {proc ? 'ALFREDO analisando...' : 'ALFREDO processar'}
         </button>
-      ) : (
-        <div className="rounded-xl border-2 border-primary-200 bg-primary-50/40 dark:bg-primary-950/10 p-3 space-y-2">
-          <p className="text-xs font-bold text-zinc-500">ALFREDO identificou:</p>
-          <div className="flex gap-3 text-sm">
-            <span className="font-black text-lg">{BRL(draft.amount ?? 0)}</span>
-            <span className="px-2 py-0.5 rounded-lg bg-zinc-100 text-zinc-600 text-xs font-bold self-center">{CAT_LABEL[draft.category] ?? draft.category}</span>
-          </div>
-          {draft.description && <p className="text-xs text-zinc-500">{draft.description}</p>}
-          <div className="flex gap-2">
-            <button onClick={confirm} disabled={proc} className="flex-1 btn-primary text-sm py-2 flex items-center justify-center gap-1.5">
-              {proc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}Confirmar
+      )}
+
+      {/* Rascunho editável — formulário completo que o usuário pode corrigir */}
+      {draft && (
+        <div className="rounded-xl border-2 border-primary-200 dark:border-primary-800 bg-primary-50/40 dark:bg-primary-950/10 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+              {draft.confidence >= 60
+                ? `⚡ ALFREDO identificou (confiança ${draft.confidence}%)`
+                : `⚠️ ALFREDO não identificou tudo — preencha manualmente`}
+            </p>
+            <button onClick={() => setDraft(null)} title="Recomeçar" className="text-zinc-400 hover:text-zinc-600">
+              <RotateCcw className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => setDraft(null)} className="btn-secondary text-sm py-2"><RotateCcw className="w-3.5 h-3.5" /></button>
           </div>
+
+          {/* Valor */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-500">Valor (R$) *</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-500">R$</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                placeholder="0,00"
+                className={`input-field pl-9 text-lg font-black w-full ${!editAmount || parseFloat(editAmount) <= 0 ? 'border-red-400 dark:border-red-600' : 'border-green-400 dark:border-green-600'}`}
+              />
+            </div>
+            {(!editAmount || parseFloat(editAmount) <= 0) && (
+              <p className="text-xs text-red-500">Informe o valor do comprovante</p>
+            )}
+          </div>
+
+          {/* Categoria */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-500">Categoria</label>
+            <select
+              value={editCategory}
+              onChange={(e) => setEditCategory(e.target.value)}
+              className="input-field text-sm w-full"
+            >
+              {SOCIO_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{CAT_LABEL[c] ?? c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Método de pagamento */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-500">Método de pagamento</label>
+            <div className="flex flex-wrap gap-1.5">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setEditMethod(m)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${editMethod === m ? 'bg-primary-600 text-white border-primary-600' : 'border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-primary-400'}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Descrição */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-500">Descrição</label>
+            <input
+              type="text"
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              placeholder="Ex: Restaurante, Farmácia, Uber..."
+              className="input-field text-sm w-full"
+            />
+          </div>
+
+          {/* Ações */}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={confirmEntry}
+              disabled={proc || !editAmount || parseFloat(editAmount.replace(',', '.')) <= 0}
+              className="flex-1 btn-primary text-sm py-2.5 flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {proc
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <CheckCircle2 className="w-3.5 h-3.5" />}
+              Confirmar lançamento
+            </button>
+          </div>
+          <p className="text-[11px] text-zinc-400 text-center">
+            Corrija qualquer campo antes de confirmar. O valor é obrigatório.
+          </p>
         </div>
       )}
     </div>

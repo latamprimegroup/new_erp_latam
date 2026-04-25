@@ -27,12 +27,16 @@ const schema = z.object({
   cpf:        z.string().regex(/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/, 'CPF inválido'),
   whatsapp:   z.string().regex(/^\+?55\d{10,11}$/, 'WhatsApp deve estar no formato +5511999999999'),
   email:      z.string().email().optional().or(z.literal('')),
-  // UTMs capturados no frontend via URL params
+  // UTMs capturados no frontend via URL params / cookie / localStorage (30 dias)
   utm_source:   z.string().max(100).optional(),
   utm_medium:   z.string().max(100).optional(),
   utm_campaign: z.string().max(200).optional(),
   utm_content:  z.string().max(200).optional(),
   utm_term:     z.string().max(200).optional(),
+  utmSrc:       z.string().max(200).optional(),
+  fbclid:       z.string().max(512).optional(),
+  gclid:        z.string().max(512).optional(),
+  referrer:     z.string().max(500).optional(),
 })
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -51,6 +55,7 @@ export async function POST(req: globalThis.Request) {
   const {
     adsId, name, cpf, whatsapp, email,
     utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+    utmSrc, fbclid, gclid, referrer,
   } = parsed.data
 
   // 1. Verifica ativo disponível
@@ -84,10 +89,12 @@ export async function POST(req: globalThis.Request) {
       utmCampaign: utm_campaign || null,
       utmContent:  utm_content  || null,
       utmTerm:     utm_term     || null,
+      fbclid:      fbclid       || null,
+      gclid:       gclid        || null,
+      referrer:    referrer     || null,
     },
     update: {},
   }).catch(async () => {
-    // Se upsert falhar, cria normalmente (sem unique por CPF — múltiplos checkouts)
     return prisma.lead.create({
       data: {
         name, cpf: cpfClean, whatsapp: whatsappE164,
@@ -98,6 +105,9 @@ export async function POST(req: globalThis.Request) {
         utmCampaign: utm_campaign || null,
         utmContent:  utm_content  || null,
         utmTerm:     utm_term     || null,
+        fbclid:      fbclid       || null,
+        gclid:       gclid        || null,
+        referrer:    referrer     || null,
       },
     })
   })

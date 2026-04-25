@@ -1,373 +1,382 @@
 /**
- * GET — Agregações server-side para o dashboard War Room (ADS CORE OS).
- * Query: days=30, platform=GOOGLE_ADS|META_ADS|TIKTOK_ADS|KWAI_ADS|ALL, niche=string, collaboratorId=cuid
+ * GET  /api/admin/war-room   — Cockpit CEO: KPIs, cash flow, fornecedores
+ * POST /api/admin/war-room   — Stop Loss: suspender/reativar fornecedor
  */
 import { NextRequest, NextResponse } from 'next/server'
-import type { AccountPlatform, Prisma } from '@prisma/client'
-import { requireRoles } from '@/lib/api-auth'
+import { getServerSession } from 'next-auth/next'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { subMonths, startOfMonth, endOfMonth, format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
+import { checkMercuryHealth, getFxRates } from '@/lib/mercury/client'
+import { getKastBalances, checkKastHealth } from '@/lib/kast/client'
 
-const MARKETING_KEY = 'marketing_emergency_pause'
-const KILL_KEY = 'global_kill_switch'
+function onlyAdmin(session: Awaited<ReturnType<typeof getServerSession>>) {
+  return (session?.user as { role?: string } | undefined)?.role === 'ADMIN'
+}
 
-function parsePlatform(p: string | null): AccountPlatform | undefined {
-  if (!p || p === 'ALL') return undefined
-  const u = p.toUpperCase().replace(/-/g, '_')
-  const map: Record<string, AccountPlatform> = {
-    GOOGLE: 'GOOGLE_ADS',
-    GOOGLE_ADS: 'GOOGLE_ADS',
-    META: 'META_ADS',
-    META_ADS: 'META_ADS',
-    TIKTOK: 'TIKTOK_ADS',
-    TIKTOK_ADS: 'TIKTOK_ADS',
-    KWAI: 'KWAI_ADS',
-    KWAI_ADS: 'KWAI_ADS',
+export const dynamic = 'force-dynamic'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET — War Room cockpit
+// ─────────────────────────────────────────────────────────────────────────────
+export async function GET() {
+  const session = await getServerSession(authOptions)
+  if (!onlyAdmin(session)) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
-  return map[u] ?? (['GOOGLE_ADS', 'META_ADS', 'TIKTOK_ADS', 'KWAI_ADS', 'OTHER'].includes(u) ? (u as AccountPlatform) : undefined)
-}
-
-function isContingencyCategory(category: string, costCenter: string | null): boolean {
-  const c = `${category} ${costCenter ?? ''}`.toLowerCase()
-  return /proxy|proxies|servidor|vps|dom[ií]nio|cloaker|conting[eê]ncia|pixel|infra|hosting|cdn|tunnel|residential/.test(c)
-}
-
-function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-export async function GET(req: NextRequest) {
-  const auth = await requireRoles(['ADMIN'])
-  if (!auth.ok) return auth.response
-
-  const sp = req.nextUrl.searchParams
-  const days = Math.min(365, Math.max(7, parseInt(sp.get('days') || '30', 10) || 30))
-  const platform = parsePlatform(sp.get('platform'))
-  const nicheRaw = sp.get('niche')?.trim()
-  const collaboratorId = sp.get('collaboratorId')?.trim() || undefined
 
   const now = new Date()
-  const msDay = 24 * 60 * 60 * 1000
-  const t24 = new Date(now.getTime() - msDay)
-  const t7 = new Date(now.getTime() - 7 * msDay)
-  const periodStart = new Date(now.getTime() - days * msDay)
-  const sixMonthsStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const start30d = subMonths(now, 1)
+  const start365d = subMonths(now, 12)
 
-  const stockBase: Prisma.StockAccountWhereInput = {
-    deletedAt: null,
-    ...(platform ? { platform } : {}),
-  }
+  // ── Mercury + FX em paralelo com o restante ──────────────────────────────
+  const mercuryEnabled = Boolean(process.env.MERCURY_API_KEY)
 
-  const blackBase: Prisma.BlackOperationWhereInput = {
-    ...(nicheRaw ? { niche: nicheRaw } : {}),
-    ...(platform
-      ? {
-          stockAccount: { is: { platform } },
-        }
-      : {}),
-  }
-
-  const g2CreatorFilter: Prisma.ProductionG2WhereInput = collaboratorId ? { creatorId: collaboratorId } : {}
-
+  // ── Correr todas as queries em paralelo ───────────────────────────────────
   const [
-    settings,
-    blackBanned24h,
-    blackBanned7d,
-    blackLive,
-    blackHeatmap,
-    stockAvailable,
-    stockCritical,
-    stockInUse,
-    interPending,
-    intentsAgg,
-    financialRows,
-    g2Rejected7d,
-    g2ValidatedMonth,
-    cancelledThis,
-    cancelledPrev,
-    wentLive30d,
+    incomeAgg,
+    expenseAgg,
+    incomeAgg365,
+    expenseAgg365,
+    profitTransactions,
+    adSpendSum,
+    assetsByStatus,
+    openRmas,
+    activeSubs,
+    vendors,
+    checkouts12m,
+    transactions12m,
+    transactionsByProfile,
+    mercuryHealthRaw,
+    fxRatesRaw,
+    kastRaw,
   ] = await Promise.all([
-    prisma.systemSetting.findMany({
-      where: { key: { in: [MARKETING_KEY, KILL_KEY, 'estoque_minimo', 'producao_meta_mensal'] } },
+    // Receita mês atual (FinancialEntry)
+    prisma.financialEntry.aggregate({
+      where: { type: 'INCOME', date: { gte: start30d } },
+      _sum: { value: true },
     }),
-    prisma.blackOperation.count({
-      where: { ...blackBase, bannedAt: { gte: t24 } },
+    // Custo mês atual
+    prisma.financialEntry.aggregate({
+      where: { type: 'EXPENSE', date: { gte: start30d } },
+      _sum: { value: true },
     }),
-    prisma.blackOperation.count({
-      where: { ...blackBase, bannedAt: { gte: t7 } },
+    // Receita 365d
+    prisma.financialEntry.aggregate({
+      where: { type: 'INCOME', date: { gte: start365d } },
+      _sum: { value: true },
     }),
-    prisma.blackOperation.count({
-      where: {
-        ...blackBase,
-        status: { in: ['LIVE', 'SURVIVED_24H', 'EM_CONFIG', 'EM_AQUECIMENTO'] },
-      },
+    // Custo 365d
+    prisma.financialEntry.aggregate({
+      where: { type: 'EXPENSE', date: { gte: start365d } },
+      _sum: { value: true },
     }),
-    prisma.blackOperation.groupBy({
-      by: ['niche'],
-      where: {
-        ...blackBase,
-        bannedAt: { gte: periodStart },
-      },
+    // Transações aprovadas (para profit USD)
+    prisma.transaction.findMany({
+      where: { status: 'APPROVED', occurredAt: { gte: start30d } },
+      select: { grossAmount: true, profitAmount: true, currency: true, fxRateBrlUsd: true },
+    }),
+    // Soma total gasto em ads (AdSpendLog 365d) — para ROI
+    prisma.adSpendLog.aggregate({
+      where: { date: { gte: start365d } },
+      _sum: { spendBrl: true },
+    }),
+    // Ativos por status
+    prisma.asset.groupBy({
+      by: ['status'],
       _count: { id: true },
     }),
-    prisma.stockAccount.count({ where: { ...stockBase, status: 'AVAILABLE' } }),
-    prisma.stockAccount.count({ where: { ...stockBase, status: 'CRITICAL' } }),
-    prisma.stockAccount.count({
-      where: { ...stockBase, status: { in: ['IN_USE', 'DELIVERED'] } },
+    // RMAs abertas
+    prisma.rMATicket.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
+    // Assinaturas ativas
+    prisma.subscription.findMany({
+      where: { status: { in: ['ACTIVE', 'TRIAL'] } },
+      select: { amount: true, currency: true, billingCycle: true, profileType: true },
     }),
-    prisma.order.count({
-      where: {
-        interPixTxid: { not: null },
-        status: { in: ['AWAITING_PAYMENT', 'PENDING'] },
-      },
-    }),
-    prisma.syntheticConversionIntent.findMany({
-      where: {
-        createdAt: { gte: periodStart },
-        ...(platform
-          ? {
-              stockAccount: { is: { platform } },
-            }
-          : {}),
-      },
+    // Fornecedores com contagem de ativos e RMAs
+    prisma.vendor.findMany({
       select: {
         id: true,
-        status: true,
-        webhookEvent: { select: { roiValueBrl: true } },
+        name: true,
+        category: true,
+        suspended: true,
+        suspendedAt: true,
+        suspendedReason: true,
+        rating: true,
+        _count: { select: { assets: true, rmaTickets: true } },
       },
+      orderBy: { name: 'asc' },
     }),
-    prisma.financialEntry.findMany({
-      where: { date: { gte: sixMonthsStart } },
-      select: { date: true, type: true, value: true, category: true, costCenter: true },
+    // Checkouts pagos — últimos 12 meses (para cash flow)
+    prisma.quickSaleCheckout.findMany({
+      where: { status: 'PAID', paidAt: { gte: start365d } },
+      select: { totalAmount: true, paidAt: true },
     }),
-    prisma.productionG2.count({
-      where: {
-        deletedAt: null,
-        status: 'REPROVADA',
-        rejectedAt: { gte: t7 },
-        ...g2CreatorFilter,
-        ...(platform || nicheRaw
-          ? {
-              stockAccount: {
-                is: {
-                  ...(platform ? { platform } : {}),
-                  ...(nicheRaw ? { niche: nicheRaw } : {}),
-                },
-              },
-            }
-          : {}),
-      },
+    // Transações aprovadas — últimos 12 meses (para cash flow)
+    prisma.transaction.findMany({
+      where: { status: 'APPROVED', occurredAt: { gte: start365d } },
+      select: { grossAmount: true, type: true, occurredAt: true, currency: true, fxRateBrlUsd: true },
     }),
-    prisma.productionG2.findMany({
-      where: {
-        deletedAt: null,
-        status: { in: ['APROVADA', 'ENVIADA_ESTOQUE'] },
-        validatedAt: { not: null, gte: new Date(now.getFullYear(), now.getMonth(), 1) },
-        ...g2CreatorFilter,
-        ...(platform || nicheRaw
-          ? {
-              stockAccount: {
-                is: {
-                  ...(platform ? { platform } : {}),
-                  ...(nicheRaw ? { niche: nicheRaw } : {}),
-                },
-              },
-            }
-          : {}),
-      },
-      select: { validatedAt: true, creatorId: true       },
+    // LTV por perfil
+    prisma.transaction.findMany({
+      where: { status: 'APPROVED' },
+      select: { grossAmount: true, currency: true, fxRateBrlUsd: true, profileType: true, clientId: true },
     }),
-    prisma.order.count({
-      where: { status: 'CANCELLED', updatedAt: { gte: t7 } },
-    }),
-    prisma.order.count({
-      where: { status: 'CANCELLED', updatedAt: { gte: new Date(now.getTime() - 14 * msDay), lt: t7 } },
-    }),
-    prisma.blackOperation.findMany({
-      where: {
-        ...blackBase,
-        wentLiveAt: { gte: new Date(now.getTime() - 30 * msDay) },
-      },
-      select: { status: true },
-    }),
+    // Mercury balance (não bloqueia se falhar)
+    mercuryEnabled
+      ? checkMercuryHealth().catch(() => ({ ok: false, accounts: 0, totalUsd: 0 }))
+      : Promise.resolve({ ok: false, accounts: 0, totalUsd: 0 }),
+    // FX rate USD→BRL
+    getFxRates().catch(() => ({ base: 'USD', rates: { BRL: 5.20 }, updatedAt: 'fallback' })),
+    // Kast cripto (não bloqueia se falhar)
+    Boolean(process.env.NOWPAYMENTS_API_KEY)
+      ? Promise.allSettled([checkKastHealth(), getKastBalances()])
+          .then(([h, b]) => ({
+            ok:       h.status === 'fulfilled' ? h.value.ok : false,
+            balances: b.status === 'fulfilled' ? b.value : [],
+          }))
+          .catch(() => ({ ok: false, balances: [] }))
+      : Promise.resolve({ ok: false, balances: [] }),
   ])
 
-  const settingMap = Object.fromEntries(settings.map((s) => [s.key, s.value]))
-  const marketingEmergency = settingMap[MARKETING_KEY] === '1' || settingMap[MARKETING_KEY] === 'true'
-  const globalKillSwitch = settingMap[KILL_KEY] === '1' || settingMap[KILL_KEY] === 'true'
-  const estoqueMin = parseInt(settingMap['estoque_minimo'] ?? '50', 10) || 50
-  const metaMensal = parseInt(settingMap['producao_meta_mensal'] ?? '330', 10) || 330
-  const diasNoMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const metaDiaria = Math.ceil(metaMensal / diasNoMes)
+  // ── Profit Real ───────────────────────────────────────────────────────────
+  const incomeBrl = Number(incomeAgg._sum.value ?? 0)
+  const expenseBrl = Number(expenseAgg._sum.value ?? 0)
+  const profitBrl = incomeBrl - expenseBrl
 
-  const survivedBlack30d = wentLive30d.filter((o) => o.status !== 'BANNED').length
-  const survivalBlack30dRate =
-    wentLive30d.length > 0 ? Math.round((100 * survivedBlack30d) / wentLive30d.length) : 100
+  // Se não há FinancialEntry, usa Transactions como fallback
+  const txProfit = profitTransactions.reduce((acc, t) => {
+    const p = Number(t.profitAmount ?? 0)
+    const isUsd = t.currency === 'USD'
+    return acc + (isUsd ? p * Number(t.fxRateBrlUsd ?? 5.2) : p)
+  }, 0)
+  const finalProfitBrl = profitBrl > 0 ? profitBrl : txProfit
 
-  const totalBlackPulse = blackLive + blackBanned7d
-  const survivalPulse7dPct =
-    totalBlackPulse > 0 ? Math.round((100 * blackLive) / totalBlackPulse) : blackLive > 0 ? 100 : 100
+  // Profit USD (estimado via câmbio médio)
+  const finalProfitUsd = finalProfitBrl / 5.2
 
-  let linkedRoi = 0
-  let linkedCount = 0
-  for (const i of intentsAgg) {
-    const v = i.webhookEvent?.roiValueBrl
-    if (v != null) {
-      linkedRoi += Number(v)
-      linkedCount += 1
-    }
+  // ── ROI 365 ───────────────────────────────────────────────────────────────
+  const totalAdSpend = Number(adSpendSum._sum.spendBrl ?? 0)
+  const income365 = Number(incomeAgg365._sum.value ?? 0)
+  const expense365 = Number(expenseAgg365._sum.value ?? 0)
+  const profit365 = income365 > 0 ? income365 - expense365 : txProfit
+  const roi365 = totalAdSpend > 0 ? Math.round((profit365 / totalAdSpend) * 100) : 0
+
+  // ── MRR ───────────────────────────────────────────────────────────────────
+  let mrrBrl = 0
+  for (const s of activeSubs) {
+    const monthly = s.billingCycle === 'ANNUAL'
+      ? Number(s.amount) / 12
+      : s.billingCycle === 'QUARTERLY'
+        ? Number(s.amount) / 3
+        : Number(s.amount)
+    mrrBrl += s.currency === 'USD' ? monthly * 5.2 : monthly
   }
 
-  const flowMap = new Map<string, { receita: number; despesa: number; contingencia: number }>()
-  for (const e of financialRows) {
-    const key = monthKey(e.date)
-    const cur = flowMap.get(key) ?? { receita: 0, despesa: 0, contingencia: 0 }
-    const val = Number(e.value)
-    if (e.type === 'INCOME') cur.receita += val
-    else {
-      cur.despesa += val
-      if (isContingencyCategory(e.category, e.costCenter)) cur.contingencia += val
-    }
-    flowMap.set(key, cur)
+  // ── Infra Health ─────────────────────────────────────────────────────────
+  const statusMap: Record<string, number> = {}
+  for (const g of assetsByStatus) statusMap[g.status] = g._count.id
+  const totalAssets = Object.values(statusMap).reduce((a, b) => a + b, 0)
+  const activeAssets = (statusMap['AVAILABLE'] ?? 0) + (statusMap['QUARANTINE'] ?? 0)
+  const deadAssets = statusMap['DEAD'] ?? 0
+  const healthPct = totalAssets > 0 ? Math.round((activeAssets / totalAssets) * 100) : 100
+
+  // ── LTV por Perfil ───────────────────────────────────────────────────────
+  const ltvMap: Record<string, { total: number; clients: Set<string> }> = {}
+  for (const t of transactionsByProfile) {
+    const profile = t.profileType ?? 'OUTROS'
+    const brl = t.currency === 'USD'
+      ? Number(t.grossAmount) * Number(t.fxRateBrlUsd ?? 5.2)
+      : Number(t.grossAmount)
+    if (!ltvMap[profile]) ltvMap[profile] = { total: 0, clients: new Set() }
+    ltvMap[profile].total += brl
+    if (t.clientId) ltvMap[profile].clients.add(t.clientId)
   }
-  const financialFlow = [...flowMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, v]) => ({
-      month,
-      receitaBruta: Math.round(v.receita * 100) / 100,
-      custoContingencia: Math.round(v.contingencia * 100) / 100,
-      lucroLiquidoReal: Math.round((v.receita - v.despesa) * 100) / 100,
-    }))
+  const ltvByProfile = Object.entries(ltvMap).map(([profile, v]) => ({
+    profile,
+    avgLtv: v.clients.size > 0 ? Math.round(v.total / v.clients.size) : Math.round(v.total),
+    totalRevenue: Math.round(v.total),
+    clientCount: v.clients.size,
+  })).sort((a, b) => b.avgLtv - a.avgLtv)
 
-  const heatMax = Math.max(1, ...blackHeatmap.map((h) => h._count.id))
-  const bansHeatmap = blackHeatmap
-    .map((h) => ({
-      niche: h.niche || '—',
-      count: h._count.id,
-      intensity: Math.round((100 * h._count.id) / heatMax) / 100,
-    }))
-    .sort((a, b) => b.count - a.count)
+  // ── Cash Flow — últimos 12 meses ─────────────────────────────────────────
+  const months: { label: string; sales: number; recurring: number }[] = []
+  for (let i = 11; i >= 0; i--) {
+    const d = subMonths(now, i)
+    const mStart = startOfMonth(d)
+    const mEnd = endOfMonth(d)
 
-  const startToday = new Date(now)
-  startToday.setHours(0, 0, 0, 0)
-  const todayCounts = new Map<string, number>()
-  for (const g of g2ValidatedMonth) {
-    if (!g.validatedAt) continue
-    if (g.validatedAt >= startToday) {
-      todayCounts.set(g.creatorId, (todayCounts.get(g.creatorId) ?? 0) + 1)
-    }
-  }
+    // Vendas únicas (Checkout + Transactions ASSET_SALE)
+    const salesFromCheckout = checkouts12m
+      .filter((c) => c.paidAt && new Date(c.paidAt) >= mStart && new Date(c.paidAt) <= mEnd)
+      .reduce((acc, c) => acc + Number(c.totalAmount), 0)
 
-  const creatorIds = [...new Set(g2ValidatedMonth.map((g) => g.creatorId))]
-  const users = await prisma.user.findMany({
-    where: { id: { in: creatorIds } },
-    select: { id: true, name: true },
-  })
-  const userMap = Object.fromEntries(users.map((u) => [u.id, u.name]))
+    const salesFromTx = transactions12m
+      .filter(
+        (t) =>
+          t.type === 'ASSET_SALE' &&
+          t.occurredAt &&
+          new Date(t.occurredAt) >= mStart &&
+          new Date(t.occurredAt) <= mEnd,
+      )
+      .reduce((acc, t) => {
+        const brl = t.currency === 'USD'
+          ? Number(t.grossAmount) * Number(t.fxRateBrlUsd ?? 5.2)
+          : Number(t.grossAmount)
+        return acc + brl
+      }, 0)
 
-  const productivityRank = [...todayCounts.entries()]
-    .map(([id, delivered]) => ({
-      userId: id,
-      name: userMap[id] ?? id.slice(0, 8),
-      delivered,
-      metaDiaria,
-      pct: Math.min(100, Math.round((delivered / Math.max(1, metaDiaria)) * 100)),
-    }))
-    .sort((a, b) => b.delivered - a.delivered)
-    .slice(0, 15)
+    const salesTotal = salesFromCheckout > 0 ? salesFromCheckout : salesFromTx
 
-  const byCreator7d = await prisma.productionG2.groupBy({
-    by: ['creatorId'],
-    where: {
-      deletedAt: null,
-      validatedAt: { not: null, gte: t7 },
-      ...g2CreatorFilter,
-    },
-    _count: { id: true },
-  })
-  const counts7d = byCreator7d.map((c) => c._count.id)
-  const mean7 = counts7d.length ? counts7d.reduce((a, b) => a + b, 0) / counts7d.length : 0
-  const var7 =
-    counts7d.length > 1
-      ? counts7d.reduce((s, c) => s + (c - mean7) ** 2, 0) / counts7d.length
-      : 0
-  const std7 = Math.sqrt(var7)
+    // Recorrência (RECURRING transactions nesse mês)
+    const recurringTotal = transactions12m
+      .filter(
+        (t) =>
+          t.type === 'RECURRING' &&
+          t.occurredAt &&
+          new Date(t.occurredAt) >= mStart &&
+          new Date(t.occurredAt) <= mEnd,
+      )
+      .reduce((acc, t) => {
+        const brl = t.currency === 'USD'
+          ? Number(t.grossAmount) * Number(t.fxRateBrlUsd ?? 5.2)
+          : Number(t.grossAmount)
+        return acc + brl
+      }, 0)
 
-  const anomalies: { type: string; severity: 'alta' | 'media'; message: string }[] = []
-
-  for (const row of byCreator7d) {
-    const c = row._count.id
-    if (mean7 > 2 && std7 > 0 && c > mean7 + 2 * std7 && c >= mean7 * 3) {
-      anomalies.push({
-        type: 'produtividade',
-        severity: 'alta',
-        message: `${userMap[row.creatorId] ?? row.creatorId}: ${c} contas validadas em 7d vs média ${mean7.toFixed(1)} (≥ desvio).`,
-      })
-    }
-  }
-  if (cancelledPrev > 0 && cancelledThis > cancelledPrev * 2 && cancelledThis >= 3) {
-    anomalies.push({
-      type: 'reembolsos_pedidos',
-      severity: 'media',
-      message: `Pedidos cancelados subiram: ${cancelledThis} (7d) vs ${cancelledPrev} (7d anterior).`,
+    months.push({
+      label: format(d, 'MMM/yy', { locale: ptBR }),
+      sales: Math.round(salesTotal),
+      recurring: Math.round(recurringTotal > 0 ? recurringTotal : mrrBrl),
     })
   }
-  if (blackBanned24h >= 3) {
-    anomalies.push({
-      type: 'black_ban_spike',
-      severity: 'alta',
-      message: `${blackBanned24h} operações black marcadas com ban nas últimas 24h.`,
-    })
+
+  // ── Fornecedores Stop Loss ───────────────────────────────────────────────
+  const vendorData = vendors.map((v) => {
+    const total = v._count.assets
+    const rmaCount = v._count.rmaTickets
+    const rmaRate = total > 0 ? Math.round((rmaCount / total) * 100) : 0
+    return {
+      id: v.id,
+      name: v.name,
+      category: v.category,
+      totalAssets: total,
+      rmaCount,
+      rmaRate,
+      suspended: v.suspended,
+      suspendedAt: v.suspendedAt,
+      suspendedReason: v.suspendedReason,
+      rating: v.rating,
+      alert: rmaRate >= 30,
+    }
+  }).sort((a, b) => b.rmaRate - a.rmaRate)
+
+  // ── Alertas ───────────────────────────────────────────────────────────────
+  const alerts: { type: string; message: string }[] = []
+  if (openRmas > 5) alerts.push({ type: 'critical', message: `🔴 ${openRmas} RMAs abertos — ação imediata necessária` })
+  if (healthPct < 70) alerts.push({ type: 'critical', message: `🔴 Saúde da Infra em ${healthPct}% — estoque crítico` })
+  if (deadAssets > 0) alerts.push({ type: 'warning', message: `⚠️ ${deadAssets} ativo(s) DEAD — verificar fornecedor` })
+  const vendorsAtRisk = vendorData.filter((v) => v.alert && !v.suspended)
+  if (vendorsAtRisk.length > 0) {
+    alerts.push({ type: 'warning', message: `⚠️ ${vendorsAtRisk.length} fornecedor(es) com RMA ≥ 30% — Stop Loss recomendado` })
   }
-  if (stockAvailable < estoqueMin) {
-    anomalies.push({
-      type: 'estoque',
-      severity: 'media',
-      message: `Estoque disponível (${stockAvailable}) abaixo do mínimo configurado (${estoqueMin}).`,
-    })
-  }
+  if (mrrBrl === 0) alerts.push({ type: 'info', message: 'ℹ️ Sem assinaturas ativas — ative o módulo de recorrência' })
+
+  // ── Mercury ──────────────────────────────────────────────────────────────
+  const fxRateBrl = (fxRatesRaw as { rates: Record<string, number> }).rates?.BRL ?? 5.20
+  const mercuryUsd = mercuryEnabled ? (mercuryHealthRaw as { totalUsd?: number }).totalUsd ?? 0 : 0
+  const mercuryBrl = Math.round(mercuryUsd * fxRateBrl)
+
+  // ── Kast Cripto ───────────────────────────────────────────────────────────
+  const kastData = kastRaw as { ok: boolean; balances: { currency: string; amount: number; pending: number }[] }
+  const kastStableUsd = kastData.balances
+    .filter((b) => b.currency.startsWith('usdt') || b.currency.startsWith('usdc'))
+    .reduce((s, b) => s + b.amount + b.pending, 0)
+  const kastBrl = Math.round(kastStableUsd * fxRateBrl)
+
+  // Receita global consolidada BRL (doméstico + Mercury USD + Kast cripto)
+  const globalRevenueBrl = Math.round(finalProfitBrl + mercuryBrl + kastBrl)
 
   return NextResponse.json({
-    generatedAt: now.toISOString(),
-    filters: {
-      days,
-      platform: platform ?? 'ALL',
-      niche: nicheRaw ?? null,
-      collaboratorId: collaboratorId ?? null,
+    kpis: {
+      profitBrl: Math.round(finalProfitBrl),
+      profitUsd: Math.round(finalProfitUsd),
+      roi365,
+      adSpendBrl: Math.round(totalAdSpend),
+      mrrBrl: Math.round(mrrBrl),
+      infraHealth: {
+        active: activeAssets,
+        dead: deadAssets,
+        total: totalAssets,
+        healthPct,
+        openRmas,
+      },
+      activeSubscriptions: activeSubs.length,
+      ltvByProfile,
+      // Multi-moeda consolidado
+      mercury: {
+        configured:   mercuryEnabled,
+        balanceUsd:   mercuryUsd,
+        balanceBrl:   mercuryBrl,
+        health:       (mercuryHealthRaw as { ok?: boolean }).ok ?? false,
+        fxRate:       fxRateBrl,
+      },
+      kast: {
+        configured:   Boolean(process.env.NOWPAYMENTS_API_KEY),
+        health:       kastData.ok,
+        stableUsd:    Math.round(kastStableUsd * 100) / 100,
+        stableBrl:    kastBrl,
+        fxRate:       fxRateBrl,
+      },
+      globalRevenueBrl,
     },
-    switches: {
-      marketingEmergency,
-      globalKillSwitch,
-    },
-    survival: {
-      blackLive,
-      blackBanned24h,
-      blackBanned7d,
-      survivalPulse7dPct,
-      blackWentLive30d: wentLive30d.length,
-      survivalBlack30dRate,
-      g2Rejected7d,
-      stockInUse,
-      stockAvailable,
-      definitions:
-        'Black: LIVE/SURVIVED/EM_CONFIG/AQUECIMENTO vs bans com data. G2: reprovações 7d. Estoque: disponível + em uso.',
-    },
-    syntheticHydra: {
-      intentsPeriod: intentsAgg.length,
-      intentsPending: intentsAgg.filter((i) => i.status === 'PENDING').length,
-      linkedRoiSumBrl: Math.round(linkedRoi * 100) / 100,
-      avgRoiPerLinkedIntent:
-        linkedCount > 0 ? Math.round((linkedRoi / linkedCount) * 100) / 100 : null,
-    },
-    stockCritical: {
-      minSetting: Number.isFinite(estoqueMin) ? estoqueMin : 50,
-      available: stockAvailable,
-      criticalStatusCount: stockCritical,
-      belowMin: stockAvailable < (Number.isFinite(estoqueMin) ? estoqueMin : 50),
-    },
-    interPendingOrders: interPending,
-    financialFlow,
-    bansHeatmap,
-    productivityRank,
-    anomalies,
+    cashFlow: months,
+    vendors: vendorData.slice(0, 20),
+    alerts,
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST — Stop Loss: suspender ou reativar fornecedor
+// ─────────────────────────────────────────────────────────────────────────────
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!onlyAdmin(session)) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
+  const body = await req.json()
+  const { vendorId, suspend, reason } = body as {
+    vendorId: string
+    suspend: boolean
+    reason?: string
+  }
+
+  if (!vendorId) {
+    return NextResponse.json({ error: 'vendorId obrigatório' }, { status: 400 })
+  }
+
+  const vendor = await prisma.vendor.update({
+    where: { id: vendorId },
+    data: {
+      suspended: suspend,
+      suspendedReason: suspend ? (reason ?? 'Stop Loss ativado pelo CEO via War Room') : null,
+      suspendedAt: suspend ? new Date() : null,
+    },
+    select: { id: true, name: true, suspended: true, suspendedAt: true },
+  })
+
+  // Auditoria
+  await prisma.auditLog.create({
+    data: {
+      action: suspend ? 'VENDOR_STOP_LOSS' : 'VENDOR_REACTIVATED',
+      entity: 'Vendor',
+      entityId: vendorId,
+      userId: (session!.user as { id?: string }).id ?? null,
+      details: { reason: reason ?? null },
+    },
+  }).catch(() => null) // não bloqueia se falhar
+
+  return NextResponse.json({ ok: true, vendor })
 }

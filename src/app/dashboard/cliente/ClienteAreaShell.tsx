@@ -90,6 +90,13 @@ export function ClienteAreaShell({ children }: { children: React.ReactNode }) {
 
       <ClienteWelcomeOnboarding onDimChange={setWelcomeDim} />
 
+      {/* Rodapé Global */}
+      <footer className="mt-16 border-t border-zinc-800/60 py-5 px-4 text-center">
+        <p className="text-[11px] text-zinc-600 tracking-widest uppercase">
+          🛡️ Ads Ativos Global &nbsp;·&nbsp; War Room OS &nbsp;·&nbsp; The World&apos;s Largest Contingency Infrastructure
+        </p>
+      </footer>
+
       <button
         type="button"
         onClick={() => {

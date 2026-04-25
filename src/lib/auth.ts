@@ -157,17 +157,29 @@ export const authOptions: NextAuthOptions = {
         const shortSec = parseInt(process.env.SESSION_SHORT_MAX_AGE_SEC || `${14 * 60 * 60}`, 10)
         const longSec  = parseInt(process.env.SESSION_LONG_MAX_AGE_SEC  || `${30 * 24 * 60 * 60}`, 10)
         token.exp      = Math.floor(Date.now() / 1000) + (remember ? longSec : shortSec)
+
+        // Carrega profileType + activeModules para CLIENTs
+        if ((user as { role?: string }).role === 'CLIENT') {
+          const cp = await prisma.clientProfile.findUnique({
+            where:  { userId: user.id },
+            select: { profileType: true, activeModules: true },
+          }).catch(() => null)
+          token.profileType   = cp?.profileType ?? 'TRADER_WHATSAPP'
+          token.activeModules = cp?.activeModules ?? []
+        }
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id           = token.id as string
-        session.user.role         = token.role as string
-        session.user.status       = token.status as string
-        session.user.languageCode = (token.languageCode as string) ?? 'pt-BR'
-        session.user.cargo        = (token.cargo as string | undefined) ?? undefined
-        session.user.leaderId     = (token.leaderId as string | undefined) ?? undefined
+        session.user.id            = token.id as string
+        session.user.role          = token.role as string
+        session.user.status        = token.status as string
+        session.user.languageCode  = (token.languageCode as string) ?? 'pt-BR'
+        session.user.cargo         = (token.cargo as string | undefined) ?? undefined
+        session.user.leaderId      = (token.leaderId as string | undefined) ?? undefined
+        session.user.profileType   = (token.profileType as string | undefined) ?? undefined
+        session.user.activeModules = (token.activeModules as string[] | undefined) ?? undefined
       }
       return session
     },
