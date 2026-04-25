@@ -7,8 +7,23 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   skipWaiting: true,
   clientsClaim: true,
   reloadOnOnline: true,
-  // Cache pages com NetworkFirst para garantir conteúdo sempre actualizado
-  runtimeCaching: [],
+  runtimeCaching: [
+    // /api/* → NetworkOnly: nunca cachear respostas de API (dados sempre frescos)
+    {
+      urlPattern: /^https?:\/\/.*\/api\/.*/i,
+      handler: 'NetworkOnly',
+    },
+    // Páginas da app → NetworkFirst com 5s timeout, fallback cache
+    {
+      urlPattern: /^https?:\/\/.*/i,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'pages-cache',
+        networkTimeoutSeconds: 5,
+        expiration: { maxEntries: 50, maxAgeSeconds: 86400 },
+      },
+    },
+  ],
 })
 
 /** @type {import('next').NextConfig} */

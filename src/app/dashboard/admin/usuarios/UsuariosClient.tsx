@@ -9,7 +9,7 @@ import {
 type User = {
   id: string; email: string; name: string | null; phone: string | null
   role: string; status: string; createdAt: string; clientCode?: string | null
-  banReason?: string | null
+  banReason?: string | null; cargo?: string | null
 }
 
 type AuditLog = {
@@ -51,7 +51,9 @@ export function UsuariosClient() {
   const [banTarget,   setBanTarget]   = useState<User | null>(null)
   const [nextClientId, setNextClientId] = useState<string | null>(null)
   const [submitting,  setSubmitting]  = useState(false)
-  const [form, setForm] = useState({ email: '', name: '', password: '', role: 'CLIENT', phone: '' })
+  const [form, setForm] = useState({ email: '', name: '', password: '', role: 'CLIENT', phone: '', cargo: '' })
+  const [syncingSchema, setSyncingSchema] = useState(false)
+  const [schemaStatus, setSchemaStatus] = useState<string | null>(null)
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -109,18 +111,29 @@ export function UsuariosClient() {
 
   async function handleUpdate(e: React.FormEvent) {
     e.preventDefault(); if (!editing) return; setSubmitting(true)
-    const body: Record<string, unknown> = { name: form.name, role: form.role, phone: form.phone || null }
+    const body: Record<string, unknown> = { name: form.name, role: form.role, phone: form.phone || null, cargo: form.cargo || null }
     if (form.password) body.password = form.password
     const res = await fetch(`/api/admin/usuarios/${editing.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
-    if (res.ok) { setEditing(null); setForm({ email: '', name: '', password: '', role: 'CLIENT', phone: '' }); loadUsers() }
+    if (res.ok) { setEditing(null); setForm({ email: '', name: '', password: '', role: 'CLIENT', phone: '', cargo: '' }); loadUsers() }
     else { const err = await res.json(); alert(err.error || 'Erro ao atualizar') }
     setSubmitting(false)
   }
 
   function openEdit(u: User) {
-    setEditing(u); setForm({ email: u.email, name: u.name || '', password: '', role: u.role, phone: u.phone || '' })
+    setEditing(u); setForm({ email: u.email, name: u.name || '', password: '', role: u.role, phone: u.phone || '', cargo: u.cargo || '' })
+  }
+
+  async function handleSchemaSync() {
+    if (!confirm('Sincronizar schema do banco de dados? Isso pode demorar até 60 segundos.')) return
+    setSyncingSchema(true); setSchemaStatus(null)
+    try {
+      const res = await fetch('/api/admin/schema-sync', { method: 'POST' })
+      const data = await res.json()
+      setSchemaStatus(res.ok ? `✅ ${data.message} (${data.durationMs}ms)` : `❌ ${data.error}`)
+    } catch { setSchemaStatus('❌ Erro de rede') }
+    setSyncingSchema(false)
   }
 
   const pendentes = users.filter((u) => u.status === 'PENDING')
@@ -136,9 +149,16 @@ export function UsuariosClient() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="heading-1">Gestão de Usuários — Painel CEO</h1>
-        <button onClick={loadUsers} className="btn-secondary text-sm flex items-center gap-1.5">
-          <RefreshCw className="w-3.5 h-3.5" />Atualizar
-        </button>
+        <div className="flex gap-2 flex-wrap items-center">
+          {schemaStatus && <span className="text-xs px-3 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-mono">{schemaStatus}</span>}
+          <button onClick={handleSchemaSync} disabled={syncingSchema} className="btn-secondary text-sm flex items-center gap-1.5">
+            {syncingSchema ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+            {syncingSchema ? 'Sincronizando...' : 'Sync Schema'}
+          </button>
+          <button onClick={loadUsers} className="btn-secondary text-sm flex items-center gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" />Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -255,7 +275,7 @@ export function UsuariosClient() {
                   {[
                     { label: 'Nome *', key: 'name', type: 'text', required: true },
                     { label: 'Telefone', key: 'phone', type: 'text', required: false },
-                    { label: 'Nova senha', key: 'password', type: 'password', required: false },
+                    { label: 'Nova senha (deixe vazio para não alterar)', key: 'password', type: 'password', required: false },
                   ].map(({ label, key, type, required }) => (
                     <div key={key}>
                       <label className="block text-sm font-medium mb-1">{label}</label>
@@ -268,9 +288,15 @@ export function UsuariosClient() {
                       {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cargo <span className="text-zinc-400 font-normal">(ex: Vendedor, Gerente, Produção)</span></label>
+                    <input type="text" value={form.cargo} onChange={(e) => setForm((f) => ({ ...f, cargo: e.target.value }))} className="input-field" placeholder="Ex: Vendedor Sênior" maxLength={40} />
+                  </div>
                 </div>
                 <div className="flex gap-2">
-                  <button type="submit" disabled={submitting} className="btn-primary text-sm">Salvar</button>
+                  <button type="submit" disabled={submitting} className="btn-primary text-sm flex items-center gap-1.5">
+                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}Salvar
+                  </button>
                   <button type="button" onClick={() => setEditing(null)} className="btn-secondary text-sm">Cancelar</button>
                 </div>
               </form>
@@ -302,6 +328,7 @@ export function UsuariosClient() {
                           </td>
                           <td className="py-3 pr-4">
                             <span className="px-2 py-0.5 rounded text-xs bg-zinc-100 dark:bg-zinc-700 font-mono">{u.role}</span>
+                            {u.cargo && <p className="text-xs text-violet-500 mt-0.5">{u.cargo}</p>}
                           </td>
                           <td className="py-3 pr-4">
                             <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold w-fit ${sc.color}`}>

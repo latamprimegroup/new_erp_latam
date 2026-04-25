@@ -11,11 +11,12 @@ const actionSchema = z.object({
   banReason: z.string().max(500).optional(),
 })
 
-// ── Schema para edição de perfil (nome, role, telefone, senha) ───────────────
+// ── Schema para edição de perfil (nome, role, telefone, senha, cargo) ────────
 const updateSchema = z.object({
   name:     z.string().min(1).max(100).optional(),
   phone:    z.string().max(30).nullable().optional(),
   role:     z.string().optional(),
+  cargo:    z.string().max(100).nullable().optional(),
   password: z.string().min(8).max(100).optional(),
 })
 
@@ -71,13 +72,14 @@ export async function PATCH(
   if (!parsed.success)
     return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
 
-  const { name, phone, role, password } = parsed.data
+  const { name, phone, role, cargo, password } = parsed.data
 
   const updateData: Record<string, unknown> = {}
   if (name     !== undefined) updateData.name  = name
   if (phone    !== undefined) updateData.phone = phone
   if (role     !== undefined) updateData.role  = role
-  if (password !== undefined) updateData.password = await bcrypt.hash(password, 12)
+  if (cargo    !== undefined) updateData.cargo = cargo
+  if (password !== undefined) updateData.passwordHash = await bcrypt.hash(password, 12)
 
   if (Object.keys(updateData).length === 0)
     return NextResponse.json({ error: 'Nenhum campo para atualizar.' }, { status: 400 })

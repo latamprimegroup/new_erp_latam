@@ -840,7 +840,9 @@ model ProductionAccount {
   g2ApprovalCode      String?        @map("g2_approval_code") @db.VarChar(100)
   siteUrl             String?        @map("site_url") @db.Text
   cnpjBizLink         String?        @map("cnpj_biz_link") @db.Text
-  cnpjPdfUrl          String?        @map("cnpj_pdf_url") @db.Text // Path ou URL do PDF
+  cnpjPdfUrl          String?        @map("cnpj_pdf_url") @db.Text // Legado — substituído por cnpjPdfBase64
+  cnpjPdfBase64       String?        @map("cnpj_pdf_base64") @db.LongText // PDF armazenado como base64 (sobrevive a Vercel)
+  cnpjPdfFilename     String?        @map("cnpj_pdf_filename") @db.VarChar(255)
   passwordPlain       String?        @map("password_plain") @db.Text // Senha de acesso à conta
 
   // ADS CORE — nicho, meta de verificação, footprint

@@ -44,27 +44,73 @@ Schema: {"amount":number|null,"currency":"BRL","date":"ISO8601"|null,"name":stri
 Rules: amount=numeric value, date=ISO8601, transactionId=PIX E2E code starting with E0, confidence=0-100, null if missing.`
 }
 
-// ─── Extração sem OpenAI (fallback regex) ───────────────────────────────────
+// ─── Extração sem OpenAI (regex avançado) ────────────────────────────────────
 function extractWithRegex(text: string, type: string) {
-  const amtMatch = text.match(/R\$\s*([\d.,]+)/i) ??
-                   text.match(/([\d]{1,3}(?:[.,][\d]{3})*(?:[.,][\d]{2}))/);
-  const rawAmt   = amtMatch ? amtMatch[1].replace(/\./g, '').replace(',', '.') : null
-  const amount   = rawAmt ? parseFloat(rawAmt) : null
+  if (!text) return {
+    amount: null, currency: 'BRL', date: null, name: null, transactionId: null,
+    paymentMethod: 'OUTRO', category: 'Geral', description: '', confidence: 0, isIncome: type === 'ENTRADA',
+  }
 
-  const dateMatch = text.match(/(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
-  const txMatch   = text.match(/E\d{20,}/i) ?? text.match(/\b[A-Z0-9]{25,}\b/)
+  const lower = text.toLowerCase()
+
+  // Valor: prioriza "R$ X.XXX,XX" depois números simples com vírgula
+  const amtMatch =
+    text.match(/R\$\s*([\d.]+,\d{2})/i) ??
+    text.match(/(?:valor|total|pagamento|recebido)[^\d]*([\d.]+,\d{2})/i) ??
+    text.match(/([\d]{1,3}(?:\.\d{3})*,\d{2})/) ??
+    text.match(/R\$\s*([\d]+)/i)
+  const rawAmt = amtMatch ? amtMatch[1].replace(/\./g, '').replace(',', '.') : null
+  const amount = rawAmt ? parseFloat(rawAmt) : null
+
+  // Data: DD/MM/AAAA, AAAA-MM-DD, "15 de janeiro de 2025", "15/01/2025 10:30"
+  const dateMatch =
+    text.match(/(\d{2}\/\d{2}\/\d{4})/) ??
+    text.match(/(\d{4}-\d{2}-\d{2})/)
+  let parsedDate: string | null = null
+  if (dateMatch) {
+    try {
+      const raw = dateMatch[1]
+      const d = raw.includes('/') ? raw.split('/').reverse().join('-') : raw
+      parsedDate = new Date(d).toISOString()
+    } catch { parsedDate = null }
+  }
+
+  // ID de transação PIX (E0...) ou código alfanumérico longo
+  const txMatch = text.match(/\bE0\d{30,}\b/i) ?? text.match(/\b[A-Z0-9]{25,}\b/)
+
+  // Nome do remetente/destinatário
+  const nameMatch =
+    text.match(/(?:de:|nome:|remetente:|favorecido:)\s*([^\n\r,;]+)/i) ??
+    text.match(/(?:pago por|pagamento de|recebido de)\s*([^\n\r,;]+)/i)
+  const name = nameMatch ? nameMatch[1].trim().slice(0, 80) : null
+
+  // Método de pagamento
+  const paymentMethod: string = lower.includes('pix') ? 'PIX'
+    : lower.includes('ted') ? 'TED'
+    : lower.includes('doc') ? 'DOC'
+    : lower.includes('boleto') ? 'BOLETO'
+    : lower.includes('cartão') || lower.includes('cartao') ? 'CARTAO'
+    : 'OUTRO'
+
+  // Confiança: sobe por cada campo encontrado
+  let confidence = 5
+  if (amount)   confidence += 40
+  if (parsedDate) confidence += 20
+  if (txMatch)  confidence += 15
+  if (name)     confidence += 10
+  if (paymentMethod !== 'OUTRO') confidence += 10
 
   return {
     amount,
     currency: 'BRL',
-    date:            dateMatch ? new Date(dateMatch[1]).toISOString() : null,
-    name:            null,
-    transactionId:   txMatch ? txMatch[0] : null,
-    paymentMethod:   text.toLowerCase().includes('pix') ? 'PIX' : 'OUTRO',
-    category:        detectCategory(text),
-    description:     text.slice(0, 200),
-    confidence:      amount ? 40 : 10,
-    isIncome:        type === 'ENTRADA',
+    date:          parsedDate,
+    name,
+    transactionId: txMatch ? txMatch[0] : null,
+    paymentMethod,
+    category:      detectCategory(text),
+    description:   text.slice(0, 200),
+    confidence:    Math.min(confidence, 95),
+    isIncome:      type === 'ENTRADA',
   }
 }
 
@@ -92,41 +138,56 @@ export async function POST(req: globalThis.Request) {
 
   let extracted: ReturnType<typeof extractWithRegex>
 
-  // ── Tenta com OpenAI (timeout agressivo de 8s com fallback automático) ─────
-  const apiKey = process.env.OPENAI_API_KEY
-  if (apiKey) {
-    try {
-      const client = new OpenAI({ apiKey })
-      // Sempre gpt-4o-mini — mais rápido e barato para OCR simples
-      const model  = 'gpt-4o-mini'
-      const prompt = buildExtractionPrompt(type)
+  // ── Estratégia: Regex-First para texto puro — OpenAI só para imagens ou baixa confiança ──
+  const isImageOnly = !!imageBase64 && !text
+  const regexResult = extractWithRegex(text ?? '', type)
+  const regexConfidence = regexResult.confidence ?? 0
 
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = imageBase64
-        ? [{ role: 'user', content: [
-            { type: 'text',      text: prompt },
-            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
-          ] }]
-        : [{ role: 'user', content: `${prompt}\n\n${text}` }]
+  // Para texto: se regex detectou valor + data (confiança ≥ 60), pula OpenAI → resposta imediata
+  const skipAI = !imageBase64 && regexConfidence >= 60
 
-      // Race entre OpenAI e timeout de 8s — cai no regex se demorar
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('OpenAI timeout')), 8_000)
-      )
-      const aiPromise = client.chat.completions.create({
-        model, messages, temperature: 0, max_tokens: 200,
-      })
-
-      const response = await Promise.race([aiPromise, timeoutPromise])
-      const raw     = response.choices[0]?.message?.content ?? '{}'
-      const cleaned = raw.replace(/```json\n?/g, '').replace(/```/g, '').trim()
-      extracted     = JSON.parse(cleaned)
-      if (!extracted.category && text) extracted.category = detectCategory(text)
-    } catch {
-      // Fallback instantâneo por regex
-      extracted = extractWithRegex(text ?? '', type)
-    }
+  if (skipAI) {
+    extracted = regexResult
   } else {
-    extracted = extractWithRegex(text ?? '', type)
+    const apiKey = process.env.OPENAI_API_KEY
+    if (apiKey) {
+      try {
+        const client = new OpenAI({ apiKey })
+        const model  = 'gpt-4o-mini'
+        const prompt = buildExtractionPrompt(type)
+
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = isImageOnly
+          ? [{ role: 'user', content: [
+              { type: 'text',      text: prompt },
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
+            ] }]
+          : imageBase64
+            // imagem + texto: envia ambos para maior precisão
+            ? [{ role: 'user', content: [
+                { type: 'text',      text: `${prompt}\n\nTexto detectado:\n${text}` },
+                { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
+              ] }]
+            : [{ role: 'user', content: `${prompt}\n\n${text}` }]
+
+        // Race com timeout agressivo de 8s — cai no regex se demorar
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('OpenAI timeout')), 8_000)
+        )
+        const aiPromise = client.chat.completions.create({
+          model, messages, temperature: 0, max_tokens: 200,
+        })
+
+        const response = await Promise.race([aiPromise, timeoutPromise])
+        const raw     = response.choices[0]?.message?.content ?? '{}'
+        const cleaned = raw.replace(/```json\n?/g, '').replace(/```/g, '').trim()
+        extracted     = JSON.parse(cleaned)
+        if (!extracted.category && text) extracted.category = detectCategory(text)
+      } catch {
+        extracted = regexResult
+      }
+    } else {
+      extracted = regexResult
+    }
   }
 
   // ── Verifica duplicata pelo ID de transação ───────────────────────────────
