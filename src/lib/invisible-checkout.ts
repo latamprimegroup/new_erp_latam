@@ -28,7 +28,7 @@ const DEFAULT_BLOCKED_ORG_KEYWORDS = [
 ]
 const DEFAULT_DECOY_URL =
   process.env.INVISIBLE_CHECKOUT_BAIT_URL?.trim()
-  || 'https://news.ycombinator.com'
+  || '/isca/ativos-para-operacao'
 
 const DEFAULT_TTL_MINUTES = 60
 const DEFAULT_MAX_USES = 1
@@ -222,6 +222,37 @@ export function buildQuickSaleInvisibleLink(mode: InvisibleCheckoutMode, slug: s
     slug,
   })
   return `${normalizeBaseUrl(baseUrl)}/pay/one/new?${params.toString()}`
+}
+
+export function buildTrackedDecoyUrl(input: {
+  decoyUrl?: string | null
+  reason?: string | null
+  token?: string | null
+  checkoutId?: string | null
+  listingId?: string | null
+  source?: string | null
+  baseUrl?: string | null
+}) {
+  const base = String(input.decoyUrl ?? '').trim()
+  const fallbackBase = `${normalizeBaseUrl(input.baseUrl)}/pagina-isca`
+  const target = base || fallbackBase
+  let url: URL
+  try {
+    url = new URL(target)
+  } catch {
+    url = new URL(fallbackBase)
+  }
+
+  const shortToken = String(input.token ?? '').trim().slice(0, 12)
+  const decoyCode = shortToken || randomBytes(5).toString('hex')
+
+  url.searchParams.set('src', 'invisible-checkout')
+  if (input.source) url.searchParams.set('source', String(input.source).slice(0, 60))
+  if (input.reason) url.searchParams.set('reason', String(input.reason).slice(0, 80))
+  if (input.checkoutId) url.searchParams.set('checkoutId', String(input.checkoutId).slice(0, 80))
+  if (input.listingId) url.searchParams.set('listingId', String(input.listingId).slice(0, 120))
+  url.searchParams.set('code', decoyCode)
+  return url.toString()
 }
 
 export async function issueInvisibleCheckoutAccess(input: {

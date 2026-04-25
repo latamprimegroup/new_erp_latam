@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  buildTrackedDecoyUrl,
   consumeInvisibleCheckoutToken,
   getInvisibleCheckoutDecoyUrl,
   getInvisibleCheckoutPolicy,
@@ -11,10 +12,20 @@ import {
 
 const FALLBACK_DECOY_URL =
   process.env.INVISIBLE_CHECKOUT_BAIT_URL?.trim() ||
-  'https://news.ycombinator.com'
+  '/pagina-isca'
 
-function redirectToDecoy(decoyUrl?: string | null) {
-  return NextResponse.redirect(decoyUrl || FALLBACK_DECOY_URL, 302)
+function redirectToDecoy(req: NextRequest, input?: {
+  decoyUrl?: string | null
+  token?: string
+  reason?: string | null
+}) {
+  const target = buildTrackedDecoyUrl({
+    baseUrl: req.nextUrl.origin,
+    decoyUrl: input?.decoyUrl || FALLBACK_DECOY_URL,
+    token: input?.token,
+    reason: input?.reason,
+  })
+  return NextResponse.redirect(target, 302)
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -56,10 +67,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     }
 
     // Honey Pot: qualquer link expirado/invalidado/exaurido/cancelado vai para página isca.
-    return redirectToDecoy(decoyUrl)
+    return redirectToDecoy(req, {
+      decoyUrl,
+      token,
+      reason: tokenData.reason,
+    })
   }
   if (!tokenData.redirectPath) {
-    return redirectToDecoy(decoyUrl)
+    return redirectToDecoy(req, {
+      decoyUrl,
+      token,
+      reason: 'MISSING_REDIRECT_PATH',
+    })
   }
 
   const intel = await lookupIpIntel(ip).catch(() => ({ countryCode: null as string | null, org: null as string | null }))
@@ -87,7 +106,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         note: 'Acesso bloqueado por política de cloaking.',
       },
     })
-    return redirectToDecoy(decoyUrl)
+    return redirectToDecoy(req, {
+      decoyUrl,
+      token,
+      reason: cloak.reason ?? 'CLOAK_BLOCKED',
+    })
   }
 
   const url = new URL(tokenData.redirectPath, req.nextUrl.origin)
