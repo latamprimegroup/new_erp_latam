@@ -66,6 +66,12 @@ interface GeneratedPix {
   resumeUrl:    string
 }
 
+type VendaRapidaTabProps = {
+  defaultPaymentMode?: 'PIX' | 'GLOBAL'
+  listingModeFilter?: 'PIX' | 'GLOBAL' | 'ALL'
+  showSecurityPanel?: boolean
+}
+
 const ASSET_CATEGORIES = [
   'GOOGLE_ADS', 'META_ADS', 'TIKTOK_ADS', 'AMAZON_ADS',
   'LINKEDIN_ADS', 'PINTEREST_ADS', 'SNAPCHAT_ADS', 'OTHER',
@@ -167,7 +173,11 @@ function getSuggestedLinkStock(item: StockProductSuggestion) {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function VendaRapidaTab() {
+export function VendaRapidaTab({
+  defaultPaymentMode = 'PIX',
+  listingModeFilter = 'ALL',
+  showSecurityPanel = true,
+}: VendaRapidaTabProps) {
   const [listings, setListings]     = useState<Listing[]>([])
   const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
@@ -197,7 +207,7 @@ export function VendaRapidaTab() {
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [stockQty, setStockQty]     = useState('1')
-  const [paymentMode, setPaymentMode] = useState<'PIX' | 'GLOBAL'>('PIX')
+  const [paymentMode, setPaymentMode] = useState<'PIX' | 'GLOBAL'>(defaultPaymentMode)
   const [globalGatewayKast, setGlobalGatewayKast] = useState(true)
   const [globalGatewayMercury, setGlobalGatewayMercury] = useState(true)
   const [copyAutoFilledFromStock, setCopyAutoFilledFromStock] = useState(false)
@@ -224,9 +234,16 @@ export function VendaRapidaTab() {
   const [copiedPix, setCopiedPix] = useState(false)
   const [pixResultWhatsapp, setPixResultWhatsapp] = useState('')
 
+  const filteredListings = useMemo(
+    () => listingModeFilter === 'ALL'
+      ? listings
+      : listings.filter((l) => (l.paymentMode ?? 'PIX') === listingModeFilter),
+    [listings, listingModeFilter],
+  )
+
   const selectedListing = useMemo(
-    () => listings.find((l) => l.id === selectedListingId) ?? null,
-    [listings, selectedListingId],
+    () => filteredListings.find((l) => l.id === selectedListingId) ?? null,
+    [filteredListings, selectedListingId],
   )
 
   const maxPixQty = selectedListing ? Math.min(selectedListing.maxQty, selectedListing.available) : 0
@@ -312,6 +329,17 @@ export function VendaRapidaTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    setSelectedListingId((prev) => {
+      if (prev && filteredListings.some((l) => l.id === prev)) return prev
+      return filteredListings[0]?.id ?? ''
+    })
+  }, [filteredListings])
+  useEffect(() => {
+    if (listingModeFilter === 'PIX' || listingModeFilter === 'GLOBAL') {
+      setPaymentMode(listingModeFilter)
+    }
+  }, [listingModeFilter])
   useEffect(() => {
     if (maxPixQty <= 0) return
     setPixQty((prev) => Math.max(1, Math.min(prev, maxPixQty)))
@@ -415,7 +443,7 @@ export function VendaRapidaTab() {
         setPrice('')
         setMaxQty('10')
         setStockQty('1')
-        setPaymentMode('PIX')
+        setPaymentMode(defaultPaymentMode)
         setGlobalGatewayKast(true)
         setGlobalGatewayMercury(true)
         setCopyAutoFilledFromStock(false)
@@ -611,9 +639,9 @@ export function VendaRapidaTab() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
-  const totalRevenue   = listings.reduce((s, l) => s + l.revenue, 0)
-  const totalPaid      = listings.reduce((s, l) => s + l.paidCheckouts, 0)
-  const totalCheckouts = listings.reduce((s, l) => s + l.totalCheckouts, 0)
+  const totalRevenue   = filteredListings.reduce((s, l) => s + l.revenue, 0)
+  const totalPaid      = filteredListings.reduce((s, l) => s + l.paidCheckouts, 0)
+  const totalCheckouts = filteredListings.reduce((s, l) => s + l.totalCheckouts, 0)
 
   return (
     <div className="space-y-6">

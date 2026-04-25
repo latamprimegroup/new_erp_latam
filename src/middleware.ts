@@ -31,6 +31,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/base': ['ADMIN', 'PRODUCTION_MANAGER'],
   '/dashboard/vendas': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/venda-rapida': ['ADMIN', 'COMMERCIAL'],
+  '/dashboard/venda-rapida-global': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial/seller': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial/manager': ['ADMIN', 'COMMERCIAL'],
