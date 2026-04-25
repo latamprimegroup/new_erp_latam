@@ -43,6 +43,14 @@ let _cachedToken: { token: string; expiresAt: number } | null = null
 
 // ─── Leitura de certificados ──────────────────────────────────────────────────
 
+function firstEnvValue(...keys: string[]) {
+  for (const key of keys) {
+    const value = process.env[key]
+    if (value && value.trim()) return value.trim()
+  }
+  return ''
+}
+
 function normalizePem(raw: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
   const trimmed = raw.trim()
   // Já é PEM completo (com ou sem \n escapados)
@@ -60,8 +68,8 @@ function normalizePem(raw: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string 
 function loadCerts(): { cert: string; key: string } {
   const certsDir = path.join(process.cwd(), 'certs')
 
-  const crtPath = path.join(certsDir, 'inter.crt')
-  const keyPath = path.join(certsDir, 'inter.key')
+  const crtPath = firstEnvValue('INTER_TLS_CERT_PATH', 'BANCO_INTER_TLS_CERT_PATH') || path.join(certsDir, 'inter.crt')
+  const keyPath = firstEnvValue('INTER_TLS_KEY_PATH', 'BANCO_INTER_TLS_KEY_PATH') || path.join(certsDir, 'inter.key')
 
   let certRaw = ''
   let keyRaw  = ''
@@ -70,23 +78,37 @@ function loadCerts(): { cert: string; key: string } {
   if (fs.existsSync(crtPath)) {
     certRaw = fs.readFileSync(crtPath, 'utf-8')
     console.log('[Inter] Certificado carregado de certs/inter.crt')
-  } else if (process.env.INTER_CERT_CRT) {
-    certRaw = process.env.INTER_CERT_CRT
-    console.log('[Inter] Certificado carregado de INTER_CERT_CRT')
+  } else {
+    const certEnv = firstEnvValue(
+      'INTER_CERT_CRT',
+      'INTER_CERT_BASE64',
+      'BANCO_INTER_CERT_BASE64',
+    )
+    if (certEnv) {
+      certRaw = certEnv
+      console.log('[Inter] Certificado carregado de variável de ambiente')
+    }
   }
 
   if (fs.existsSync(keyPath)) {
     keyRaw = fs.readFileSync(keyPath, 'utf-8')
     console.log('[Inter] Chave privada carregada de certs/inter.key')
-  } else if (process.env.INTER_CERT_KEY) {
-    keyRaw = process.env.INTER_CERT_KEY
-    console.log('[Inter] Chave privada carregada de INTER_CERT_KEY')
+  } else {
+    const keyEnv = firstEnvValue(
+      'INTER_CERT_KEY',
+      'INTER_KEY_BASE64',
+      'BANCO_INTER_KEY_BASE64',
+    )
+    if (keyEnv) {
+      keyRaw = keyEnv
+      console.log('[Inter] Chave privada carregada de variável de ambiente')
+    }
   }
 
   if (!certRaw || !keyRaw) {
     throw new InterApiError(
       0,
-      'Certificado mTLS não encontrado. Coloque inter.crt e inter.key em /certs/ ou defina INTER_CERT_CRT e INTER_CERT_KEY',
+      'Certificado mTLS não encontrado. Use inter.crt/inter.key em /certs/ ou variáveis INTER_CERT_* / BANCO_INTER_*',
       'loadCerts',
     )
   }
@@ -124,11 +146,15 @@ export async function getInterToken(): Promise<string> {
     return _cachedToken.token
   }
 
-  const clientId     = process.env.INTER_CLIENT_ID     ?? ''
-  const clientSecret = process.env.INTER_CLIENT_SECRET ?? ''
+  const clientId = firstEnvValue('INTER_CLIENT_ID', 'BANCO_INTER_CLIENT_ID')
+  const clientSecret = firstEnvValue('INTER_CLIENT_SECRET', 'BANCO_INTER_CLIENT_SECRET')
 
   if (!clientId || !clientSecret) {
-    throw new InterApiError(0, 'INTER_CLIENT_ID ou INTER_CLIENT_SECRET não configurados', '/oauth/v2/token')
+    throw new InterApiError(
+      0,
+      'Client ID/Secret do Inter não configurados (INTER_* ou BANCO_INTER_*)',
+      '/oauth/v2/token',
+    )
   }
 
   const body = new URLSearchParams({
@@ -216,9 +242,11 @@ export async function createImmediateCharge(params: {
 }): Promise<CreatePixChargeResult> {
   const token      = await getInterToken()
   const agent      = createMtlsAgent()
-  const chavePix   = process.env.INTER_PIX_KEY ?? ''
+  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY')
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
 
-  if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'createImmediateCharge')
+  if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'createImmediateCharge')
+  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'createImmediateCharge')
 
   const expiracao = params.expiracaoSec ?? 1800
   // txid: [a-zA-Z0-9]{26,35} — remove hífens, garante mínimo de 26 e máximo de 35 chars
@@ -251,7 +279,7 @@ export async function createImmediateCharge(params: {
     headers: {
       Authorization:   `Bearer ${token}`,
       'Content-Type':  'application/json',
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+      'x-conta-corrente': accountNumber,
     },
     body:    JSON.stringify(payload),
     // @ts-expect-error — undici dispatcher
@@ -271,7 +299,7 @@ export async function createImmediateCharge(params: {
   const qrRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
     headers: {
       Authorization:      `Bearer ${token}`,
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+      'x-conta-corrente': accountNumber,
     },
     // @ts-expect-error — undici dispatcher
     dispatcher: agent,
@@ -302,11 +330,13 @@ export const generatePixCharge = createImmediateCharge
 export async function getPixChargeStatus(txid: string): Promise<PixChargeResponse> {
   const token = await getInterToken()
   const agent = createMtlsAgent()
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
+  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', `GET /pix/v2/cob/${txid}`)
 
   const res = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
     headers: {
       Authorization:      `Bearer ${token}`,
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+      'x-conta-corrente': accountNumber,
     },
     // @ts-expect-error
     dispatcher: agent,
@@ -329,16 +359,18 @@ export async function getPixChargeStatus(txid: string): Promise<PixChargeRespons
 export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: boolean; message: string }> {
   const token    = await getInterToken()
   const agent    = createMtlsAgent()
-  const chavePix = process.env.INTER_PIX_KEY ?? ''
+  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY')
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
 
-  if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'registerWebhook')
+  if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'registerWebhook')
+  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'registerWebhook')
 
   const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     method:  'PUT',
     headers: {
       Authorization:      `Bearer ${token}`,
       'Content-Type':     'application/json',
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+      'x-conta-corrente': accountNumber,
     },
     body: JSON.stringify({ webhookUrl: callbackUrl }),
     // @ts-expect-error
@@ -360,12 +392,15 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
 export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; criacao: string } | null> {
   const token    = await getInterToken()
   const agent    = createMtlsAgent()
-  const chavePix = process.env.INTER_PIX_KEY ?? ''
+  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY')
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
+  if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'GET /pix/v2/webhook')
+  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'GET /pix/v2/webhook')
 
   const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     headers: {
       Authorization:      `Bearer ${token}`,
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
+      'x-conta-corrente': accountNumber,
     },
     // @ts-expect-error
     dispatcher: agent,
