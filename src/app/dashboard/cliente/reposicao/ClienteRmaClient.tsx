@@ -354,85 +354,85 @@ export function ClienteRmaClient() {
               const justReplaced   = replaceResult?.rmaId === r.id
 
               return (
-              <li key={r.id}>
-                <div
-                  className={`rounded-lg border px-4 py-3 text-sm transition ${
-                    detailId === r.id ? 'border-violet-500 bg-violet-950/30' : 'border-zinc-800 bg-zinc-950/60'
-                  }`}
-                >
-                  {/* Header */}
-                  <button
-                    type="button"
-                    onClick={() => setDetailId(detailId === r.id ? null : r.id)}
-                    className="w-full text-left"
+                <li key={r.id}>
+                  <div
+                    className={`rounded-lg border px-4 py-3 text-sm transition ${
+                      detailId === r.id ? 'border-violet-500 bg-violet-950/30' : 'border-zinc-800 bg-zinc-950/60'
+                    }`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono text-xs text-zinc-500">
-                        {r.ticketNumber ?? r.id.slice(0, 10)}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {/* Garantia badge */}
-                        {r.withinWarranty === true && (
-                          <span className="flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
-                            <ShieldCheck className="w-2.5 h-2.5" /> GARANTIA
-                          </span>
-                        )}
-                        {r.withinWarranty === false && (
-                          <span className="flex items-center gap-1 rounded bg-zinc-700/50 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500">
-                            <ShieldOff className="w-2.5 h-2.5" /> Garantia expirada
-                          </span>
-                        )}
-                        <span
-                          className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
-                            isReplaced
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : isRejected
-                                ? 'bg-red-500/20 text-red-300'
-                                : 'bg-amber-500/20 text-amber-200'
-                          }`}
-                        >
-                          {STATUS_LABELS[r.status] || r.status}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-zinc-300 mt-1">
-                      Conta: {r.originalAccount.googleAdsCustomerId || r.originalAccount.id.slice(0, 8)}
-                    </p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      Aberto em {new Date(r.openedAt).toLocaleString('pt-BR')}
-                    </p>
-                  </button>
-
-                  {/* Botão de Troca Automática */}
-                  {justReplaced ? (
-                    <div className="mt-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-3 py-2 flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="text-xs text-emerald-300 font-medium">
-                        Troca automática concluída! Novo ativo: <code className="font-mono">{replaceResult?.newAdsId}</code>
-                      </span>
-                    </div>
-                  ) : canSelfReplace ? (
+                    {/* Header */}
                     <button
                       type="button"
-                      onClick={() => requestAutoReplace(r.id)}
-                      disabled={replacing === r.id}
-                      className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition"
+                      onClick={() => setDetailId(detailId === r.id ? null : r.id)}
+                      className="w-full text-left"
                     >
-                      {replacing === r.id
-                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Processando troca...</>
-                        : <><RefreshCw className="w-3.5 h-3.5" /> Solicitar Troca Automática (RMA)</>
-                      }
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-xs text-zinc-500">
+                          {r.ticketNumber ?? r.id.slice(0, 10)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {/* Garantia badge */}
+                          {r.withinWarranty === true && (
+                            <span className="flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                              <ShieldCheck className="w-2.5 h-2.5" /> GARANTIA
+                            </span>
+                          )}
+                          {r.withinWarranty === false && (
+                            <span className="flex items-center gap-1 rounded bg-zinc-700/50 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500">
+                              <ShieldOff className="w-2.5 h-2.5" /> Garantia expirada
+                            </span>
+                          )}
+                          <span
+                            className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
+                              isReplaced
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : isRejected
+                                  ? 'bg-red-500/20 text-red-300'
+                                  : 'bg-amber-500/20 text-amber-200'
+                            }`}
+                          >
+                            {STATUS_LABELS[r.status] || r.status}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-zinc-300 mt-1">
+                        Conta: {r.originalAccount.googleAdsCustomerId || r.originalAccount.id.slice(0, 8)}
+                      </p>
+                      <p className="text-xs text-zinc-500 mt-0.5">
+                        Aberto em {new Date(r.openedAt).toLocaleString('pt-BR')}
+                      </p>
                     </button>
-                  ) : r.withinWarranty === false && isPending ? (
-                    <p className="mt-2 text-[11px] text-zinc-600">
-                      Garantia expirada — troca sujeita a análise da equipa.
-                    </p>
-                  ) : null}
-                </div>
-              </li>
+
+                    {/* Botão de Troca Automática */}
+                    {justReplaced ? (
+                      <div className="mt-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-3 py-2 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span className="text-xs text-emerald-300 font-medium">
+                          Troca automática concluída! Novo ativo: <code className="font-mono">{replaceResult?.newAdsId}</code>
+                        </span>
+                      </div>
+                    ) : canSelfReplace ? (
+                      <button
+                        type="button"
+                        onClick={() => requestAutoReplace(r.id)}
+                        disabled={replacing === r.id}
+                        className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition"
+                      >
+                        {replacing === r.id
+                          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Processando troca...</>
+                          : <><RefreshCw className="w-3.5 h-3.5" /> Solicitar Troca Automática (RMA)</>
+                        }
+                      </button>
+                    ) : r.withinWarranty === false && isPending ? (
+                      <p className="mt-2 text-[11px] text-zinc-600">
+                        Garantia expirada — troca sujeita a análise da equipa.
+                      </p>
+                    ) : null}
+                  </div>
+                </li>
               )
             })
-            ))}
+            }
           </ul>
         )}
       </div>
