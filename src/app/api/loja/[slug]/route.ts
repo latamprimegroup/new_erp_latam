@@ -9,7 +9,7 @@ import { getServerSession } from 'next-auth/next'
 import { prisma }      from '@/lib/prisma'
 import { authOptions } from '@/lib/auth'
 import type { Prisma } from '@prisma/client'
-import { generatePixCharge } from '@/lib/inter/client'
+import { generatePixCharge, InterApiError } from '@/lib/inter/client'
 import { sendUtmifyPixGerado } from '@/lib/utmify'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
@@ -49,6 +49,34 @@ function isRetryableTransactionError(err: unknown) {
   const code = (err as { code?: string }).code
   const msg = String((err as { message?: string }).message ?? '').toLowerCase()
   return code === 'P2034' || msg.includes('could not serialize') || msg.includes('serialization')
+}
+
+function mapInterPixErrorCode(err: unknown): string {
+  if (!(err instanceof InterApiError)) return 'PIX_PROVIDER_UNAVAILABLE'
+  const body = String(err.body || '').toLowerCase()
+  const endpoint = String(err.endpoint || '').toLowerCase()
+  if (body.includes('client id/secret') || body.includes('inter_client_id') || body.includes('banco_inter_client_id')) {
+    return 'INTER_CREDENTIALS_INVALID_OR_MISSING'
+  }
+  if (body.includes('certificado mtls') || body.includes('inter_cert') || body.includes('banco_inter_cert')) {
+    return 'INTER_MTLS_CERT_MISSING_OR_INVALID'
+  }
+  if (body.includes('número da conta') || body.includes('inter_account')) {
+    return 'INTER_ACCOUNT_NUMBER_MISSING_OR_INVALID'
+  }
+  if (body.includes('chave pix') || body.includes('inter_pix_key') || body.includes('banco_inter_pix_key')) {
+    return 'INTER_PIX_KEY_MISSING_OR_INVALID'
+  }
+  if (endpoint.includes('/oauth/v2/token')) {
+    return 'INTER_OAUTH_TOKEN_ERROR'
+  }
+  if (endpoint.includes('/pix/v2/cob') || endpoint.includes('/pix/v2/webhook')) {
+    return 'INTER_PIX_API_ERROR'
+  }
+  if (err.statusCode === 401 || err.statusCode === 403) {
+    return 'INTER_AUTH_FAILED'
+  }
+  return 'INTER_API_ERROR'
 }
 
 function parseSequenceValue(value: string | null | undefined) {
@@ -586,7 +614,11 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     })
   } catch (err) {
     console.error('[Loja PIX]', err)
-    return NextResponse.json({ error: 'Falha ao gerar PIX. Tente novamente.' }, { status: 502 })
+    const code = mapInterPixErrorCode(err)
+    return NextResponse.json({
+      error: 'Falha ao gerar PIX. Tente novamente.',
+      code,
+    }, { status: 502 })
   }
 
   // 2. Reserva ativos de forma ATÔMICA dentro da transação
