@@ -34,6 +34,7 @@ interface StockProductSuggestion {
   isAvailable: boolean
   availableInCategory: number
   availableForName: number
+  totalInBaseForName: number
 }
 
 interface GeneratedPix {
@@ -139,6 +140,7 @@ export function VendaRapidaTab() {
   const [stockSearching, setStockSearching] = useState(false)
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockHighlightedIndex, setStockHighlightedIndex] = useState(-1)
+  const [stockOnlyAvailable, setStockOnlyAvailable] = useState(true)
   const stockSearchWrapRef = useRef<HTMLDivElement | null>(null)
   const stockDropdownRef = useRef<HTMLDivElement | null>(null)
   const [price, setPrice]           = useState('')
@@ -170,7 +172,7 @@ export function VendaRapidaTab() {
 
   useEffect(() => {
     const q = stockSearch.trim()
-    if (q.length < 2) {
+    if (q.length < 1) {
       setStockSuggestions([])
       setStockHighlightedIndex(-1)
       return
@@ -180,7 +182,11 @@ export function VendaRapidaTab() {
     const timer = window.setTimeout(async () => {
       try {
         setStockSearching(true)
-        const res = await fetch(`/api/admin/listings/stock-products?q=${encodeURIComponent(q)}`, {
+        const params = new URLSearchParams({
+          q,
+          onlyAvailable: stockOnlyAvailable ? '1' : '0',
+        })
+        const res = await fetch(`/api/admin/listings/stock-products?${params.toString()}`, {
           signal: ctrl.signal,
           cache: 'no-store',
         })
@@ -199,7 +205,7 @@ export function VendaRapidaTab() {
       ctrl.abort()
       window.clearTimeout(timer)
     }
-  }, [stockSearch])
+  }, [stockSearch, stockOnlyAvailable])
 
   useEffect(() => {
     if (!stockSearchOpen) return
@@ -761,10 +767,10 @@ export function VendaRapidaTab() {
                       }}
                       onFocus={() => setStockSearchOpen(true)}
                       onKeyDown={handleStockSearchKeyDown}
-                      placeholder="Digite AA-CONT-000001 ou nome do produto..."
+                    placeholder="Digite código ou nome do produto..."
                       className="input-dark"
                     />
-                    {stockSearchOpen && stockSearch.trim().length >= 2 ? (
+                    {stockSearchOpen && stockSearch.trim().length >= 1 ? (
                       <div
                         ref={stockDropdownRef}
                         className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto"
@@ -802,7 +808,7 @@ export function VendaRapidaTab() {
                                     {item.isAvailable ? 'Disponível agora' : 'Sem disponibilidade imediata'}
                                   </span>
                                   <span className="text-[10px] text-zinc-400">
-                                    Cat.: {item.availableInCategory} · Nome: {item.availableForName}
+                                    Cat.: {item.availableInCategory} · Nome disp.: {item.availableForName} · Base: {item.totalInBaseForName}
                                   </span>
                                 </div>
                               </div>
@@ -813,6 +819,15 @@ export function VendaRapidaTab() {
                     ) : null}
                   </div>
                 </Field>
+                <label className="flex items-center gap-2 text-xs text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={stockOnlyAvailable}
+                    onChange={(e) => setStockOnlyAvailable(e.target.checked)}
+                    className="accent-emerald-500"
+                  />
+                  Mostrar somente produtos com estoque disponível agora
+                </label>
                 {selectedStockInfo ? (
                   <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2 text-xs text-zinc-300">
                     <p>Produto selecionado: <span className="text-white font-medium">{selectedStockInfo.adsId}</span> · {selectedStockInfo.displayName}</p>
