@@ -35,6 +35,22 @@ const ROLE_LABELS: Record<string, string> = {
   PRODUCTION_MANAGER: 'Gerente produção',
 }
 
+function navBadgeForHref(href: string): { text: string; className: string } | null {
+  if (href === '/dashboard/venda-rapida') {
+    return {
+      text: 'BR',
+      className: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
+    }
+  }
+  if (href === '/dashboard/venda-rapida-global') {
+    return {
+      text: 'INTL',
+      className: 'bg-blue-500/15 text-blue-500 border border-blue-500/30',
+    }
+  }
+  return null
+}
+
 export function ShellEnterprise({
   user,
   children,
@@ -107,7 +123,18 @@ export function ShellEnterprise({
                   return <Icon className="w-4 h-4 shrink-0" />
                 })()}
                 {!sidebarCollapsed && (
-                  <span className="truncate">{m.labelKey ? t(m.labelKey) : m.label}</span>
+                  <span className="truncate flex items-center gap-2">
+                    <span className="truncate">{m.labelKey ? t(m.labelKey) : m.label}</span>
+                    {(() => {
+                      const badge = navBadgeForHref(m.href)
+                      if (!badge) return null
+                      return (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.className}`}>
+                          {badge.text}
+                        </span>
+                      )
+                    })()}
+                  </span>
                 )}
               </Link>
             )
