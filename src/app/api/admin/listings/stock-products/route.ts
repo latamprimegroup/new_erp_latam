@@ -17,10 +17,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const q = (searchParams.get('q') ?? '').trim()
   const limit = Math.min(30, Math.max(1, Number(searchParams.get('limit') ?? 12)))
+  const onlyAvailable = ['1', 'true', 'yes', 'on'].includes(
+    (searchParams.get('onlyAvailable') ?? '').trim().toLowerCase(),
+  )
 
   const assets = await prisma.asset.findMany({
     where: {
       vendor: { suspended: false },
+      ...(onlyAvailable ? { status: 'AVAILABLE' } : {}),
       ...(q
         ? {
             OR: [
@@ -99,7 +103,7 @@ export async function GET(req: NextRequest) {
       category: asset.category,
       subCategory: asset.subCategory,
       salePrice: Number(asset.salePrice),
-      status: asset.status,
+      isAvailable: asset.status === 'AVAILABLE',
       availableInCategory: categoryCounts[asset.category] ?? 0,
       availableForName: nameAvailableCounts[asset.displayName] ?? 0,
       totalInBaseForName: nameTotals[asset.displayName] ?? 0,
