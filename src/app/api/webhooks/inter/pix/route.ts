@@ -583,8 +583,9 @@ export async function POST(req: NextRequest) {
       }
 
       // 3c. Utmify — S2S com retry, profileType tag e persistência de utmifyOrderId
+      // Regra GuardianGate: quando exigir KYC, só envia após aprovação manual.
       let quickUtmifySynced = Boolean(quickCheckout.utmifySent)
-      if (!quickCheckout.utmifySent) {
+      if (!quickCheckout.utmifySent && !riskDecision.requiresKyc) {
         const utmifyResult = await sendUtmifyQuickSaleConversion({
           checkoutId:   quickCheckout.id,
           listingTitle: quickCheckout.listing.title,

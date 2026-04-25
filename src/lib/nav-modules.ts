@@ -253,6 +253,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
+    href: '/dashboard/admin/vendas-pendentes',
+    label: 'Vendas Pendentes (KYC)',
+    roles: ['ADMIN', 'COMMERCIAL'],
+    icon: 'ShieldAlert',
+    group: 'Comercial',
+  },
+  {
     href: '/dashboard/admin/tickets',
     label: 'Tickets & OS',
     roles: ['ADMIN', 'COMMERCIAL'],
