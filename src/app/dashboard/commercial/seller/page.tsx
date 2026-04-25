@@ -1,7 +1,6 @@
 import { getServerSession } from 'next-auth/next'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
-import { canManageCommercialTeam } from '@/lib/commercial-hierarchy'
 import { CommercialSellerClient } from './CommercialSellerClient'
 
 export default async function CommercialSellerPage() {
@@ -10,8 +9,8 @@ export default async function CommercialSellerPage() {
   if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
     redirect('/dashboard')
   }
-  if (canManageCommercialTeam(session.user?.role, session.user?.cargo)) {
-    redirect('/dashboard/commercial/manager')
+  if (!session.user?.id) {
+    redirect('/dashboard')
   }
 
   return (
