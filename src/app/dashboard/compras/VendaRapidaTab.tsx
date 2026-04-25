@@ -125,6 +125,10 @@ function renderHighlightedText(text: string, query: string) {
   )
 }
 
+function getSuggestedLinkStock(item: StockProductSuggestion) {
+  return Math.max(1, item.availableForName || item.availableInCategory || item.totalInBaseForName || 1)
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function VendaRapidaTab() {
@@ -159,6 +163,7 @@ export function VendaRapidaTab() {
   const [paymentMode, setPaymentMode] = useState<'PIX' | 'GLOBAL'>('PIX')
   const [globalGatewayKast, setGlobalGatewayKast] = useState(true)
   const [globalGatewayMercury, setGlobalGatewayMercury] = useState(true)
+  const [copyAutoFilledFromStock, setCopyAutoFilledFromStock] = useState(false)
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
   const [selectedListingId, setSelectedListingId] = useState('')
 
@@ -350,6 +355,7 @@ export function VendaRapidaTab() {
       setPaymentMode('PIX')
       setGlobalGatewayKast(true)
       setGlobalGatewayMercury(true)
+      setCopyAutoFilledFromStock(false)
       setBadge('ENTREGA AUTOMÁTICA')
       load()
     } else {
@@ -368,6 +374,21 @@ export function VendaRapidaTab() {
     setStockProductCode(item.adsId)
     setStockProductName(item.displayName)
     setCategory(item.category)
+    setTitle(item.displayName)
+    setSubtitle(`⚡ Código: ${item.adsId}`)
+    setFullDescription([
+      `✅ Produto da base: ${item.displayName}`,
+      `⚡ ID público: ${item.adsId}`,
+      `🛰️ Categoria: ${item.category.replace('_', ' ')}`,
+      item.isAvailable ? '✅ Estoque disponível agora' : '⏳ Estoque sem disponibilidade imediata',
+    ].join('\n'))
+    if (Number.isFinite(item.salePrice) && item.salePrice > 0) {
+      setPrice(item.salePrice.toFixed(2))
+    }
+    const suggestedStock = getSuggestedLinkStock(item)
+    setStockQty(String(suggestedStock))
+    setMaxQty(String(Math.max(1, Math.min(100, suggestedStock))))
+    setCopyAutoFilledFromStock(true)
     setSelectedStockInfo(item)
     setStockSearch(`${item.adsId} · ${item.displayName}`)
     setStockSearchOpen(false)
@@ -866,16 +887,49 @@ export function VendaRapidaTab() {
                   <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2 text-xs text-zinc-300">
                     <p>Produto selecionado: <span className="text-white font-medium">{selectedStockInfo.adsId}</span> · {selectedStockInfo.displayName}</p>
                     <p className="text-zinc-400 mt-1">Categoria: {selectedStockInfo.category.replace('_', ' ')} · Disponível agora: {selectedStockInfo.isAvailable ? 'SIM' : 'NÃO'}</p>
+                    <p className="text-zinc-500 mt-1">
+                      Copy, preço e estoque inicial do link foram preenchidos automaticamente com base no produto selecionado.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStockQty(String(getSuggestedLinkStock(selectedStockInfo)))}
+                        className="px-2 py-1 rounded-md border border-zinc-600 text-zinc-200 hover:bg-zinc-800 transition"
+                      >
+                        Usar estoque sugerido da base
+                      </button>
+                      <a
+                        href={`/dashboard/estoque?search=${encodeURIComponent(selectedStockInfo.adsId)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-1 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 transition"
+                      >
+                        Adicionar produto no estoque
+                      </a>
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
-                    Selecione um produto da base para garantir vínculo correto na venda.
-                  </p>
+                  <div className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-2 space-y-2">
+                    <p>Selecione um produto da base para garantir vínculo correto na venda.</p>
+                    <a
+                      href="/dashboard/estoque"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex px-2 py-1 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 transition"
+                    >
+                      Adicionar produto no estoque
+                    </a>
+                  </div>
                 )}
               </section>
 
               <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                 <h4 className="text-sm font-semibold text-white">2) Copy comercial (copiar e colar)</h4>
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                  <p className="text-xs text-emerald-200">
+                    Ao selecionar o produto do estoque, nome e copy comercial já são carregados automaticamente.
+                  </p>
+                </div>
                 <Field label="Nome do produto para o cliente">
                   <input
                     required value={title} onChange={(e) => setTitle(e.target.value)}
@@ -883,6 +937,11 @@ export function VendaRapidaTab() {
                     className="input-dark"
                   />
                 </Field>
+                {copyAutoFilledFromStock ? (
+                  <p className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2 py-1">
+                    Copy preenchida automaticamente com base no produto do estoque selecionado.
+                  </p>
+                ) : null}
                 <Field label="Subtítulo (opcional)">
                   <textarea
                     value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
