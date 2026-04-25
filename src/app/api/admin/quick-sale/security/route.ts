@@ -27,6 +27,7 @@ type SecurityPayload = {
   linkExpirationMax: number
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
+  linkSharingAttempts: number
   pendingKycCount: number
   adspowerGroupMap: Record<string, string>
   utmifyTokenPreview: string | null
@@ -41,11 +42,14 @@ function maskToken(token: string | null) {
 }
 
 async function buildSecurityPayload(): Promise<SecurityPayload> {
-  const [minValueForKycBrl, linkExpirationTime, suspiciousEmailDomains, antiFraudBlocks, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
+  const [minValueForKycBrl, linkExpirationTime, suspiciousEmailDomains, antiFraudBlocks, linkSharingAttempts, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
     getMinValueForKycBrl(),
     getInvisibleCheckoutTtlMinutes(),
     getSuspiciousEmailDomains(),
     getQuickSaleAntiFraudCounter(),
+    prisma.auditLog.count({
+      where: { action: 'QUICK_SALE_LINK_SHARING_ATTEMPT' },
+    }).catch(() => 0),
     prisma.quickSaleCheckout.count({
       where: {
         status: 'PAID',
@@ -73,6 +77,7 @@ async function buildSecurityPayload(): Promise<SecurityPayload> {
     linkExpirationMax: INVISIBLE_LINK_EXPIRATION_MAX_MINUTES,
     suspiciousEmailDomains,
     antiFraudBlocks,
+    linkSharingAttempts,
     pendingKycCount,
     adspowerGroupMap,
     utmifyTokenPreview: maskToken(utmifyToken ?? process.env.UTMIFY_API_TOKEN ?? SMART_DELIVERY_DEFAULTS.utmifyToken),
