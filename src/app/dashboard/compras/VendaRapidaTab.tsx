@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -125,6 +125,8 @@ export function VendaRapidaTab() {
   const [stockSearching, setStockSearching] = useState(false)
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
   const [stockHighlightedIndex, setStockHighlightedIndex] = useState(-1)
+  const stockSearchWrapRef = useRef<HTMLDivElement | null>(null)
+  const stockDropdownRef = useRef<HTMLDivElement | null>(null)
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
@@ -184,6 +186,30 @@ export function VendaRapidaTab() {
       window.clearTimeout(timer)
     }
   }, [stockSearch])
+
+  useEffect(() => {
+    if (!stockSearchOpen) return
+    const onPointerDownOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (stockSearchWrapRef.current?.contains(target)) return
+      setStockSearchOpen(false)
+      setStockHighlightedIndex(-1)
+    }
+    document.addEventListener('mousedown', onPointerDownOutside)
+    document.addEventListener('touchstart', onPointerDownOutside)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDownOutside)
+      document.removeEventListener('touchstart', onPointerDownOutside)
+    }
+  }, [stockSearchOpen])
+
+  useEffect(() => {
+    if (!stockSearchOpen || stockHighlightedIndex < 0) return
+    const highlightedNode = stockDropdownRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-stock-idx="${stockHighlightedIndex}"]`)
+    highlightedNode?.scrollIntoView({ block: 'nearest' })
+  }, [stockHighlightedIndex, stockSearchOpen])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -661,7 +687,7 @@ export function VendaRapidaTab() {
                 />
               </Field>
               <Field label="Buscar no estoque por código ou nome">
-                <div className="relative">
+                <div ref={stockSearchWrapRef} className="relative">
                   <input
                     value={stockSearch}
                     onChange={(e) => {
@@ -674,7 +700,10 @@ export function VendaRapidaTab() {
                     className="input-dark"
                   />
                   {stockSearchOpen && stockSearch.trim().length >= 2 ? (
-                    <div className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto">
+                    <div
+                      ref={stockDropdownRef}
+                      className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-h-64 overflow-auto"
+                    >
                       {stockSearching ? (
                         <p className="px-3 py-2 text-xs text-zinc-400">Buscando no estoque...</p>
                       ) : stockSuggestions.length === 0 ? (
@@ -684,6 +713,7 @@ export function VendaRapidaTab() {
                           <button
                             key={item.assetId}
                             type="button"
+                            data-stock-idx={idx}
                             onClick={() => applyStockSuggestion(item)}
                             className={`w-full text-left px-3 py-2 transition border-b border-zinc-800 last:border-b-0 ${
                               idx === stockHighlightedIndex ? 'bg-zinc-800' : 'hover:bg-zinc-800'
