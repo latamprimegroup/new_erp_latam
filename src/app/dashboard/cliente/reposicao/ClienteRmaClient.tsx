@@ -432,7 +432,7 @@ export function ClienteRmaClient() {
               </li>
               )
             })
-            ))}
+            }
           </ul>
         )}
       </div>
