@@ -9,6 +9,7 @@ import {
   type QuickSalePaymentMethod,
 } from '@/lib/quick-sale-payments'
 import { createInvisibleCheckoutLink } from '@/lib/invisible-checkout'
+import { getPublicAppBaseUrl } from '@/lib/public-app-url'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,6 +103,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const appBaseUrl = getPublicAppBaseUrl()
+
     const items = await Promise.all(checkouts.map(async (checkout) => {
       const checkoutMode = checkoutModeByListingId.get(checkout.listing.id) ?? 'PIX'
       const legacyUrl =
@@ -114,6 +117,7 @@ export async function GET(req: NextRequest) {
         mode: checkoutMode,
         maxUses: 1,
         closeOnPaid: true,
+        baseUrl: appBaseUrl,
       }).catch(() => null)
       return {
       checkoutMode,
