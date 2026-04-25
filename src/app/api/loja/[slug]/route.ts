@@ -175,6 +175,47 @@ function buildAssetWhere(listing: {
   return base
 }
 
+async function countAvailableAssetsWithFallback(listing: {
+  assetCategory: string
+  stockProductCode: string | null
+  stockProductName: string | null
+}) {
+  const whereStrict = {
+    ...buildAssetWhere(listing),
+    vendor: { suspended: false },
+  }
+  try {
+    return await prisma.asset.count({ where: whereStrict })
+  } catch (err) {
+    console.error('[Loja GET] Falha no count estrito, aplicando fallback:', err)
+  }
+
+  try {
+    return await prisma.asset.count({
+      where: buildAssetWhere(listing),
+    })
+  } catch (err) {
+    console.error('[Loja GET] Falha no count por vínculo, fallback por categoria:', err)
+  }
+
+  const byCategory = {
+    category: listing.assetCategory as never,
+    status: 'AVAILABLE' as const,
+  }
+  try {
+    return await prisma.asset.count({
+      where: {
+        ...byCategory,
+        vendor: { suspended: false },
+      },
+    })
+  } catch (err) {
+    console.error('[Loja GET] Falha no count categoria+vendor, fallback final:', err)
+  }
+
+  return prisma.asset.count({ where: byCategory })
+}
+
 type ListingLite = {
   id: string
   slug: string
@@ -305,128 +346,127 @@ async function createQuickCheckoutWithFallback(
 // ─── GET: retorna info do produto OU status do checkout ───────────────────────
 
 export async function GET(req: globalThis.Request, { params }: { params: { slug: string } }) {
-  const { searchParams } = new URL(req.url)
-  const checkoutId = searchParams.get('checkoutId')
+  try {
+    const { searchParams } = new URL(req.url)
+    const checkoutId = searchParams.get('checkoutId')
 
-  // Polling de status do checkout
-  if (checkoutId) {
-    let co: {
-      status: string
-      paidAt: Date | null
-      expiresAt: Date | null
-      pixCopyPaste: string | null
-      pixQrCode: string | null
-      totalAmount: Prisma.Decimal
-      qty: number
-      updatedAt: Date
-      listing: { slug: string; title: string }
-      deliveryFlowStatus: string
-      adspowerEmail: string | null
-      adspowerProfileReleased: boolean
-      deliveryRequestedAt: Date | null
-      deliveryStatusNote: string | null
-      deliverySent: boolean
-    } | null = null
-    try {
-      co = await prisma.quickSaleCheckout.findUnique({
-        where: { id: checkoutId },
-        select: {
-          status: true,
-          paidAt: true,
-          expiresAt: true,
-          pixCopyPaste: true,
-          pixQrCode: true,
-          totalAmount: true,
-          qty: true,
-          updatedAt: true,
-          deliveryFlowStatus: true,
-          adspowerEmail: true,
-          adspowerProfileReleased: true,
-          deliveryRequestedAt: true,
-          deliveryStatusNote: true,
-          deliverySent: true,
-          listing: { select: { slug: true, title: true } },
-        },
-      }) as typeof co
-    } catch (err) {
-      if (!isMissingColumnError(err)) throw err
-      const legacy = await prisma.quickSaleCheckout.findUnique({
-        where: { id: checkoutId },
-        select: {
-          status: true,
-          paidAt: true,
-          expiresAt: true,
-          pixCopyPaste: true,
-          pixQrCode: true,
-          totalAmount: true,
-          qty: true,
-          updatedAt: true,
-          listing: { select: { slug: true, title: true } },
+    // Polling de status do checkout
+    if (checkoutId) {
+      let co: {
+        status: string
+        paidAt: Date | null
+        expiresAt: Date | null
+        pixCopyPaste: string | null
+        pixQrCode: string | null
+        totalAmount: Prisma.Decimal
+        qty: number
+        updatedAt: Date
+        listing: { slug: string; title: string }
+        deliveryFlowStatus: string
+        adspowerEmail: string | null
+        adspowerProfileReleased: boolean
+        deliveryRequestedAt: Date | null
+        deliveryStatusNote: string | null
+        deliverySent: boolean
+      } | null = null
+      try {
+        co = await prisma.quickSaleCheckout.findUnique({
+          where: { id: checkoutId },
+          select: {
+            status: true,
+            paidAt: true,
+            expiresAt: true,
+            pixCopyPaste: true,
+            pixQrCode: true,
+            totalAmount: true,
+            qty: true,
+            updatedAt: true,
+            deliveryFlowStatus: true,
+            adspowerEmail: true,
+            adspowerProfileReleased: true,
+            deliveryRequestedAt: true,
+            deliveryStatusNote: true,
+            deliverySent: true,
+            listing: { select: { slug: true, title: true } },
+          },
+        }) as typeof co
+      } catch (err) {
+        if (!isMissingColumnError(err)) throw err
+        const legacy = await prisma.quickSaleCheckout.findUnique({
+          where: { id: checkoutId },
+          select: {
+            status: true,
+            paidAt: true,
+            expiresAt: true,
+            pixCopyPaste: true,
+            pixQrCode: true,
+            totalAmount: true,
+            qty: true,
+            updatedAt: true,
+            listing: { select: { slug: true, title: true } },
+          },
+        })
+        co = legacy
+          ? {
+              ...legacy,
+              deliveryFlowStatus: legacy.status === 'PAID' ? DELIVERY_FLOW.WAITING_CUSTOMER_DATA : DELIVERY_FLOW.PENDING_PAYMENT,
+              adspowerEmail: null,
+              adspowerProfileReleased: false,
+              deliveryRequestedAt: null,
+              deliveryStatusNote: null,
+              deliverySent: false,
+            }
+          : null
+      }
+      if (!co) return NextResponse.json({ error: 'Checkout não encontrado' }, { status: 404 })
+      if (co.listing.slug !== params.slug) {
+        return NextResponse.json({ error: 'Checkout não pertence a este produto' }, { status: 404 })
+      }
+      const orderNumber = await getQuickSaleOrderNumber(checkoutId).catch(() => null)
+      return NextResponse.json({
+        status: co.status,
+        paidAt: co.paidAt,
+        expiresAt: co.expiresAt,
+        pixCopyPaste: co.pixCopyPaste,
+        qrCodeBase64: co.pixQrCode,
+        totalAmount: Number(co.totalAmount),
+        qty: co.qty,
+        title: co.listing.title,
+        orderNumber,
+        updatedAt: co.updatedAt,
+        delivery: {
+          flowStatus: co.deliveryFlowStatus,
+          adspowerEmail: co.adspowerEmail,
+          adspowerProfileReleased: co.adspowerProfileReleased,
+          deliveryRequestedAt: co.deliveryRequestedAt,
+          deliveryStatusNote: co.deliveryStatusNote,
+          deliverySent: co.deliverySent,
         },
       })
-      co = legacy
-        ? {
-            ...legacy,
-            deliveryFlowStatus: legacy.status === 'PAID' ? DELIVERY_FLOW.WAITING_CUSTOMER_DATA : DELIVERY_FLOW.PENDING_PAYMENT,
-            adspowerEmail: null,
-            adspowerProfileReleased: false,
-            deliveryRequestedAt: null,
-            deliveryStatusNote: null,
-            deliverySent: false,
-          }
-        : null
     }
-    if (!co) return NextResponse.json({ error: 'Checkout não encontrado' }, { status: 404 })
-    if (co.listing.slug !== params.slug) {
-      return NextResponse.json({ error: 'Checkout não pertence a este produto' }, { status: 404 })
-    }
-    const orderNumber = await getQuickSaleOrderNumber(checkoutId).catch(() => null)
+
+    const listing = await getListingBySlug(params.slug)
+    if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
+
+    const available = await countAvailableAssetsWithFallback(listing)
+
     return NextResponse.json({
-      status: co.status,
-      paidAt: co.paidAt,
-      expiresAt: co.expiresAt,
-      pixCopyPaste: co.pixCopyPaste,
-      qrCodeBase64: co.pixQrCode,
-      totalAmount: Number(co.totalAmount),
-      qty: co.qty,
-      title: co.listing.title,
-      orderNumber,
-      updatedAt: co.updatedAt,
-      delivery: {
-        flowStatus: co.deliveryFlowStatus,
-        adspowerEmail: co.adspowerEmail,
-        adspowerProfileReleased: co.adspowerProfileReleased,
-        deliveryRequestedAt: co.deliveryRequestedAt,
-        deliveryStatusNote: co.deliveryStatusNote,
-        deliverySent: co.deliverySent,
-      },
+      id:           listing.id,
+      slug:         listing.slug,
+      title:        listing.title,
+      subtitle:     listing.subtitle,
+      fullDescription: listing.fullDescription,
+      badge:        listing.badge,
+      stockProductCode: listing.stockProductCode,
+      stockProductName: listing.stockProductName,
+      pricePerUnit: Number(listing.pricePerUnit),
+      maxQty:       Math.min(listing.maxQty, available),
+      available,
     })
+  } catch (err) {
+    console.error('[Loja GET] Erro inesperado:', err)
+    return NextResponse.json({ error: 'Erro ao carregar produto. Tente novamente.' }, { status: 500 })
   }
-
-  const listing = await getListingBySlug(params.slug)
-  if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
-
-  // Conta estoque disponível — exclui ativos de fornecedores suspensos (stop-loss)
-  const available = await prisma.asset.count({
-    where: {
-      ...buildAssetWhere(listing),
-      vendor: { suspended: false },
-    },
-  })
-
-  return NextResponse.json({
-    id:           listing.id,
-    slug:         listing.slug,
-    title:        listing.title,
-    subtitle:     listing.subtitle,
-    fullDescription: listing.fullDescription,
-    badge:        listing.badge,
-    stockProductCode: listing.stockProductCode,
-    stockProductName: listing.stockProductName,
-    pricePerUnit: Number(listing.pricePerUnit),
-    maxQty:       Math.min(listing.maxQty, available),
-    available,
-  })
 }
 
 // ─── POST: gera PIX ───────────────────────────────────────────────────────────
