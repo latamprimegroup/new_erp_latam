@@ -263,6 +263,20 @@ async function countAvailableAssetsWithFallback(listing: {
   }
 }
 
+async function countAvailableAssetsForListingWithFallback(listing: {
+  assetCategory: string
+  stockProductCode: string | null
+  stockProductName: string | null
+}) {
+  const where = buildAssetWhere(listing)
+  try {
+    return await prisma.asset.count({ where })
+  } catch (err) {
+    console.error('[Loja GET] Falha no count filtrado por listing:', err)
+    return countAvailableAssetsWithFallback(listing)
+  }
+}
+
 type ListingLite = {
   id: string
   slug: string
@@ -496,7 +510,7 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
 
     const stockQtyRemaining = await getListingStockQtyRemaining(listing.id)
-    const availableByAssets = await countAvailableAssetsWithFallback(listing)
+    const availableByAssets = await countAvailableAssetsForListingWithFallback(listing)
     const available = stockQtyRemaining == null
       ? availableByAssets
       : Math.min(availableByAssets, stockQtyRemaining)
