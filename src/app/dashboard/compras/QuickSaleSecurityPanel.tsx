@@ -278,7 +278,7 @@ export function QuickSaleSecurityPanel() {
     <section className="border border-violet-500/30 rounded-2xl p-5 bg-violet-500/5 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="text-base font-bold text-white">SmartDeliverySystem (Visao CEO)</h3>
+          <h3 className="text-base font-bold text-white">SmartDeliverySystem (Visão CEO)</h3>
           <p className="text-xs text-zinc-400">
             Regra de gatilho KYC, antifraude, blacklist e aprovacao manual.
           </p>
