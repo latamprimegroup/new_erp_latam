@@ -88,6 +88,22 @@ function normalizeWhatsapp(raw: string) {
   return ''
 }
 
+function escapeRegExp(v: string) {
+  return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function renderHighlightedText(text: string, query: string) {
+  const q = query.trim()
+  if (!q) return text
+  const regex = new RegExp(`(${escapeRegExp(q)})`, 'ig')
+  const parts = text.split(regex)
+  return parts.map((part, idx) =>
+    part.toLowerCase() === q.toLowerCase()
+      ? <mark key={`${part}-${idx}`} className="bg-emerald-500/20 text-emerald-200 rounded px-0.5">{part}</mark>
+      : <span key={`${part}-${idx}`}>{part}</span>,
+  )
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function VendaRapidaTab() {
@@ -108,6 +124,7 @@ export function VendaRapidaTab() {
   const [stockSuggestions, setStockSuggestions] = useState<StockProductSuggestion[]>([])
   const [stockSearching, setStockSearching] = useState(false)
   const [stockSearchOpen, setStockSearchOpen] = useState(false)
+  const [stockHighlightedIndex, setStockHighlightedIndex] = useState(-1)
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
@@ -139,6 +156,7 @@ export function VendaRapidaTab() {
     const q = stockSearch.trim()
     if (q.length < 2) {
       setStockSuggestions([])
+      setStockHighlightedIndex(-1)
       return
     }
 
@@ -153,6 +171,7 @@ export function VendaRapidaTab() {
         if (!res.ok) return
         const data = await res.json() as { items?: StockProductSuggestion[] }
         setStockSuggestions(data.items ?? [])
+        setStockHighlightedIndex((data.items?.length ?? 0) > 0 ? 0 : -1)
       } catch {
         // ignora erros de rede/abort para não quebrar UX
       } finally {
@@ -241,6 +260,7 @@ export function VendaRapidaTab() {
       setStockSearch('')
       setStockSuggestions([])
       setStockSearchOpen(false)
+      setStockHighlightedIndex(-1)
       setPrice('')
       setMaxQty('10')
       setBadge('ENTREGA AUTOMÁTICA')
@@ -257,6 +277,33 @@ export function VendaRapidaTab() {
     setCategory(item.category)
     setStockSearch(`${item.adsId} · ${item.displayName}`)
     setStockSearchOpen(false)
+    setStockHighlightedIndex(-1)
+  }
+
+  const handleStockSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!stockSearchOpen || stockSuggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setStockHighlightedIndex((prev) => (prev + 1) % stockSuggestions.length)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setStockHighlightedIndex((prev) => (prev <= 0 ? stockSuggestions.length - 1 : prev - 1))
+      return
+    }
+    if (e.key === 'Enter') {
+      if (stockHighlightedIndex >= 0 && stockHighlightedIndex < stockSuggestions.length) {
+        e.preventDefault()
+        applyStockSuggestion(stockSuggestions[stockHighlightedIndex])
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setStockSearchOpen(false)
+      setStockHighlightedIndex(-1)
+    }
   }
 
   const handleCreatePixTest = async (e: React.FormEvent) => {
@@ -622,6 +669,7 @@ export function VendaRapidaTab() {
                       setStockSearchOpen(true)
                     }}
                     onFocus={() => setStockSearchOpen(true)}
+                    onKeyDown={handleStockSearchKeyDown}
                     placeholder="Digite AA-CONT-000001 ou nome do produto..."
                     className="input-dark"
                   />
@@ -632,17 +680,32 @@ export function VendaRapidaTab() {
                       ) : stockSuggestions.length === 0 ? (
                         <p className="px-3 py-2 text-xs text-zinc-500">Nenhum produto encontrado.</p>
                       ) : (
-                        stockSuggestions.map((item) => (
+                        stockSuggestions.map((item, idx) => (
                           <button
                             key={item.assetId}
                             type="button"
                             onClick={() => applyStockSuggestion(item)}
-                            className="w-full text-left px-3 py-2 hover:bg-zinc-800 transition border-b border-zinc-800 last:border-b-0"
+                            className={`w-full text-left px-3 py-2 transition border-b border-zinc-800 last:border-b-0 ${
+                              idx === stockHighlightedIndex ? 'bg-zinc-800' : 'hover:bg-zinc-800'
+                            }`}
                           >
-                            <p className="text-xs text-zinc-200 font-medium">{item.adsId} · {item.displayName}</p>
-                            <p className="text-[11px] text-zinc-500">
-                              {item.category.replace('_', ' ')} · R$ {item.salePrice.toFixed(2)} · disp categoria: {item.availableInCategory}
-                            </p>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs text-zinc-200 font-medium">
+                                  {renderHighlightedText(item.adsId, stockSearch)} · {renderHighlightedText(item.displayName, stockSearch)}
+                                </p>
+                                <p className="text-[11px] text-zinc-500">
+                                  {item.category.replace('_', ' ')} · R$ {item.salePrice.toFixed(2)}
+                                </p>
+                              </div>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                item.availableInCategory > 0
+                                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                  : 'border-red-500/40 bg-red-500/10 text-red-300'
+                              }`}>
+                                Estoque: {item.availableInCategory}
+                              </span>
+                            </div>
                           </button>
                         ))
                       )}
