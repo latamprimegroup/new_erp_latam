@@ -295,6 +295,7 @@ export function VendasClient() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
+  const [readingTxt, setReadingTxt] = useState(false)
   const [clientLtv, setClientLtv] = useState<ClientLTV | null>(null)
   const [ltvLoading, setLtvLoading] = useState(false)
 
@@ -436,6 +437,41 @@ export function VendasClient() {
       setFormError(err.error || 'Erro ao registrar venda.')
     }
     setSubmitting(false)
+  }
+
+  async function handleDeliveredIdsTxtUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+      setFormError('Envie um arquivo .txt válido para importar os IDs dos ativos.')
+      e.target.value = ''
+      return
+    }
+
+    setReadingTxt(true)
+    setFormError('')
+    try {
+      const raw = await file.text()
+      const ids = raw
+        .split(/[\n,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 200)
+
+      if (ids.length === 0) {
+        setFormError('O arquivo TXT está vazio ou sem IDs válidos para importar.')
+        return
+      }
+
+      setForm((f) => ({ ...f, deliveredAssetIdsText: ids.join('\n') }))
+      setShowAdvanced(true)
+    } catch {
+      setFormError('Não foi possível ler o arquivo TXT. Tente novamente.')
+    } finally {
+      setReadingTxt(false)
+      e.target.value = ''
+    }
   }
 
   return (
@@ -740,6 +776,20 @@ export function VendasClient() {
                   <label className="block text-sm font-medium mb-1">
                     IDs dos ativos (Ads / AdsPower / BM) — um por linha ou separados por vírgula
                   </label>
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center px-3 py-1.5 rounded-lg border border-primary-600/40 text-primary-700 bg-primary-50 hover:bg-primary-100 cursor-pointer text-xs font-medium transition">
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        onChange={handleDeliveredIdsTxtUpload}
+                      />
+                      {readingTxt ? 'Lendo TXT...' : 'Importar arquivo .txt'}
+                    </label>
+                    <span className="text-[11px] text-gray-500">
+                      Use um ID por linha (ou separado por vírgula/;).
+                    </span>
+                  </div>
                   <textarea
                     value={form.deliveredAssetIdsText}
                     onChange={(e) =>
