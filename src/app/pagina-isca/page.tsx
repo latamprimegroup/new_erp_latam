@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { DecoyWhatsAppCta } from './DecoyWhatsAppCta'
 
 const WA_NUMBER_RAW =
   process.env.NEXT_PUBLIC_WHATSAPP_NUMBER
@@ -58,14 +59,17 @@ export default function PaginaIscaPage({ searchParams }: DecoyPageProps) {
             <li>Atendimento rápido via WhatsApp com rastreio de origem</li>
           </ul>
           <div className="flex flex-wrap gap-3 pt-2">
-            <a
+            <DecoyWhatsAppCta
               href={waHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition"
-            >
-              Chamar no WhatsApp
-            </a>
+              tracking={{
+                source,
+                reason,
+                code,
+                token,
+                checkoutId: firstSearchParam(searchParams.checkoutId) || '',
+                listingId: firstSearchParam(searchParams.listingId) || '',
+              }}
+            />
             <Link
               href="/"
               className="inline-flex items-center justify-center rounded-xl border border-zinc-700 hover:border-zinc-500 px-4 py-2 text-sm font-semibold text-zinc-200 transition"
