@@ -4,6 +4,17 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
+const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
+
+function listingStockQtyKey(listingId: string) {
+  return `${LISTING_STOCK_QTY_PREFIX}${listingId}`
+}
+
+function parseStockQty(raw: string | null | undefined): number | null {
+  const n = Number.parseInt(String(raw ?? '').trim(), 10)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,6 +45,20 @@ export async function GET(req: NextRequest) {
     },
     take: 80,
   })
+  const stockQtySettings = listings.length > 0
+    ? await prisma.systemSetting.findMany({
+        where: {
+          key: { in: listings.map((l) => listingStockQtyKey(l.id)) },
+        },
+        select: { key: true, value: true },
+      })
+    : []
+  const configuredStockByListing = new Map<string, number>()
+  for (const setting of stockQtySettings) {
+    const listingId = setting.key.replace(LISTING_STOCK_QTY_PREFIX, '')
+    const qty = parseStockQty(setting.value)
+    if (listingId && qty) configuredStockByListing.set(listingId, qty)
+  }
 
   const categories = Array.from(new Set(listings.map((l) => l.assetCategory)))
 
@@ -112,6 +137,10 @@ export async function GET(req: NextRequest) {
   const items = listings.map((listing) => {
     const available       = availableMap.get(listing.assetCategory) ?? 0
     const blockedByStopLoss = suspendedMap.get(listing.assetCategory) ?? 0
+    const configuredStockQty = configuredStockByListing.get(listing.id) ?? null
+    const effectiveAvailable = configuredStockQty == null
+      ? available
+      : Math.min(available, configuredStockQty)
     return {
       id: listing.id,
       slug: listing.slug,
@@ -122,7 +151,8 @@ export async function GET(req: NextRequest) {
       pricePerUnit: Number(listing.pricePerUnit),
       maxQty: listing.maxQty,
       active: listing.active,
-      available,                // já exclui ativos de fornecedores suspensos
+      available: effectiveAvailable, // já exclui ativos de fornecedores suspensos
+      stockQtyConfigured: configuredStockQty,
       blockedByStopLoss,        // quantos ativos estão bloqueados por stop-loss
       stopLossWarning: blockedByStopLoss > 0,
       previewAssets: previewByCategory.get(listing.assetCategory) ?? [],

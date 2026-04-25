@@ -8,6 +8,18 @@ import { getServerSession } from 'next-auth'
 import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
 
+const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
+
+function listingStockQtyKey(listingId: string) {
+  return `${LISTING_STOCK_QTY_PREFIX}${listingId}`
+}
+
+function parseStockQty(raw: string | null | undefined): number | null {
+  const n = Number.parseInt(String(raw ?? '').trim(), 10)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n
+}
+
 async function requireAccess() {
   const session = await getServerSession(authOptions)
   if (!session?.user) return null
@@ -25,6 +37,7 @@ const createSchema = z.object({
   stockProductName: z.string().max(200).optional(),
   pricePerUnit:  z.number().positive(),
   maxQty:        z.number().int().min(1).max(100).default(10),
+  stockQty:      z.number().int().min(1).max(100000).optional(),
   badge:         z.string().max(100).optional(),
   active:        z.boolean().default(true),
 })
@@ -42,6 +55,23 @@ export async function GET() {
     },
   })
 
+  const stockQtySettings = listings.length > 0
+    ? await prisma.systemSetting.findMany({
+        where: {
+          key: {
+            in: listings.map((l) => listingStockQtyKey(l.id)),
+          },
+        },
+        select: { key: true, value: true },
+      })
+    : []
+  const configuredStockByListing = new Map<string, number>()
+  for (const setting of stockQtySettings) {
+    const listingId = setting.key.replace(LISTING_STOCK_QTY_PREFIX, '')
+    const qty = parseStockQty(setting.value)
+    if (listingId && qty) configuredStockByListing.set(listingId, qty)
+  }
+
   // Conta disponíveis por categoria
   const enriched = await Promise.all(
     listings.map(async (l) => {
@@ -51,10 +81,19 @@ export async function GET() {
       const paidCheckouts = await prisma.quickSaleCheckout.count({
         where: { listingId: l.id, status: 'PAID' },
       })
+      const reservedQty = await prisma.quickSaleCheckout.aggregate({
+        where: { listingId: l.id, status: { in: ['PENDING', 'PAID'] } },
+        _sum: { qty: true },
+      })
       const revenue = await prisma.quickSaleCheckout.aggregate({
         where:  { listingId: l.id, status: 'PAID' },
         _sum:   { totalAmount: true },
       })
+      const configuredStockQty = configuredStockByListing.get(l.id) ?? null
+      const remainingStockQty = configuredStockQty == null
+        ? null
+        : Math.max(0, configuredStockQty - Number(reservedQty._sum.qty ?? 0))
+      const effectiveAvailable = remainingStockQty ?? available
       return {
         id:           l.id,
         slug:         l.slug,
@@ -68,7 +107,9 @@ export async function GET() {
         pricePerUnit: Number(l.pricePerUnit),
         maxQty:       l.maxQty,
         active:       l.active,
-        available,
+        available: effectiveAvailable,
+        stockQtyConfigured: configuredStockQty,
+        stockQtyRemaining: remainingStockQty,
         totalCheckouts: l._count.checkouts,
         paidCheckouts,
         revenue:      Number(revenue._sum.totalAmount ?? 0),
@@ -132,5 +173,22 @@ export async function POST(req: globalThis.Request) {
     },
   })
 
-  return NextResponse.json({ ...listing, slug }, { status: 201 })
+  if (d.stockQty && d.stockQty > 0) {
+    await prisma.systemSetting.upsert({
+      where: { key: listingStockQtyKey(listing.id) },
+      create: {
+        key: listingStockQtyKey(listing.id),
+        value: String(d.stockQty),
+      },
+      update: {
+        value: String(d.stockQty),
+      },
+    })
+  }
+
+  return NextResponse.json({
+    ...listing,
+    slug,
+    stockQtyConfigured: d.stockQty ?? null,
+  }, { status: 201 })
 }

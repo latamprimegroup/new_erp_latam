@@ -17,6 +17,8 @@ interface Listing {
   stockProductName: string | null
   pricePerUnit:   number
   maxQty:         number
+  stockQtyConfigured?: number | null
+  stockQtyRemaining?: number | null
   active:         boolean
   available:      number
   totalCheckouts: number
@@ -145,6 +147,7 @@ export function VendaRapidaTab() {
   const stockDropdownRef = useRef<HTMLDivElement | null>(null)
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
+  const [stockQty, setStockQty]     = useState('1')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
   const [selectedListingId, setSelectedListingId] = useState('')
 
@@ -291,6 +294,7 @@ export function VendaRapidaTab() {
         stockProductName: stockProductName.trim() || undefined,
         pricePerUnit:  parseFloat(price),
         maxQty:        parseInt(maxQty),
+        stockQty:      parseInt(stockQty),
         badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
         active:        true,
       }),
@@ -316,6 +320,7 @@ export function VendaRapidaTab() {
       setStockHighlightedIndex(-1)
       setPrice('')
       setMaxQty('10')
+      setStockQty('1')
       setBadge('ENTREGA AUTOMÁTICA')
       load()
     } else {
@@ -916,6 +921,15 @@ export function VendaRapidaTab() {
                       className="input-dark"
                     />
                   </Field>
+                  <Field label="Estoque inicial para o link (quantidade)">
+                    <input
+                      type="number" min="1" max="100000"
+                      value={stockQty} onChange={(e) => setStockQty(e.target.value)}
+                      className="input-dark"
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <Field label="Badge (topo da página)">
                     <input
                       value={badge} onChange={(e) => setBadge(e.target.value)}
@@ -994,6 +1008,12 @@ export function VendaRapidaTab() {
                         Vínculo estoque: {l.stockProductCode || '—'} {l.stockProductName ? `· ${l.stockProductName}` : ''}
                       </p>
                     )}
+                    {typeof l.stockQtyConfigured === 'number' ? (
+                      <p className="text-zinc-500 text-[11px] mt-1">
+                        Estoque configurado no link: {l.stockQtyConfigured}
+                        {typeof l.stockQtyRemaining === 'number' ? ` · restante: ${l.stockQtyRemaining}` : ''}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
