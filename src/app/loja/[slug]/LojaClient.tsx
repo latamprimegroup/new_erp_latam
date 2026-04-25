@@ -62,6 +62,14 @@ interface CheckoutStatusResponse {
 
 type Step = 'form' | 'pix' | 'delivery' | 'error' | 'loading'
 type DocType = 'cpf' | 'cnpj'
+type RetryableCheckoutInput = {
+  name: string
+  docType: DocType
+  doc: string
+  phone: string
+  email: string
+  qty: number
+}
 
 const DELIVERY_FLOW_LABELS: Record<DeliveryFlowStatus, { title: string; description: string; order: number }> = {
   PENDING_PAYMENT: {
@@ -244,6 +252,10 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const [deliverySaving, setDeliverySaving] = useState(false)
   const [deliveryError, setDeliveryError] = useState('')
   const [deliverySuccessMsg, setDeliverySuccessMsg] = useState('')
+  const [checkingPayment, setCheckingPayment] = useState(false)
+  const [paymentCheckHint, setPaymentCheckHint] = useState('')
+  const [retryingCheckout, setRetryingCheckout] = useState(false)
+  const [lastCheckoutInput, setLastCheckoutInput] = useState<RetryableCheckoutInput | null>(null)
 
   const pixelFiredRef = useRef(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -363,27 +375,32 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     }
   }, [secs, step])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!product) return
-    setSubmitting(true)
-    setErrorMsg('')
+  useEffect(() => {
+    if (step !== 'pix') setPaymentCheckHint('')
+  }, [step])
 
-    const waClean = phone.replace(/\D/g, '')
+  const createPixCheckout = async (input: RetryableCheckoutInput, fromRetry = false) => {
+    if (!product) return
+    if (fromRetry) setRetryingCheckout(true)
+    else setSubmitting(true)
+    setErrorMsg('')
+    setPaymentCheckHint('')
+
+    const waClean = input.phone.replace(/\D/g, '')
     const waE164 = `+55${waClean}`
-    const docClean = doc.replace(/\D/g, '')
+    const docClean = input.doc.replace(/\D/g, '')
     const utmPayload = utmsRef.current ? buildUtmPayload(utmsRef.current) : {}
 
     const body: Record<string, unknown> = {
-      name: name.trim(),
+      name: input.name.trim(),
       whatsapp: waE164,
-      email: email.trim() || undefined,
-      qty,
+      email: input.email.trim() || undefined,
+      qty: Math.max(1, Math.min(input.qty, product.maxQty, product.available)),
       sellerRef: sellerRef || undefined,
       ...utmPayload,
     }
-    if (docType === 'cnpj') body.cnpj = docClean
-    else body.cpf = doc
+    if (input.docType === 'cnpj') body.cnpj = docClean
+    else body.cpf = docClean
 
     const res = await fetch(`/api/loja/${slug}`, {
       method: 'POST',
@@ -391,7 +408,8 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
       body: JSON.stringify(body),
     })
     const data = await res.json()
-    setSubmitting(false)
+    if (fromRetry) setRetryingCheckout(false)
+    else setSubmitting(false)
 
     if (!res.ok) {
       setErrorMsg(data.error ?? 'Erro ao gerar PIX.')
@@ -400,9 +418,39 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     }
 
     const generated = data as PixData
+    setLastCheckoutInput(input)
     setPixData(generated)
     setStep('pix')
     startPolling(generated.checkoutId)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await createPixCheckout({
+      name,
+      docType,
+      doc,
+      phone,
+      email,
+      qty,
+    })
+  }
+
+  const checkPaymentNow = async () => {
+    if (!pixData) return
+    setCheckingPayment(true)
+    setPaymentCheckHint('')
+    try {
+      const checkout = await fetchCheckoutStatus(pixData.checkoutId)
+      applyCheckoutStatus(checkout, pixData.checkoutId)
+      if (checkout.status === 'PENDING') {
+        setPaymentCheckHint('Pagamento ainda não confirmado. Continuaremos atualizando automaticamente.')
+      }
+    } catch {
+      setPaymentCheckHint('Não foi possível validar agora. Tente novamente em instantes.')
+    } finally {
+      setCheckingPayment(false)
+    }
   }
 
   const handleDeliverySubmit = async (e: React.FormEvent) => {
@@ -467,12 +515,27 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   }
 
   if (step === 'error') {
+    const canRetryExpired = Boolean(
+      lastCheckoutInput && /expirou|expirad/i.test(errorMsg),
+    )
     return (
       <main className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full text-center space-y-4">
           <div className="text-4xl">❌</div>
           <p className="text-white font-semibold text-lg">Ops!</p>
           <p className="text-zinc-400 text-sm">{errorMsg}</p>
+          {canRetryExpired ? (
+            <button
+              onClick={() => {
+                if (!lastCheckoutInput) return
+                void createPixCheckout(lastCheckoutInput, true)
+              }}
+              disabled={retryingCheckout}
+              className="w-full py-3 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60 transition"
+            >
+              {retryingCheckout ? 'Gerando novo pagamento...' : 'Gerar novo pagamento com os mesmos dados'}
+            </button>
+          ) : null}
           <button
             onClick={() => { setErrorMsg(''); setStep('form') }}
             className="w-full py-3 rounded-xl bg-zinc-800 text-white text-sm font-medium hover:bg-zinc-700 transition"
@@ -564,6 +627,19 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             <div className="flex items-center gap-2 justify-center">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <p className="text-zinc-500 text-xs">Aguardando confirmação do banco...</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={checkPaymentNow}
+                disabled={checkingPayment}
+                className="w-full py-2.5 rounded-xl border border-zinc-700 text-zinc-100 text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-60"
+              >
+                {checkingPayment ? 'Validando pagamento...' : 'Já paguei — validar agora'}
+              </button>
+              {paymentCheckHint ? (
+                <p className="text-xs text-zinc-400 text-center">{paymentCheckHint}</p>
+              ) : null}
             </div>
           </div>
         </div>
