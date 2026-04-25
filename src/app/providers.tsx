@@ -1,21 +1,26 @@
 'use client'
 
-import { SessionProvider } from 'next-auth/react'
+import dynamic from 'next/dynamic'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { GTMProvider } from '@/components/GTMProvider'
 import { FooterCustomScripts } from '@/components/FooterCustomScripts'
 import { JoinChatWidget } from '@/components/JoinChatWidget'
 
+const SessionAuthProvider = dynamic(
+  () => import('@/components/auth/SessionAuthProvider').then((m) => m.SessionAuthProvider),
+  { ssr: false },
+)
+
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <SessionProvider>
+      <SessionAuthProvider>
         <GTMProvider>
           {children}
           <JoinChatWidget />
           <FooterCustomScripts />
         </GTMProvider>
-      </SessionProvider>
+      </SessionAuthProvider>
     </ThemeProvider>
   )
 }
