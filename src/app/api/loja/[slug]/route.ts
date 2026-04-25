@@ -13,6 +13,7 @@ import { generatePixCharge, InterApiError } from '@/lib/inter/client'
 import { sendUtmifyPixGerado } from '@/lib/utmify'
 import { sendWhatsApp } from '@/lib/notifications/channels/whatsapp'
 import { getPublicAppBaseUrl } from '@/lib/public-app-url'
+import { listingPaymentModeKey, parseQuickSalePaymentMode } from '@/lib/quick-sale-payments'
 
 const DELIVERY_FLOW = {
   PENDING_PAYMENT: 'PENDING_PAYMENT',
@@ -196,6 +197,14 @@ async function getListingStockQtyRemaining(listingId: string) {
   })
   const used = Number(reserved._sum.qty ?? 0)
   return Math.max(0, configured - used)
+}
+
+async function getListingPaymentMode(listingId: string) {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: listingPaymentModeKey(listingId) },
+    select: { value: true },
+  })
+  return parseQuickSalePaymentMode(setting?.value)
 }
 
 function buildAssetWhere(listing: {
@@ -535,6 +544,16 @@ const schema = z.object({
 export async function POST(req: globalThis.Request, { params }: { params: { slug: string } }) {
   const listing = await getListingBySlug(params.slug)
   if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
+  const listingPaymentModeSetting = await prisma.systemSetting.findUnique({
+    where: { key: listingPaymentModeKey(listing.id) },
+    select: { value: true },
+  }).catch(() => null)
+  const listingPaymentMode = parseQuickSalePaymentMode(listingPaymentModeSetting?.value)
+  if (listingPaymentMode === 'GLOBAL') {
+    return NextResponse.json({
+      error: 'Este link foi configurado como Venda Rápida Global. Use /loja-global para gerar pagamento Kast/Mercury.',
+    }, { status: 409 })
+  }
 
   let body: unknown
   try { body = await req.json() } catch {

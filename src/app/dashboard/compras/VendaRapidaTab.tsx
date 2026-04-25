@@ -19,6 +19,9 @@ interface Listing {
   maxQty:         number
   stockQtyConfigured?: number | null
   stockQtyRemaining?: number | null
+  paymentMode?: 'PIX' | 'GLOBAL'
+  globalGateways?: ('KAST' | 'MERCURY')[]
+  paymentMethods?: ('PIX' | 'KAST' | 'MERCURY')[]
   active:         boolean
   available:      number
   totalCheckouts: number
@@ -64,6 +67,11 @@ function getRuntimeBaseUrl() {
 function buildPublicCheckoutUrl(slug: string) {
   const base = getRuntimeBaseUrl()
   return `${base}/loja/${slug}`
+}
+
+function buildPublicGlobalCheckoutUrl(slug: string) {
+  const base = getRuntimeBaseUrl()
+  return `${base}/loja-global/${slug}`
 }
 
 function formatCpf(v: string) {
@@ -148,8 +156,18 @@ export function VendaRapidaTab() {
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [stockQty, setStockQty]     = useState('1')
+  const [paymentMode, setPaymentMode] = useState<'PIX' | 'GLOBAL'>('PIX')
+  const [globalGatewayKast, setGlobalGatewayKast] = useState(true)
+  const [globalGatewayMercury, setGlobalGatewayMercury] = useState(true)
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
   const [selectedListingId, setSelectedListingId] = useState('')
+
+  const selectedGlobalGateways = useMemo(() => {
+    const methods: ('KAST' | 'MERCURY')[] = []
+    if (globalGatewayKast) methods.push('KAST')
+    if (globalGatewayMercury) methods.push('MERCURY')
+    return methods
+  }, [globalGatewayKast, globalGatewayMercury])
 
   // Teste rápido PIX integrado
   const [pixBuyerName, setPixBuyerName] = useState('')
@@ -257,8 +275,10 @@ export function VendaRapidaTab() {
     setPixQty((prev) => Math.max(1, Math.min(prev, maxPixQty)))
   }, [maxPixQty])
 
-  const copyLink = async (slug: string) => {
-    const url = buildPublicCheckoutUrl(slug)
+  const copyLink = async (slug: string, mode?: 'PIX' | 'GLOBAL') => {
+    const url = mode === 'GLOBAL'
+      ? buildPublicGlobalCheckoutUrl(slug)
+      : buildPublicCheckoutUrl(slug)
     await navigator.clipboard.writeText(url)
     setCopiedId(slug)
     setTimeout(() => setCopiedId(null), 2500)
@@ -295,6 +315,8 @@ export function VendaRapidaTab() {
         pricePerUnit:  parseFloat(price),
         maxQty:        parseInt(maxQty),
         stockQty:      parseInt(stockQty),
+        paymentMode,
+        globalGateways: selectedGlobalGateways,
         badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
         active:        true,
       }),
@@ -303,7 +325,11 @@ export function VendaRapidaTab() {
     const data = await res.json().catch(() => ({})) as { slug?: string; title?: string; error?: string }
     if (res.ok) {
       if (data.slug) {
-        setGeneratedLink(buildPublicCheckoutUrl(data.slug))
+        const generatedMode = (data as { paymentMode?: 'PIX' | 'GLOBAL' }).paymentMode ?? paymentMode
+        const link = generatedMode === 'GLOBAL'
+          ? buildPublicGlobalCheckoutUrl(data.slug)
+          : buildPublicCheckoutUrl(data.slug)
+        setGeneratedLink(link)
         setGeneratedLinkTitle(data.title ?? title.trim())
         setGeneratedLinkCopied(false)
       }
@@ -321,6 +347,9 @@ export function VendaRapidaTab() {
       setPrice('')
       setMaxQty('10')
       setStockQty('1')
+      setPaymentMode('PIX')
+      setGlobalGatewayKast(true)
+      setGlobalGatewayMercury(true)
       setBadge('ENTREGA AUTOMÁTICA')
       load()
     } else {
@@ -929,6 +958,70 @@ export function VendaRapidaTab() {
                     />
                   </Field>
                 </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                  <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">Modo de pagamento do link</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                      paymentMode === 'PIX'
+                        ? 'border-emerald-500/50 bg-emerald-500/10'
+                        : 'border-zinc-700 bg-zinc-900/60'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="paymentMode"
+                        checked={paymentMode === 'PIX'}
+                        onChange={() => setPaymentMode('PIX')}
+                        className="sr-only"
+                      />
+                      <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
+                      <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
+                    </label>
+                    <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                      paymentMode === 'GLOBAL'
+                        ? 'border-emerald-500/50 bg-emerald-500/10'
+                        : 'border-zinc-700 bg-zinc-900/60'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="paymentMode"
+                        checked={paymentMode === 'GLOBAL'}
+                        onChange={() => setPaymentMode('GLOBAL')}
+                        className="sr-only"
+                      />
+                      <p className="text-sm font-medium text-white">Venda rápida Global</p>
+                      <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
+                    </label>
+                  </div>
+
+                  {paymentMode === 'GLOBAL' ? (
+                    <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
+                      <p className="text-xs text-zinc-300">Gateways habilitados para o link global:</p>
+                      <label className="flex items-center gap-2 text-sm text-zinc-200">
+                        <input
+                          type="checkbox"
+                          checked={globalGatewayKast}
+                          onChange={(e) => setGlobalGatewayKast(e.target.checked)}
+                          className="accent-emerald-500"
+                        />
+                        Kast (cripto)
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-zinc-200">
+                        <input
+                          type="checkbox"
+                          checked={globalGatewayMercury}
+                          onChange={(e) => setGlobalGatewayMercury(e.target.checked)}
+                          className="accent-emerald-500"
+                        />
+                        Mercury (wire USD)
+                      </label>
+                      {!globalGatewayKast && !globalGatewayMercury ? (
+                        <p className="text-xs text-amber-300">
+                          Selecione pelo menos um gateway global para gerar o link.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Badge (topo da página)">
                     <input
@@ -973,7 +1066,10 @@ export function VendaRapidaTab() {
       ) : (
         <div className="grid gap-4">
           {listings.map((l) => {
-            const url = buildPublicCheckoutUrl(l.slug)
+            const listingMode = l.paymentMode ?? 'PIX'
+            const url = listingMode === 'GLOBAL'
+              ? buildPublicGlobalCheckoutUrl(l.slug)
+              : buildPublicCheckoutUrl(l.slug)
             return (
               <div
                 key={l.id}
@@ -1003,6 +1099,14 @@ export function VendaRapidaTab() {
                       <p className="text-zinc-400 text-xs mt-1 whitespace-pre-line">{l.fullDescription}</p>
                     )}
                     <p className="text-zinc-600 text-xs mt-1">{l.assetCategory.replace('_', ' ')} · R$ {l.pricePerUnit.toFixed(2)}/un · máx {l.maxQty} un</p>
+                    <p className="text-zinc-500 text-[11px] mt-1">
+                      Tipo do link: {l.paymentMode === 'GLOBAL' ? 'Venda Rápida Global' : 'Venda Rápida PIX'}
+                    </p>
+                    {l.paymentMode === 'GLOBAL' ? (
+                      <p className="text-zinc-500 text-[11px]">
+                        Gateways: {(l.globalGateways && l.globalGateways.length > 0 ? l.globalGateways : ['KAST', 'MERCURY']).join(' · ')}
+                      </p>
+                    ) : null}
                     {(l.stockProductCode || l.stockProductName) && (
                       <p className="text-zinc-500 text-[11px] mt-1">
                         Vínculo estoque: {l.stockProductCode || '—'} {l.stockProductName ? `· ${l.stockProductName}` : ''}
@@ -1052,7 +1156,7 @@ export function VendaRapidaTab() {
                 <div className="flex items-center gap-2 bg-zinc-800/50 border border-zinc-700 rounded-xl px-3 py-2">
                   <span className="text-zinc-400 text-xs font-mono flex-1 truncate">{url}</span>
                   <button
-                    onClick={() => copyLink(l.slug)}
+                    onClick={() => copyLink(l.slug, l.paymentMode)}
                     className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition ${
                       copiedId === l.slug
                         ? 'bg-emerald-500/20 text-emerald-400'
