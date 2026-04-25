@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   consumeInvisibleCheckoutToken,
   getInvisibleCheckoutDecoyUrl,
+  getInvisibleCheckoutPolicy,
   lookupIpIntel,
   shouldCloakInvisibleCheckout,
   trackInvisibleCheckoutProbe,
+  trackInvisibleCheckoutShareAlert,
 } from '@/lib/invisible-checkout'
 
-const FALLBACK_REDIRECT_URL =
+const FALLBACK_DECOY_URL =
   process.env.INVISIBLE_CHECKOUT_BAIT_URL?.trim() ||
   'https://news.ycombinator.com'
 
-function redirectToFallback() {
-  return NextResponse.redirect(FALLBACK_REDIRECT_URL, 302)
+function redirectToDecoy(decoyUrl?: string | null) {
+  return NextResponse.redirect(decoyUrl || FALLBACK_DECOY_URL, 302)
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -30,17 +32,37 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     userAgent,
     reason: 'LINK_OPENED',
   })
+  const policy = await getInvisibleCheckoutPolicy().catch(() => ({
+    allowedCountries: [] as string[],
+    blockedOrgKeywords: [] as string[],
+    decoyUrl: FALLBACK_DECOY_URL,
+  }))
+  const decoyUrl = await getInvisibleCheckoutDecoyUrl().catch(() => policy.decoyUrl || FALLBACK_DECOY_URL)
 
-  if (!tokenData.ok || !tokenData.redirectPath) {
-    return NextResponse.json({ error: 'Checkout indisponível.' }, { status: 404 })
+  if (!tokenData.ok) {
+    if (tokenData.reason === 'TOKEN_NOT_FOUND') {
+      return NextResponse.json({ error: 'Checkout indisponível.' }, { status: 404 })
+    }
+
+    if (tokenData.reason === 'LINK_SHARING_ATTEMPT') {
+      await trackInvisibleCheckoutShareAlert({
+        token,
+        checkoutId: 'checkoutId' in tokenData ? tokenData.checkoutId : null,
+        listingId: 'listingId' in tokenData ? tokenData.listingId : null,
+        originalIp: 'lockedIp' in tokenData ? tokenData.lockedIp : null,
+        sharingAttemptIp: 'requestIp' in tokenData ? tokenData.requestIp : ip,
+        userAgent,
+      })
+    }
+
+    // Honey Pot: qualquer link expirado/invalidado/exaurido/cancelado vai para página isca.
+    return redirectToDecoy(decoyUrl)
+  }
+  if (!tokenData.redirectPath) {
+    return redirectToDecoy(decoyUrl)
   }
 
   const intel = await lookupIpIntel(ip).catch(() => ({ countryCode: null as string | null, org: null as string | null }))
-  const policy = await (async () => ({
-    allowedCountries: tokenData.allowedCountries,
-    blockedOrgKeywords: [] as string[],
-    decoyUrl: FALLBACK_REDIRECT_URL,
-  }))()
   const cloak = shouldCloakInvisibleCheckout({
     ip,
     userAgent,
@@ -65,8 +87,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
         note: 'Acesso bloqueado por política de cloaking.',
       },
     })
-    const decoy = await getInvisibleCheckoutDecoyUrl().catch(() => policy.decoyUrl || FALLBACK_REDIRECT_URL)
-    return NextResponse.redirect(decoy, 302)
+    return redirectToDecoy(decoyUrl)
   }
 
   const url = new URL(tokenData.redirectPath, req.nextUrl.origin)

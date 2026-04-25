@@ -57,7 +57,6 @@ export async function GET(req: NextRequest) {
     checkoutId,
     listingSlug: listing.slug,
     mode,
-    ttlMinutes: 15,
     maxUses: 1,
     closeOnPaid: true,
     sellerRef,
