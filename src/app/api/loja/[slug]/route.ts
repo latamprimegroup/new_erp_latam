@@ -196,7 +196,7 @@ async function getListingStockQtyRemaining(listingId: string) {
   const reserved = await prisma.quickSaleCheckout.aggregate({
     where: {
       listingId,
-      status: { in: ['PENDING', 'PAID'] },
+      status: 'PAID',
     },
     _sum: { qty: true },
   })

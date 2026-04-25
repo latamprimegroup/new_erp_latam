@@ -181,7 +181,7 @@ export async function GET() {
         where: { listingId: l.id, status: 'PAID' },
       })
       const reservedQty = await prisma.quickSaleCheckout.aggregate({
-        where: { listingId: l.id, status: { in: ['PENDING', 'PAID'] } },
+        where: { listingId: l.id, status: 'PAID' },
         _sum: { qty: true },
       })
       const revenue = await prisma.quickSaleCheckout.aggregate({
@@ -191,7 +191,7 @@ export async function GET() {
       const configuredStockQty = configuredStockByListing.get(l.id) ?? null
       const remainingStockQty = configuredStockQty == null
         ? null
-        : Math.max(0, configuredStockQty - Number(reservedQty._sum.qty ?? 0))
+        : Math.max(0, configuredStockQty - Number(reservedQty._sum?.qty ?? 0))
       const effectiveAvailable = remainingStockQty ?? available
       const paymentMode = paymentModeByListing.get(l.id) ?? 'PIX'
       const globalGateways = globalGatewaysByListing.get(l.id) ?? ['KAST', 'MERCURY']
