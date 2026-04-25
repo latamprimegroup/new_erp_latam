@@ -52,6 +52,10 @@ type NowPaymentsIPN = {
 // Status que representa pagamento COMPLETO e confirmado on-chain
 const PAID_STATUS = new Set(['finished', 'confirmed'])
 
+const QUICK_DELIVERY_FLOW = {
+  WAITING_CUSTOMER_DATA: 'WAITING_CUSTOMER_DATA',
+} as const
+
 // ─── Utmify para conversão cripto ─────────────────────────────────────────────
 
 async function sendCryptoConversionToUtmify(opts: {
@@ -209,12 +213,14 @@ export async function POST(req: NextRequest) {
     })
 
     if (checkout && checkout.status !== 'PAID') {
+      const paidAt = new Date(payload.updated_at ?? new Date())
       await prisma.quickSaleCheckout.update({
         where: { id: orderId },
         data: {
           status:  'PAID',
-          paidAt:  new Date(payload.updated_at ?? new Date()),
-          pixTxid: paymentId, // reutilizado como invoice ID cripto
+          paidAt,
+          deliveryFlowStatus: QUICK_DELIVERY_FLOW.WAITING_CUSTOMER_DATA,
+          deliveryStatusNote: 'Pagamento confirmado. Envie seu e-mail AdsPower e confirme perfil liberado para iniciar a entrega.',
         },
       })
       orderUpdated = true
@@ -228,11 +234,11 @@ export async function POST(req: NextRequest) {
         select: { id: true, status: true },
       })
 
-      if (saleOrder && !['PAID', 'DELIVERED', 'COMPLETED'].includes(saleOrder.status)) {
+      if (saleOrder && !['CLIENT_PAID', 'DELIVERED'].includes(saleOrder.status)) {
         await prisma.assetSalesOrder.update({
           where: { id: orderId },
-          data:  { status: 'PAID', paidAt: new Date(payload.updated_at ?? new Date()) },
-        }).catch(() => null) // campo paidAt pode não existir no schema — silencia
+          data:  { status: 'CLIENT_PAID' },
+        }).catch(() => null)
         orderUpdated = true
         console.log(`[Kast IPN] AssetSalesOrder ${orderId} → PAID`)
       }

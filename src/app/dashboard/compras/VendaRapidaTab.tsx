@@ -273,7 +273,9 @@ export function VendaRapidaTab() {
       'PIX copia e cola:',
       pixResult.pixCopyPaste,
       '',
-      `QR e status: ${pixResult.resumeUrl}`,
+      `Checkout + Entrega: ${pixResult.resumeUrl}`,
+      '',
+      'Após o pagamento, o cliente deve preencher a tela de entrega com e-mail AdsPower e confirmar perfil liberado.',
     ].join('\n')
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
@@ -488,7 +490,7 @@ export function VendaRapidaTab() {
                     className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
                   >
                     <QrCode className="w-3.5 h-3.5 inline mr-1" />
-                    Abrir checkout/status
+                    Abrir checkout + entrega
                   </a>
                   <button
                     type="button"
