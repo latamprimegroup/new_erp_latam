@@ -557,7 +557,7 @@ export function VendasClient() {
                 {clients.length === 0 && (
                   <p className="text-xs text-amber-600 mt-1">
                     Nenhum cliente carregado. Cadastre primeiro em{' '}
-                    <Link href="/dashboard/cadastro" className="underline">
+                    <Link href="/dashboard/admin/clientes" className="underline">
                       Cadastro de Clientes
                     </Link>.
                   </p>
