@@ -25,6 +25,7 @@ import {
   usdToBrl,
   MercuryApiError,
 } from '@/lib/mercury/client'
+import { quickSaleMercuryRefKey, quickSaleOrderLookupKey } from '@/lib/quick-sale-payments'
 
 export const runtime = 'nodejs'
 
@@ -68,15 +69,47 @@ async function resolveClientByReference(
   if (!ref) return { clientId: null, checkoutId: null }
 
   const refClean = ref.trim()
+  const refUpper = refClean.toUpperCase()
+
+  const byMercuryRef = await prisma.systemSetting.findUnique({
+    where: { key: quickSaleMercuryRefKey(refClean) },
+    select: { value: true },
+  }).catch(() => null)
+  if (byMercuryRef?.value) {
+    const directCheckout = await prisma.quickSaleCheckout.findUnique({
+      where: { id: byMercuryRef.value },
+      select: { id: true },
+    }).catch(() => null)
+    if (directCheckout) {
+      return { clientId: null, checkoutId: directCheckout.id }
+    }
+  }
+
+  const orderMatch = refUpper.match(/VR-\d{6}/)
+  if (orderMatch?.[0]) {
+    const byOrder = await prisma.systemSetting.findUnique({
+      where: { key: quickSaleOrderLookupKey(orderMatch[0]) },
+      select: { value: true },
+    }).catch(() => null)
+    if (byOrder?.value) {
+      const orderCheckout = await prisma.quickSaleCheckout.findUnique({
+        where: { id: byOrder.value },
+        select: { id: true },
+      }).catch(() => null)
+      if (orderCheckout) {
+        return { clientId: null, checkoutId: orderCheckout.id }
+      }
+    }
+  }
 
   // Procura email
   if (refClean.includes('@')) {
     const user = await prisma.user.findFirst({
-      where:  { email: { equals: refClean, mode: 'insensitive' } },
-      select: { id: true, clientProfile: { select: { id: true } } },
-    })
-    if (user?.clientProfile?.id) {
-      return { clientId: user.clientProfile.id, checkoutId: null }
+      where:  { email: refClean },
+      select: { id: true },
+    }).catch(() => null)
+    if (user?.id) {
+      return { clientId: null, checkoutId: null }
     }
   }
 
@@ -84,16 +117,16 @@ async function resolveClientByReference(
   const checkout = await prisma.quickSaleCheckout.findFirst({
     where: {
       OR: [
-        { pixKey: { contains: refClean } },
+        { interTxid: { contains: refClean } },
         { buyerEmail: { contains: refClean, mode: 'insensitive' } },
         { id: refClean.startsWith('c') ? refClean : undefined },
       ].filter(Boolean),
     },
-    select: { id: true, clientId: true },
+    select: { id: true },
   })
 
   if (checkout) {
-    return { clientId: checkout.clientId ?? null, checkoutId: checkout.id }
+    return { clientId: null, checkoutId: checkout.id }
   }
 
   return { clientId: null, checkoutId: null }
@@ -277,7 +310,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Erro ao registrar transação' }, { status: 500 })
   }
 
-  // ── 8. Utmify — conversão Internacional USD ────────────────────────────────
+  // ── 8. Marcar checkout global como PAID quando conciliado ───────────────────
+  let orderUpdated = false
+  if (checkoutId) {
+    const quickCheckout = await prisma.quickSaleCheckout.findUnique({
+      where: { id: checkoutId },
+      select: { id: true, status: true },
+    }).catch(() => null)
+    if (quickCheckout && quickCheckout.status !== 'PAID') {
+      await prisma.quickSaleCheckout.update({
+        where: { id: quickCheckout.id },
+        data: {
+          status: 'PAID',
+          paidAt: new Date(event.occurredAt),
+          deliveryFlowStatus: 'WAITING_CUSTOMER_DATA',
+          deliveryStatusNote: 'Pagamento Mercury confirmado. Envie seu e-mail AdsPower e confirme perfil liberado para iniciar a entrega.',
+        },
+      }).catch(() => null)
+      orderUpdated = true
+      console.log(`[Mercury Webhook] QuickSaleCheckout ${quickCheckout.id} → PAID`)
+    }
+  }
+
+  // ── 9. Utmify — conversão Internacional USD ────────────────────────────────
   void sendMercuryConversionToUtmify({
     mercuryTxId:  event.resourceId,
     amountUsd,
@@ -287,7 +342,7 @@ export async function POST(req: NextRequest) {
     occurredAt:   event.occurredAt,
   })
 
-  // ── 9. Log de auditoria ────────────────────────────────────────────────────
+  // ── 10. Log de auditoria ───────────────────────────────────────────────────
   await prisma.auditLog.create({
     data: {
       action:   'MERCURY_WIRE_RECEIVED',
@@ -301,6 +356,8 @@ export async function POST(req: NextRequest) {
         kind: txKind,
         counterparty: counterpartyName,
         reference,
+        checkoutId,
+        orderUpdated,
       },
     },
   }).catch(() => null)
@@ -312,5 +369,6 @@ export async function POST(req: NextRequest) {
     amountUsd,
     amountBrl,
     fxRate,
+    orderUpdated,
   })
 }

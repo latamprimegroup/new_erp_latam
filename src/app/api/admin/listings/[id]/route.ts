@@ -7,6 +7,12 @@ import { z }               from 'zod'
 import { getServerSession } from 'next-auth'
 import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
+import {
+  listingGlobalGatewaysKey,
+  listingPaymentModeKey,
+  normalizeQuickSaleGlobalGateways,
+  serializeQuickSaleGlobalGateways,
+} from '@/lib/quick-sale-payments'
 
 const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
 
@@ -30,6 +36,8 @@ const patchSchema = z.object({
   badge:        z.string().max(100).nullable().optional(),
   stockProductCode: z.string().max(40).nullable().optional(),
   stockProductName: z.string().max(200).nullable().optional(),
+  paymentMode: z.enum(['PIX', 'GLOBAL']).optional(),
+  globalGateways: z.array(z.enum(['KAST', 'MERCURY'])).optional(),
   active:       z.boolean().optional(),
 })
 
@@ -49,7 +57,7 @@ export async function PATCH(
   if (!parsed.success)
     return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
 
-  const { stockQty, ...listingPatch } = parsed.data
+  const { stockQty, paymentMode, globalGateways, ...listingPatch } = parsed.data
 
   const listing = await prisma.productListing.update({
     where: { id: params.id },
@@ -59,11 +67,13 @@ export async function PATCH(
   if (!listing) return NextResponse.json({ error: 'Listing não encontrado' }, { status: 404 })
 
   if (stockQty == null) {
-    // Campo não enviado: mantém configuração atual
-    return NextResponse.json(listing)
+    // Se não houver alterações de gateway/modo, mantém configurações atuais
+    if (!paymentMode && !globalGateways) {
+      return NextResponse.json(listing)
+    }
   }
 
-  if (stockQty > 0) {
+  if (typeof stockQty === 'number' && stockQty > 0) {
     await prisma.systemSetting.upsert({
       where: { key: listingStockQtyKey(listing.id) },
       create: {
@@ -76,9 +86,38 @@ export async function PATCH(
     })
   }
 
+  if (paymentMode) {
+    await prisma.systemSetting.upsert({
+      where: { key: listingPaymentModeKey(listing.id) },
+      create: {
+        key: listingPaymentModeKey(listing.id),
+        value: paymentMode,
+      },
+      update: {
+        value: paymentMode,
+      },
+    })
+  }
+
+  if (globalGateways) {
+    const normalized = normalizeQuickSaleGlobalGateways(globalGateways)
+    await prisma.systemSetting.upsert({
+      where: { key: listingGlobalGatewaysKey(listing.id) },
+      create: {
+        key: listingGlobalGatewaysKey(listing.id),
+        value: serializeQuickSaleGlobalGateways(normalized),
+      },
+      update: {
+        value: serializeQuickSaleGlobalGateways(normalized),
+      },
+    })
+  }
+
   return NextResponse.json({
     ...listing,
     stockQtyConfigured: stockQty,
+    paymentMode: paymentMode ?? undefined,
+    globalGateways: globalGateways ?? undefined,
   })
 }
 
@@ -96,6 +135,12 @@ export async function DELETE(
   if (!listing) return NextResponse.json({ error: 'Listing não encontrado' }, { status: 404 })
   await prisma.systemSetting.delete({
     where: { key: listingStockQtyKey(listing.id) },
+  }).catch(() => null)
+  await prisma.systemSetting.delete({
+    where: { key: listingPaymentModeKey(listing.id) },
+  }).catch(() => null)
+  await prisma.systemSetting.delete({
+    where: { key: listingGlobalGatewaysKey(listing.id) },
   }).catch(() => null)
   return NextResponse.json({ ok: true })
 }

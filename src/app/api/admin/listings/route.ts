@@ -7,6 +7,15 @@ import { z }               from 'zod'
 import { getServerSession } from 'next-auth'
 import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
+import {
+  listingGlobalGatewaysKey,
+  listingPaymentModeKey,
+  normalizeQuickSaleGlobalGateways,
+  parseQuickSaleGlobalGateways,
+  parseQuickSalePaymentMode,
+  resolveQuickSalePaymentMethods,
+  serializeQuickSaleGlobalGateways,
+} from '@/lib/quick-sale-payments'
 
 const LISTING_STOCK_QTY_PREFIX = 'quick_sale_listing_stock_qty:'
 
@@ -38,6 +47,8 @@ const createSchema = z.object({
   pricePerUnit:  z.number().positive(),
   maxQty:        z.number().int().min(1).max(100).default(10),
   stockQty:      z.number().int().min(1).max(100000).optional(),
+  paymentMode:   z.enum(['PIX', 'GLOBAL']).optional().default('PIX'),
+  globalGateways: z.array(z.enum(['KAST', 'MERCURY'])).optional(),
   badge:         z.string().max(100).optional(),
   active:        z.boolean().default(true),
 })
@@ -55,21 +66,39 @@ export async function GET() {
     },
   })
 
-  const stockQtySettings = listings.length > 0
+  const listingSettings = listings.length > 0
     ? await prisma.systemSetting.findMany({
         where: {
           key: {
-            in: listings.map((l) => listingStockQtyKey(l.id)),
+            in: listings.flatMap((l) => ([
+              listingStockQtyKey(l.id),
+              listingPaymentModeKey(l.id),
+              listingGlobalGatewaysKey(l.id),
+            ])),
           },
         },
         select: { key: true, value: true },
       })
     : []
   const configuredStockByListing = new Map<string, number>()
-  for (const setting of stockQtySettings) {
-    const listingId = setting.key.replace(LISTING_STOCK_QTY_PREFIX, '')
-    const qty = parseStockQty(setting.value)
-    if (listingId && qty) configuredStockByListing.set(listingId, qty)
+  const paymentModeByListing = new Map<string, ReturnType<typeof parseQuickSalePaymentMode>>()
+  const globalGatewaysByListing = new Map<string, ReturnType<typeof parseQuickSaleGlobalGateways>>()
+  for (const setting of listingSettings) {
+    if (setting.key.startsWith(LISTING_STOCK_QTY_PREFIX)) {
+      const listingId = setting.key.replace(LISTING_STOCK_QTY_PREFIX, '')
+      const qty = parseStockQty(setting.value)
+      if (listingId && qty) configuredStockByListing.set(listingId, qty)
+      continue
+    }
+    if (setting.key.startsWith('quick_sale_listing_payment_mode:')) {
+      const listingId = setting.key.replace('quick_sale_listing_payment_mode:', '')
+      if (listingId) paymentModeByListing.set(listingId, parseQuickSalePaymentMode(setting.value))
+      continue
+    }
+    if (setting.key.startsWith('quick_sale_listing_global_gateways:')) {
+      const listingId = setting.key.replace('quick_sale_listing_global_gateways:', '')
+      if (listingId) globalGatewaysByListing.set(listingId, parseQuickSaleGlobalGateways(setting.value))
+    }
   }
 
   // Conta disponíveis por categoria
@@ -94,6 +123,9 @@ export async function GET() {
         ? null
         : Math.max(0, configuredStockQty - Number(reservedQty._sum.qty ?? 0))
       const effectiveAvailable = remainingStockQty ?? available
+      const paymentMode = paymentModeByListing.get(l.id) ?? 'PIX'
+      const globalGateways = globalGatewaysByListing.get(l.id) ?? ['KAST', 'MERCURY']
+      const paymentMethods = resolveQuickSalePaymentMethods(paymentMode, globalGateways)
       return {
         id:           l.id,
         slug:         l.slug,
@@ -107,6 +139,9 @@ export async function GET() {
         pricePerUnit: Number(l.pricePerUnit),
         maxQty:       l.maxQty,
         active:       l.active,
+        paymentMode,
+        globalGateways,
+        paymentMethods,
         available: effectiveAvailable,
         stockQtyConfigured: configuredStockQty,
         stockQtyRemaining: remainingStockQty,
@@ -186,9 +221,37 @@ export async function POST(req: globalThis.Request) {
     })
   }
 
+  const normalizedGlobalGateways = normalizeQuickSaleGlobalGateways(d.globalGateways)
+  await prisma.systemSetting.upsert({
+    where: { key: listingPaymentModeKey(listing.id) },
+    create: {
+      key: listingPaymentModeKey(listing.id),
+      value: d.paymentMode,
+    },
+    update: {
+      value: d.paymentMode,
+    },
+  })
+
+  if (d.paymentMode === 'GLOBAL') {
+    await prisma.systemSetting.upsert({
+      where: { key: listingGlobalGatewaysKey(listing.id) },
+      create: {
+        key: listingGlobalGatewaysKey(listing.id),
+        value: serializeQuickSaleGlobalGateways(normalizedGlobalGateways),
+      },
+      update: {
+        value: serializeQuickSaleGlobalGateways(normalizedGlobalGateways),
+      },
+    })
+  }
+
   return NextResponse.json({
     ...listing,
     slug,
     stockQtyConfigured: d.stockQty ?? null,
+    paymentMode: d.paymentMode,
+    globalGateways: d.paymentMode === 'GLOBAL' ? normalizedGlobalGateways : [],
+    paymentMethods: d.paymentMode === 'GLOBAL' ? normalizedGlobalGateways : ['PIX'],
   }, { status: 201 })
 }
