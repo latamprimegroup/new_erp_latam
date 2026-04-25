@@ -7,6 +7,7 @@ import { z }               from 'zod'
 import { getServerSession } from 'next-auth'
 import { authOptions }      from '@/lib/auth'
 import { prisma }           from '@/lib/prisma'
+import type { Prisma }      from '@prisma/client'
 import {
   listingGlobalGatewaysKey,
   listingPaymentModeKey,
@@ -30,6 +31,10 @@ function normalizeStockCode(v: string | null | undefined) {
 function normalizeStockName(v: string | null | undefined) {
   const normalized = (v ?? '').trim()
   return normalized || null
+}
+
+function toAssetCategory(v: string) {
+  return v as Prisma.AssetWhereInput['category']
 }
 
 async function resolveSuggestedLinkStockQty(input: {
@@ -61,7 +66,7 @@ async function resolveSuggestedLinkStockQty(input: {
   const [availableInCategory, availableForName, totalInBaseForName] = await Promise.all([
     prisma.asset.count({
       where: {
-        category,
+        category: toAssetCategory(category),
         status: 'AVAILABLE',
         vendor: { suspended: false },
       },

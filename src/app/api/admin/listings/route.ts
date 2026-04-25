@@ -70,7 +70,7 @@ async function resolveSuggestedLinkStockQty(input: {
   const [availableInCategory, availableForName, totalInBaseForName] = await Promise.all([
     prisma.asset.count({
       where: {
-        category,
+        category: category as never,
         status: 'AVAILABLE',
         vendor: { suspended: false },
       },
