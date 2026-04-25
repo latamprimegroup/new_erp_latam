@@ -14,17 +14,15 @@ import { AssetIntakeTab } from './AssetIntakeTab'
 import { RMATab } from './RMATab'
 import { WarRoomCeoTab } from './WarRoomCeoTab'
 import { RoiTab } from './RoiTab'
-import { VendaRapidaTab } from './VendaRapidaTab'
 import { VitrineComercialTab } from './VitrineComercialTab'
 import { ProducaoEstoqueTab } from './ProducaoEstoqueTab'
 import EntradaMercadoriaClient from '../admin/entrada-mercadoria/EntradaMercadoriaClient'
 
-type Tab = 'war-room' | 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc' | 'roi' | 'venda-rapida' | 'vitrine' | 'producao-estoque'
+type Tab = 'war-room' | 'estoque' | 'fornecedores' | 'copy' | 'bulk' | 'pedidos' | 'consulta' | 'orders' | 'bi' | 'intake' | 'rma' | 'entrada-merc' | 'roi' | 'vitrine' | 'producao-estoque'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; roles: string[] }[] = [
   { id: 'war-room',          label: '🛰️ War Room OS',           icon: <Crosshair className="w-4 h-4" />,    roles: ['ADMIN'] },
   { id: 'roi',               label: '📈 ROI & Utmify',          icon: <TrendingUp className="w-4 h-4" />,   roles: ['ADMIN'] },
-  { id: 'venda-rapida',      label: '⚡ Venda Rápida',          icon: <Link2 className="w-4 h-4" />,        roles: ['ADMIN', 'COMMERCIAL'] },
   { id: 'vitrine',           label: '🛍️ Vitrine de Vendas',     icon: <LayoutGrid className="w-4 h-4" />,   roles: ['ADMIN', 'COMMERCIAL'] },
   { id: 'producao-estoque',  label: '🔥 Estoque de Produção',   icon: <Flame className="w-4 h-4" />,        roles: ['ADMIN', 'PURCHASING', 'PRODUCTION_MANAGER'] },
   { id: 'entrada-merc',      label: '🚚 Entrada de Mercadoria', icon: <Truck className="w-4 h-4" />,        roles: ['ADMIN','PURCHASING'] },
@@ -87,7 +85,6 @@ export function ComprasClient({ role }: { role: string }) {
       <div>
         {tab === 'war-room'         && <WarRoomCeoTab />}
         {tab === 'roi'              && <RoiTab />}
-        {tab === 'venda-rapida'     && <VendaRapidaTab />}
         {tab === 'vitrine'          && <VitrineComercialTab />}
         {tab === 'producao-estoque' && <ProducaoEstoqueTab />}
         {tab === 'entrada-merc'     && <EntradaMercadoriaClient />}
