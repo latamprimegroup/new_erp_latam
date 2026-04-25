@@ -294,6 +294,7 @@ export function VendasClient() {
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
   const [clientLtv, setClientLtv] = useState<ClientLTV | null>(null)
   const [ltvLoading, setLtvLoading] = useState(false)
 
@@ -310,9 +311,23 @@ export function VendasClient() {
   }, [filterStatus, highlightOrderId])
 
   const loadClients = useCallback(async () => {
-    const res = await fetch('/api/clientes')
-    const data = await res.json()
-    if (res.ok) setClients(Array.isArray(data) ? data : (data.clients ?? []))
+    try {
+      const res = await fetch('/api/clientes')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setClients([])
+        setFormError(
+          typeof data?.error === 'string'
+            ? data.error
+            : 'Não foi possível carregar a lista de clientes para lançar a venda.',
+        )
+        return
+      }
+      setClients(Array.isArray(data) ? data : (data.clients ?? []))
+    } catch {
+      setClients([])
+      setFormError('Falha de conexão ao carregar clientes. Tente novamente.')
+    }
   }, [])
 
   useEffect(() => {
@@ -340,6 +355,28 @@ export function VendasClient() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setFormError('')
+    if (!form.clientId) {
+      setFormError('Selecione um cliente para registrar a venda.')
+      return
+    }
+    if (!form.product.trim()) {
+      setFormError('Preencha o produto da venda.')
+      return
+    }
+    if (!form.accountType.trim()) {
+      setFormError('Preencha o tipo de conta/ativo da venda.')
+      return
+    }
+    if (!Number.isFinite(Number(form.quantity)) || Number(form.quantity) < 1) {
+      setFormError('A quantidade deve ser maior ou igual a 1.')
+      return
+    }
+    if (!Number.isFinite(Number(form.value)) || Number(form.value) <= 0) {
+      setFormError('Informe um valor total maior que zero para lançar a venda.')
+      return
+    }
+
     setSubmitting(true)
     const unitVal =
       form.unitValue === '' || form.unitValue === undefined ? undefined : Number(form.unitValue)
@@ -391,11 +428,12 @@ export function VendasClient() {
         deliveredAssetIdsText: '',
         externalRef: '',
       })
+      setFormError('')
       setShowForm(false)
       loadOrders()
     } else {
       const err = await res.json()
-      alert(err.error || 'Erro ao registrar')
+      setFormError(err.error || 'Erro ao registrar venda.')
     }
     setSubmitting(false)
   }
@@ -480,6 +518,14 @@ export function VendasClient() {
                     </option>
                   ))}
                 </select>
+                {clients.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Nenhum cliente carregado. Cadastre primeiro em{' '}
+                    <Link href="/dashboard/cadastro" className="underline">
+                      Cadastro de Clientes
+                    </Link>.
+                  </p>
+                )}
               </div>
               {form.clientId && (
                 <div className="md:col-span-2 lg:col-span-3">
@@ -714,6 +760,11 @@ export function VendasClient() {
                 Cancelar
               </button>
             </div>
+            {formError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {formError}
+              </p>
+            )}
           </form>
         )}
 
