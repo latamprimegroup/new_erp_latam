@@ -3,35 +3,93 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { captureUtms, buildUtmPayload, type UtmData } from '@/lib/utm-tracker'
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
 interface ProductInfo {
-  id:           string
-  slug:         string
-  title:        string
-  subtitle:     string | null
-  badge:        string | null
+  id: string
+  slug: string
+  title: string
+  subtitle: string | null
+  badge: string | null
   pricePerUnit: number
-  maxQty:       number
-  available:    number
+  maxQty: number
+  available: number
 }
 
 interface PixData {
-  checkoutId:   string
-  txid:         string
+  checkoutId: string
+  txid: string
   pixCopyPaste: string
   qrCodeBase64: string
-  expiresAt:    string
-  totalAmount:  number
-  qty:          number
-  title:        string
+  expiresAt: string
+  totalAmount: number
+  qty: number
+  title: string
 }
 
-type Step    = 'form' | 'pix' | 'success' | 'error' | 'loading'
+type DeliveryFlowStatus =
+  | 'PENDING_PAYMENT'
+  | 'WAITING_CUSTOMER_DATA'
+  | 'DELIVERY_REQUESTED'
+  | 'DELIVERY_IN_PROGRESS'
+  | 'DELIVERED'
+
+interface DeliveryState {
+  flowStatus: DeliveryFlowStatus
+  adspowerEmail: string | null
+  adspowerProfileReleased: boolean
+  deliveryRequestedAt: string | null
+  deliveryStatusNote: string | null
+  deliverySent: boolean
+}
+
+interface CheckoutStatusResponse {
+  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
+  paidAt?: string | null
+  expiresAt?: string | null
+  pixCopyPaste?: string | null
+  qrCodeBase64?: string | null
+  totalAmount?: number
+  qty?: number
+  title?: string | null
+  delivery?: DeliveryState
+}
+
+type Step = 'form' | 'pix' | 'delivery' | 'error' | 'loading'
 type DocType = 'cpf' | 'cnpj'
 
-// ─── UTM helpers ─────────────────────────────────────────────────────────────
-// Removido: persistência local duplicada — centralizada em @/lib/utm-tracker (30 dias)
+const DELIVERY_FLOW_LABELS: Record<DeliveryFlowStatus, { title: string; description: string; order: number }> = {
+  PENDING_PAYMENT: {
+    title: 'Aguardando pagamento',
+    description: 'O PIX precisa ser aprovado para liberar a etapa de entrega.',
+    order: 0,
+  },
+  WAITING_CUSTOMER_DATA: {
+    title: 'Aguardando dados AdsPower',
+    description: 'Preencha seu e-mail AdsPower e confirme que o perfil está liberado.',
+    order: 1,
+  },
+  DELIVERY_REQUESTED: {
+    title: 'Dados de entrega recebidos',
+    description: 'Estamos validando seu perfil e separando a entrega.',
+    order: 2,
+  },
+  DELIVERY_IN_PROGRESS: {
+    title: 'Entrega em andamento',
+    description: 'Equipe Ads Ativos está liberando o ativo.',
+    order: 3,
+  },
+  DELIVERED: {
+    title: 'Entrega concluída',
+    description: 'Seu ativo já foi entregue.',
+    order: 4,
+  },
+}
+
+const DELIVERY_TIMELINE: DeliveryFlowStatus[] = [
+  'WAITING_CUSTOMER_DATA',
+  'DELIVERY_REQUESTED',
+  'DELIVERY_IN_PROGRESS',
+  'DELIVERED',
+]
 
 function formatCpf(v: string) {
   const d = v.replace(/\D/g, '').slice(0, 11)
@@ -42,6 +100,7 @@ function formatCpf(v: string) {
     .replace(/(\d{3})(\d{1,3})$/, '$1.$2')
     .replace(/(\d{1,3})$/, '$1')
 }
+
 function formatCnpj(v: string) {
   const d = v.replace(/\D/g, '').slice(0, 14)
   return d
@@ -51,12 +110,47 @@ function formatCnpj(v: string) {
     .replace(/(\d{2})(\d{1,3})$/, '$1.$2')
     .replace(/(\d{1,2})$/, '$1')
 }
+
 function formatPhone(v: string) {
   const d = v.replace(/\D/g, '').slice(0, 11)
-  if (d.length <= 2)  return `(${d}`
-  if (d.length <= 7)  return `(${d.slice(0,2)}) ${d.slice(2)}`
-  if (d.length <= 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
+  if (d.length <= 2) return `(${d}`
+  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
   return v
+}
+
+function normalizeEmail(v: string) {
+  return v.trim().toLowerCase()
+}
+
+function getDefaultDeliveryState(status: CheckoutStatusResponse['status']): DeliveryState {
+  const flowStatus: DeliveryFlowStatus = status === 'PAID' ? 'WAITING_CUSTOMER_DATA' : 'PENDING_PAYMENT'
+  return {
+    flowStatus,
+    adspowerEmail: null,
+    adspowerProfileReleased: false,
+    deliveryRequestedAt: null,
+    deliveryStatusNote: DELIVERY_FLOW_LABELS[flowStatus].description,
+    deliverySent: false,
+  }
+}
+
+function normalizeDeliveryState(
+  raw: CheckoutStatusResponse['delivery'] | undefined,
+  status: CheckoutStatusResponse['status'],
+): DeliveryState {
+  if (!raw) return getDefaultDeliveryState(status)
+  const safeFlowStatus: DeliveryFlowStatus = raw.flowStatus in DELIVERY_FLOW_LABELS
+    ? raw.flowStatus
+    : getDefaultDeliveryState(status).flowStatus
+  return {
+    flowStatus: safeFlowStatus,
+    adspowerEmail: raw.adspowerEmail ?? null,
+    adspowerProfileReleased: Boolean(raw.adspowerProfileReleased),
+    deliveryRequestedAt: raw.deliveryRequestedAt ?? null,
+    deliveryStatusNote: raw.deliveryStatusNote ?? DELIVERY_FLOW_LABELS[safeFlowStatus].description,
+    deliverySent: Boolean(raw.deliverySent),
+  }
 }
 
 function useCountdown(expiresAt: string | null) {
@@ -73,7 +167,6 @@ function useCountdown(expiresAt: string | null) {
   return { secs, label: `${m}:${s}` }
 }
 
-// Dispara evento de Purchase para GTM / FB Pixel / GA4
 function firePixelPurchase(params: {
   checkoutId: string
   totalAmount: number
@@ -81,145 +174,176 @@ function firePixelPurchase(params: {
   qty: number
 }) {
   try {
-    // GTM dataLayer (captura Google Ads + GA4 via GTM)
     if (typeof window !== 'undefined' && Array.isArray((window as never as { dataLayer?: unknown[] }).dataLayer)) {
       ;(window as never as { dataLayer: Record<string, unknown>[] }).dataLayer.push({
         event: 'purchase',
         ecommerce: {
           transaction_id: params.checkoutId,
-          value:          params.totalAmount,
-          currency:       'BRL',
+          value: params.totalAmount,
+          currency: 'BRL',
           items: [{
-            item_id:   params.checkoutId,
+            item_id: params.checkoutId,
             item_name: params.productName,
-            quantity:  params.qty,
-            price:     params.totalAmount / Math.max(1, params.qty),
+            quantity: params.qty,
+            price: params.totalAmount / Math.max(1, params.qty),
           }],
         },
       })
     }
-    // Meta Pixel fbq (se presente na página via GTM ou script inline)
     const fbq = (window as never as { fbq?: (...a: unknown[]) => void }).fbq
     if (typeof fbq === 'function') {
       fbq('track', 'Purchase', {
-        value:        params.totalAmount,
-        currency:     'BRL',
-        content_ids:  [params.checkoutId],
+        value: params.totalAmount,
+        currency: 'BRL',
+        content_ids: [params.checkoutId],
         content_type: 'product',
-        num_items:    params.qty,
+        num_items: params.qty,
       })
     }
-  } catch { /* nunca quebra o checkout */ }
+  } catch { }
 }
 
-// ─── Componente principal ─────────────────────────────────────────────────────
-
 interface Props {
-  slug:      string
-  urlUtms:   Record<string, string | undefined>
+  slug: string
+  urlUtms: Record<string, string | undefined>
   checkoutId?: string
-  sellerRef?:  string
+  sellerRef?: string
 }
 
 export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
-  const [step, setStep]         = useState<Step>('loading')
-  const [product, setProduct]   = useState<ProductInfo | null>(null)
+  const [step, setStep] = useState<Step>('loading')
+  const [product, setProduct] = useState<ProductInfo | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Formulário
-  const [name, setName]           = useState('')
-  const [docType, setDocType]     = useState<DocType>('cpf')
-  const [doc, setDoc]             = useState('')
-  const [phone, setPhone]         = useState('')
-  const [email, setEmail]         = useState('')
-  const [qty, setQty]             = useState(1)
+  const [name, setName] = useState('')
+  const [docType, setDocType] = useState<DocType>('cpf')
+  const [doc, setDoc] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [qty, setQty] = useState(1)
   const [submitting, setSubmitting] = useState(false)
 
-  // PIX
-  const [pixData, setPixData]   = useState<PixData | null>(null)
-  const [copied, setCopied]     = useState(false)
-  const pixelFiredRef           = useRef(false)
-  const pollRef                 = useRef<ReturnType<typeof setInterval> | null>(null)
-  const { secs, label: countdown } = useCountdown(pixData?.expiresAt ?? null)
+  const [pixData, setPixData] = useState<PixData | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [deliveryState, setDeliveryState] = useState<DeliveryState | null>(null)
+  const [deliveryEmail, setDeliveryEmail] = useState('')
+  const [deliveryProfileReleased, setDeliveryProfileReleased] = useState(false)
+  const [deliverySaving, setDeliverySaving] = useState(false)
+  const [deliveryError, setDeliveryError] = useState('')
+  const [deliverySuccessMsg, setDeliverySuccessMsg] = useState('')
 
-  // UTMs: captura URL atual + restaura 30 dias de persistência (cookie + localStorage)
+  const pixelFiredRef = useRef(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { secs, label: countdown } = useCountdown(pixData?.expiresAt ?? null)
   const utmsRef = useRef<UtmData | null>(null)
 
   useEffect(() => {
-    utmsRef.current = captureUtms()
-  }, [])
+    const captured = captureUtms()
+    utmsRef.current = {
+      ...captured,
+      ...Object.fromEntries(Object.entries(urlUtms).filter(([, v]) => Boolean(v))),
+    }
+  }, [urlUtms])
 
-  // Carrega produto
+  const applyCheckoutStatus = useCallback((checkout: CheckoutStatusResponse, cid: string) => {
+    if (checkout.status === 'PAID') {
+      if (pollRef.current) clearInterval(pollRef.current)
+      const normalizedDelivery = normalizeDeliveryState(checkout.delivery, checkout.status)
+      setDeliveryState(normalizedDelivery)
+      setDeliveryEmail(normalizedDelivery.adspowerEmail ?? '')
+      setDeliveryProfileReleased(normalizedDelivery.adspowerProfileReleased)
+      setStep('delivery')
+      return
+    }
+
+    if (checkout.status === 'EXPIRED' || checkout.status === 'CANCELLED') {
+      if (pollRef.current) clearInterval(pollRef.current)
+      setErrorMsg(checkout.status === 'EXPIRED' ? 'O PIX expirou. Gere um novo pedido.' : 'Este checkout foi cancelado.')
+      setStep('error')
+      return
+    }
+
+    if (checkout.pixCopyPaste && checkout.qrCodeBase64 && checkout.expiresAt) {
+      setPixData({
+        checkoutId: cid,
+        txid: '',
+        pixCopyPaste: checkout.pixCopyPaste,
+        qrCodeBase64: checkout.qrCodeBase64,
+        expiresAt: checkout.expiresAt,
+        totalAmount: Number(checkout.totalAmount ?? 0),
+        qty: Number(checkout.qty ?? 1),
+        title: checkout.title ?? product?.title ?? 'Checkout PIX',
+      })
+      setStep('pix')
+    }
+  }, [product?.title])
+
+  const fetchCheckoutStatus = useCallback(async (cid: string) => {
+    const r = await fetch(`/api/loja/${slug}?checkoutId=${encodeURIComponent(cid)}`, { cache: 'no-store' })
+    const data = (await r.json()) as CheckoutStatusResponse | { error?: string }
+    if (!r.ok) throw new Error((data as { error?: string }).error ?? 'Erro ao consultar checkout')
+    return data as CheckoutStatusResponse
+  }, [slug])
+
+  const startPolling = useCallback((cid: string) => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const checkout = await fetchCheckoutStatus(cid)
+        if (checkout.status !== 'PENDING') {
+          applyCheckoutStatus(checkout, cid)
+        }
+      } catch { }
+    }, 5000)
+  }, [applyCheckoutStatus, fetchCheckoutStatus])
+
   useEffect(() => {
     fetch(`/api/loja/${slug}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.error) { setErrorMsg(data.error); setStep('error'); return }
+        if (data.error) {
+          setErrorMsg(data.error)
+          setStep('error')
+          return
+        }
         setProduct(data)
         setStep((prev) => (prev === 'loading' ? 'form' : prev))
       })
-      .catch(() => { setErrorMsg('Erro ao carregar produto.'); setStep('error') })
+      .catch(() => {
+        setErrorMsg('Erro ao carregar produto.')
+        setStep('error')
+      })
   }, [slug])
 
-  // Dispara pixel Purchase uma única vez ao entrar na tela de sucesso
   useEffect(() => {
-    if (step === 'success' && pixData && !pixelFiredRef.current) {
+    if (step === 'delivery' && pixData && !pixelFiredRef.current) {
       pixelFiredRef.current = true
       firePixelPurchase({
-        checkoutId:  pixData.checkoutId,
+        checkoutId: pixData.checkoutId,
         totalAmount: pixData.totalAmount,
         productName: pixData.title,
-        qty:         pixData.qty,
+        qty: pixData.qty,
       })
     }
   }, [step, pixData])
 
-  // Polling de status
-  const startPolling = useCallback((cId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current)
-    pollRef.current = setInterval(async () => {
-      try {
-        const r = await fetch(`/api/loja/${slug}?checkoutId=${cId}`)
-        const d = await r.json()
-        if (d.status === 'PAID') {
-          clearInterval(pollRef.current!)
-          setStep('success')
-        }
-      } catch { /* ignora */ }
-    }, 5000)
-  }, [slug])
-
-  // Restaura checkout existente (link vindo do WhatsApp)
   useEffect(() => {
     if (!checkoutId) return
-    fetch(`/api/loja/${slug}?checkoutId=${checkoutId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.error) return
-        if (data.status === 'PAID') { setStep('success'); return }
-        if (data.pixCopyPaste && data.qrCodeBase64 && data.expiresAt) {
-          setPixData({
-            checkoutId,
-            txid: '',
-            pixCopyPaste: data.pixCopyPaste,
-            qrCodeBase64: data.qrCodeBase64,
-            expiresAt:    data.expiresAt,
-            totalAmount:  Number(data.totalAmount ?? 0),
-            qty:          Number(data.qty ?? 1),
-            title:        data.title ?? product?.title ?? 'Checkout PIX',
-          })
-          setStep('pix')
-          startPolling(checkoutId)
-        }
+    fetchCheckoutStatus(checkoutId)
+      .then((status) => applyCheckoutStatus(status, checkoutId))
+      .catch(() => {
+        setErrorMsg('Não foi possível restaurar este checkout.')
+        setStep('error')
       })
-      .catch(() => { /* não bloqueia fluxo */ })
-  }, [checkoutId, slug, product?.title, startPolling])
+  }, [applyCheckoutStatus, checkoutId, fetchCheckoutStatus])
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current)
+  }, [])
 
-  // Expiração do PIX
   useEffect(() => {
     if (step === 'pix' && secs === 0) {
+      if (pollRef.current) clearInterval(pollRef.current)
       setErrorMsg('O PIX expirou. Gere um novo pedido.')
       setStep('error')
     }
@@ -229,37 +353,86 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
     e.preventDefault()
     if (!product) return
     setSubmitting(true)
+    setErrorMsg('')
 
     const waClean = phone.replace(/\D/g, '')
-    const waE164  = `+55${waClean}`
+    const waE164 = `+55${waClean}`
     const docClean = doc.replace(/\D/g, '')
-
     const utmPayload = utmsRef.current ? buildUtmPayload(utmsRef.current) : {}
 
     const body: Record<string, unknown> = {
-      name,
+      name: name.trim(),
       whatsapp: waE164,
-      email:    email || undefined,
+      email: email.trim() || undefined,
       qty,
       sellerRef: sellerRef || undefined,
       ...utmPayload,
     }
     if (docType === 'cnpj') body.cnpj = docClean
-    else                    body.cpf  = doc
+    else body.cpf = doc
 
-    const res  = await fetch(`/api/loja/${slug}`, {
-      method:  'POST',
+    const res = await fetch(`/api/loja/${slug}`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
+      body: JSON.stringify(body),
     })
     const data = await res.json()
     setSubmitting(false)
 
-    if (!res.ok) { setErrorMsg(data.error ?? 'Erro ao gerar PIX.'); setStep('error'); return }
+    if (!res.ok) {
+      setErrorMsg(data.error ?? 'Erro ao gerar PIX.')
+      setStep('error')
+      return
+    }
 
-    setPixData(data)
+    const generated = data as PixData
+    setPixData(generated)
     setStep('pix')
-    startPolling(data.checkoutId)
+    startPolling(generated.checkoutId)
+  }
+
+  const handleDeliverySubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pixData) return
+
+    const normalizedEmail = normalizeEmail(deliveryEmail)
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      setDeliveryError('Informe um e-mail AdsPower válido para continuar.')
+      return
+    }
+    if (!deliveryProfileReleased) {
+      setDeliveryError('Confirme que seu perfil está liberado no AdsPower para liberar a entrega.')
+      return
+    }
+
+    setDeliveryError('')
+    setDeliverySuccessMsg('')
+    setDeliverySaving(true)
+
+    const res = await fetch(`/api/loja/${slug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        checkoutId: pixData.checkoutId,
+        adspowerEmail: normalizedEmail,
+        adspowerProfileReleased: true,
+      }),
+    })
+    const data = await res.json()
+    setDeliverySaving(false)
+
+    if (!res.ok) {
+      setDeliveryError(data.error ?? 'Não foi possível salvar os dados de entrega.')
+      return
+    }
+
+    const nextDelivery = data.delivery as DeliveryState | undefined
+    if (nextDelivery) {
+      setDeliveryState(nextDelivery)
+      setDeliveryEmail(nextDelivery.adspowerEmail ?? normalizedEmail)
+      setDeliveryProfileReleased(nextDelivery.adspowerProfileReleased)
+    }
+    setDeliverySuccessMsg('Dados enviados com sucesso. Você já pode acompanhar o status da entrega abaixo.')
   }
 
   const copyPix = async () => {
@@ -271,215 +444,287 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
 
   const total = product ? product.pricePerUnit * qty : 0
 
-  // ─── Telas ────────────────────────────────────────────────────────────────
+  if (step === 'loading') {
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </main>
+    )
+  }
 
-  if (step === 'loading') return (
-    <main className="min-h-screen bg-black flex items-center justify-center">
-      <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-    </main>
-  )
-
-  if (step === 'error') return (
-    <main className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full text-center space-y-4">
-        <div className="text-4xl">❌</div>
-        <p className="text-white font-semibold text-lg">Ops!</p>
-        <p className="text-zinc-400 text-sm">{errorMsg}</p>
-        <button
-          onClick={() => { setErrorMsg(''); setStep('form') }}
-          className="w-full py-3 rounded-xl bg-zinc-800 text-white text-sm font-medium hover:bg-zinc-700 transition"
-        >
-          Tentar novamente
-        </button>
-      </div>
-    </main>
-  )
-
-  if (step === 'success') return (
-    <main className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden max-w-sm w-full">
-        {/* Banner verde */}
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-5 text-center">
-          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
-            <span className="text-4xl">✅</span>
-          </div>
-          <p className="text-white font-bold text-2xl">Pagamento confirmado!</p>
-          <p className="text-white/80 text-sm mt-1">PIX recebido com sucesso</p>
-        </div>
-
-        <div className="p-6 space-y-5">
-          {/* Resumo */}
-          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 space-y-2">
-            <p className="text-xs text-zinc-500 uppercase tracking-wider">Resumo do pedido</p>
-            <p className="text-white text-sm font-semibold">{pixData?.title}</p>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-400 text-xs">{pixData?.qty} unidade(s)</span>
-              <span className="text-emerald-400 font-bold text-lg">
-                R$ {pixData ? pixData.totalAmount.toFixed(2).replace('.', ',') : '—'}
-              </span>
-            </div>
-          </div>
-
-          {/* CTA principal — Área do cliente */}
-          <a
-            href="/dashboard"
-            className="flex items-center justify-center gap-2 w-full py-4 rounded-xl font-bold text-white text-base tracking-wide transition"
-            style={{ background: 'linear-gradient(135deg, #10b981, #0ea5e9)' }}
-          >
-            🚀 Acessar Minha Área de Membros
-          </a>
-
-          {/* CTA secundário — WhatsApp suporte */}
-          {(() => {
-            const waNumber = (process.env.NEXT_PUBLIC_WA_SUPPORT_NUMBER ?? '').replace(/\D/g, '')
-            if (!waNumber) return null
-            const text = encodeURIComponent(
-              `Olá! Acabei de confirmar o pagamento do pedido #${pixData?.checkoutId ?? ''}. Meu nome é ${name} e o produto é ${pixData?.title ?? ''}. Pode me ajudar?`
-            )
-            return (
-              <a
-                href={`https://wa.me/${waNumber}?text=${text}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-4 rounded-xl font-bold text-white text-base tracking-wide transition"
-                style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
-                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                </svg>
-                Ver meu pedido no WhatsApp
-              </a>
-            )
-          })()}
-
-          {/* Mensagem de entrega */}
-          <div className="text-center space-y-1">
-            <p className="text-zinc-400 text-xs">
-              Em instantes você receberá uma confirmação no WhatsApp cadastrado.
-            </p>
-            <p className="text-zinc-600 text-[11px]">
-              Qualquer dúvida, responda a mensagem que você vai receber. 🤝
-            </p>
-          </div>
-
-          {/* Logo / marca */}
-          <div className="pt-2 text-center">
-            <span className="text-zinc-600 text-[10px] uppercase tracking-widest">
-              🛡️ Ads Ativos Global · War Room OS
-            </span>
-          </div>
-        </div>
-      </div>
-    </main>
-  )
-
-  if (step === 'pix' && pixData) return (
-    <main className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden max-w-sm w-full">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-white/70 text-xs uppercase tracking-wider">Aguardando pagamento</p>
-            <p className="text-white font-bold text-lg leading-tight">{pixData.title}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-white/70 text-xs">Expira em</p>
-            <p className={`font-mono font-bold text-xl ${secs < 120 ? 'text-red-300' : 'text-white'}`}>
-              {countdown}
-            </p>
-          </div>
-        </div>
-
-        <div className="p-6 space-y-5">
-          {/* QR Code */}
-          <div className="flex flex-col items-center space-y-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`data:image/png;base64,${pixData.qrCodeBase64}`}
-              alt="QR Code PIX"
-              className="w-52 h-52 rounded-xl border border-zinc-700"
-            />
-            <p className="text-zinc-500 text-xs">Escaneie o QR Code com seu banco</p>
-          </div>
-
-          {/* Separador */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-zinc-800" />
-            <span className="text-zinc-600 text-xs">ou copie o código</span>
-            <div className="flex-1 h-px bg-zinc-800" />
-          </div>
-
-          {/* Pix Copy & Paste */}
+  if (step === 'error') {
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full text-center space-y-4">
+          <div className="text-4xl">❌</div>
+          <p className="text-white font-semibold text-lg">Ops!</p>
+          <p className="text-zinc-400 text-sm">{errorMsg}</p>
           <button
-            onClick={copyPix}
-            className={`w-full py-3.5 rounded-xl border text-sm font-semibold transition flex items-center justify-center gap-2 ${
-              copied
-                ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
-                : 'bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700'
-            }`}
+            onClick={() => { setErrorMsg(''); setStep('form') }}
+            className="w-full py-3 rounded-xl bg-zinc-800 text-white text-sm font-medium hover:bg-zinc-700 transition"
           >
-            {copied ? '✅ Copiado!' : '📋 Copiar PIX Copia e Cola'}
+            Tentar novamente
           </button>
+        </div>
+      </main>
+    )
+  }
 
-          {/* Valor */}
-          <div className="bg-zinc-800/50 rounded-xl p-4 flex items-center justify-between">
+  if (step === 'pix' && pixData) {
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden max-w-sm w-full">
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex items-center justify-between">
             <div>
-              <p className="text-zinc-500 text-xs">Valor total</p>
-              <p className="text-white font-bold text-xl">
-                R$ {pixData.totalAmount.toFixed(2).replace('.', ',')}
-              </p>
+              <p className="text-white/70 text-xs uppercase tracking-wider">Aguardando pagamento</p>
+              <p className="text-white font-bold text-lg leading-tight">{pixData.title}</p>
             </div>
             <div className="text-right">
-              <p className="text-zinc-500 text-xs">{pixData.qty}x unidade(s)</p>
-              <p className="text-zinc-400 text-sm">{pixData.title}</p>
+              <p className="text-white/70 text-xs">Expira em</p>
+              <p className={`font-mono font-bold text-xl ${secs < 120 ? 'text-red-300' : 'text-white'}`}>
+                {countdown}
+              </p>
             </div>
           </div>
 
-          {/* Status pulse */}
-          <div className="flex items-center gap-2 justify-center">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <p className="text-zinc-500 text-xs">Aguardando confirmação do banco...</p>
+          <div className="p-6 space-y-5">
+            <div className="flex flex-col items-center space-y-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`data:image/png;base64,${pixData.qrCodeBase64}`}
+                alt="QR Code PIX"
+                className="w-52 h-52 rounded-xl border border-zinc-700"
+              />
+              <p className="text-zinc-500 text-xs">Escaneie o QR Code com seu banco</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-zinc-800" />
+              <span className="text-zinc-600 text-xs">ou copie o código</span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+
+            <button
+              onClick={copyPix}
+              className={`w-full py-3.5 rounded-xl border text-sm font-semibold transition flex items-center justify-center gap-2 ${
+                copied
+                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
+                  : 'bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700'
+              }`}
+            >
+              {copied ? '✅ Copiado!' : '📋 Copiar PIX Copia e Cola'}
+            </button>
+
+            <div className="bg-zinc-800/50 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-zinc-500 text-xs">Valor total</p>
+                <p className="text-white font-bold text-xl">
+                  R$ {pixData.totalAmount.toFixed(2).replace('.', ',')}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-zinc-500 text-xs">{pixData.qty}x unidade(s)</p>
+                <p className="text-zinc-400 text-sm">{pixData.title}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 justify-center">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-zinc-500 text-xs">Aguardando confirmação do banco...</p>
+            </div>
           </div>
         </div>
-      </div>
-    </main>
-  )
+      </main>
+    )
+  }
 
-  // ─── Formulário principal ─────────────────────────────────────────────────
+  if (step === 'delivery' && pixData) {
+    const currentDelivery = deliveryState ?? getDefaultDeliveryState('PAID')
+    const currentOrder = DELIVERY_FLOW_LABELS[currentDelivery.flowStatus].order
+    const canEditData = currentDelivery.flowStatus === 'WAITING_CUSTOMER_DATA' || currentDelivery.flowStatus === 'DELIVERY_REQUESTED'
+    const waNumber = (process.env.NEXT_PUBLIC_WA_SUPPORT_NUMBER ?? '').replace(/\D/g, '')
+    const refreshUrl = `/loja/${slug}?checkoutId=${encodeURIComponent(pixData.checkoutId)}`
+    const waText = encodeURIComponent(
+      `Olá, equipe Ads Ativos. Pedido #${pixData.checkoutId}. Já paguei e preciso acompanhar a entrega.`
+    )
+
+    return (
+      <main className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden max-w-xl w-full">
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-5 text-center">
+            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2">
+              <span className="text-3xl">🚚</span>
+            </div>
+            <p className="text-white font-bold text-2xl">Entrega AdsPower</p>
+            <p className="text-white/85 text-sm mt-1">Pagamento aprovado. Complete os dados para liberar a entrega.</p>
+          </div>
+
+          <div className="p-6 space-y-5">
+            <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 space-y-2">
+              <p className="text-xs text-zinc-500 uppercase tracking-wider">Resumo do pedido</p>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-white text-sm font-semibold">{pixData.title}</p>
+                  <p className="text-zinc-400 text-xs">Pedido #{pixData.checkoutId}</p>
+                </div>
+                <span className="text-emerald-400 font-bold text-lg">
+                  R$ {pixData.totalAmount.toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+              <p className="text-amber-300 font-semibold text-sm">⚠️ Atenção obrigatória</p>
+              <p className="text-amber-100/90 text-sm leading-relaxed">
+                É importante ter perfil liberado no AdsPower para que a entrega seja feita de maneira correta.
+                Se não tiver perfil liberado, o sistema não deixa enviar.
+              </p>
+            </div>
+
+            <form onSubmit={handleDeliverySubmit} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-zinc-300 text-xs uppercase tracking-wider font-medium">
+                  Digite aqui seu e-mail do AdsPower para que possamos realizar a entrega
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={deliveryEmail}
+                  onChange={(e) => setDeliveryEmail(e.target.value)}
+                  disabled={!canEditData}
+                  placeholder="seu-email-adspower@exemplo.com"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 transition text-sm disabled:opacity-70"
+                />
+              </div>
+
+              <label className="flex items-start gap-3 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deliveryProfileReleased}
+                  onChange={(e) => setDeliveryProfileReleased(e.target.checked)}
+                  disabled={!canEditData}
+                  className="mt-0.5 w-4 h-4 accent-emerald-500"
+                />
+                <span className="text-sm text-zinc-200 leading-relaxed">
+                  Confirmo que meu perfil AdsPower está liberado para receber a entrega deste pedido.
+                </span>
+              </label>
+
+              {deliveryError ? (
+                <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                  {deliveryError}
+                </p>
+              ) : null}
+              {deliverySuccessMsg ? (
+                <p className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                  {deliverySuccessMsg}
+                </p>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={deliverySaving || !canEditData}
+                className="w-full py-3 rounded-xl font-bold text-white text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, #10b981, #0ea5e9)' }}
+              >
+                {deliverySaving ? 'Enviando dados de entrega...' : 'Enviar dados para entrega'}
+              </button>
+            </form>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-semibold text-sm">Status da entrega</h3>
+                <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                  {DELIVERY_FLOW_LABELS[currentDelivery.flowStatus].title}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {DELIVERY_TIMELINE.map((status) => {
+                  const cfg = DELIVERY_FLOW_LABELS[status]
+                  const isDone = currentOrder >= cfg.order
+                  const isCurrent = currentDelivery.flowStatus === status
+                  return (
+                    <div
+                      key={status}
+                      className={`rounded-lg border px-3 py-2 ${
+                        isCurrent
+                          ? 'border-emerald-500/50 bg-emerald-500/10'
+                          : isDone
+                            ? 'border-emerald-500/30 bg-zinc-800/60'
+                            : 'border-zinc-700 bg-zinc-900/50'
+                      }`}
+                    >
+                      <p className={`text-sm font-medium ${isDone ? 'text-emerald-300' : 'text-zinc-300'}`}>
+                        {isDone ? '✅' : '⏳'} {cfg.title}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-0.5">{cfg.description}</p>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-xs text-zinc-300 space-y-1">
+                <p><span className="text-zinc-500">Status atual:</span> {currentDelivery.deliveryStatusNote ?? 'Aguardando atualização da equipe.'}</p>
+                {currentDelivery.deliveryRequestedAt ? (
+                  <p><span className="text-zinc-500">Dados enviados em:</span> {new Date(currentDelivery.deliveryRequestedAt).toLocaleString('pt-BR')}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {waNumber ? (
+                <a
+                  href={`https://wa.me/${waNumber}?text=${waText}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 min-w-[180px] text-center py-2.5 rounded-lg bg-[#25D366] hover:bg-[#1ebe5d] text-white text-sm font-semibold transition"
+                >
+                  Falar com suporte no WhatsApp
+                </a>
+              ) : null}
+              <a
+                href={refreshUrl}
+                className="flex-1 min-w-[180px] text-center py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm font-semibold transition"
+              >
+                Atualizar status agora
+              </a>
+            </div>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden max-w-sm w-full">
-        {/* Badge */}
-        {product?.badge && (
+        {product?.badge ? (
           <div className="flex justify-center pt-5">
             <span className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold px-4 py-1.5 rounded-full tracking-wider uppercase">
               🚀 {product.badge}
             </span>
           </div>
-        )}
+        ) : null}
 
-        {/* Cabeçalho */}
         <div className="px-6 pt-4 pb-2 text-center">
           <h1 className="text-white font-bold text-2xl leading-tight">{product?.title}</h1>
-          {product && product.available > 0 && (
+          {product && product.available > 0 ? (
             <p className="text-emerald-400 text-sm font-medium mt-1">
               DISPONÍVEL: {product.available} UNIDADE{product.available !== 1 ? 'S' : ''}
             </p>
-          )}
-          {product && product.available === 0 && (
+          ) : null}
+          {product && product.available === 0 ? (
             <p className="text-red-400 text-sm font-medium mt-1">ESGOTADO</p>
-          )}
-          {product?.subtitle && (
+          ) : null}
+          {product?.subtitle ? (
             <p className="text-zinc-500 text-xs mt-1">{product.subtitle}</p>
-          )}
+          ) : null}
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 pb-6 pt-2 space-y-4">
-          {/* Nome */}
           <div className="space-y-1">
-            <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">
-              Nome completo
-            </label>
+            <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Nome completo</label>
             <input
               type="text"
               required
@@ -490,11 +735,8 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             />
           </div>
 
-          {/* WhatsApp */}
           <div className="space-y-1">
-            <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">
-              WhatsApp (receber acesso)
-            </label>
+            <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">WhatsApp (receber acesso)</label>
             <input
               type="tel"
               required
@@ -505,7 +747,6 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             />
           </div>
 
-          {/* E-mail */}
           <div className="space-y-1">
             <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">
               E-mail <span className="text-zinc-600 normal-case">(recomendado)</span>
@@ -519,7 +760,6 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             />
           </div>
 
-          {/* Toggle CPF / CNPJ */}
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <button
@@ -571,12 +811,9 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             )}
           </div>
 
-          {/* Quantidade */}
-          {product && product.maxQty > 1 && (
+          {product && product.maxQty > 1 ? (
             <div className="space-y-1">
-              <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">
-                Quantidade
-              </label>
+              <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Quantidade</label>
               <div className="flex items-center gap-4 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2">
                 <button
                   type="button"
@@ -600,17 +837,13 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
 
-          {/* Subtotal */}
           <div className="flex items-center justify-between py-2 border-t border-zinc-800">
             <span className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Total</span>
-            <span className="text-white font-bold text-2xl">
-              R$ {total.toFixed(2).replace('.', ',')}
-            </span>
+            <span className="text-white font-bold text-2xl">R$ {total.toFixed(2).replace('.', ',')}</span>
           </div>
 
-          {/* Botão principal */}
           <button
             type="submit"
             disabled={submitting || !product || product.available === 0}
@@ -629,13 +862,11 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             )}
           </button>
 
-          {/* Segurança */}
           <div className="flex items-center justify-center gap-4 pt-1">
             <span className="text-zinc-600 text-[11px] flex items-center gap-1">🔒 Pagamento seguro</span>
             <span className="text-zinc-600 text-[11px] flex items-center gap-1">✅ PIX instantâneo</span>
           </div>
 
-          {/* Cancelar */}
           <button
             type="button"
             onClick={() => window.history.back()}
