@@ -39,13 +39,13 @@ function navBadgeForHref(href: string): { text: string; className: string } | nu
   if (href === '/dashboard/venda-rapida') {
     return {
       text: 'BR',
-      className: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
+      className: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40',
     }
   }
   if (href === '/dashboard/venda-rapida-global') {
     return {
       text: 'INTL',
-      className: 'bg-blue-500/15 text-blue-500 border border-blue-500/30',
+      className: 'bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-500/40',
     }
   }
   return null

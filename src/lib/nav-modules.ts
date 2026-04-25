@@ -208,13 +208,6 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
-    href: '/dashboard/venda-rapida-global',
-    label: 'Venda Rápida Global',
-    roles: ['ADMIN', 'COMMERCIAL'],
-    icon: 'Globe',
-    group: 'Comercial',
-  },
-  {
     href: '/dashboard/admin/smart-delivery',
     label: 'SmartDeliverySystem (Visao CEO)',
     roles: ['ADMIN', 'COMMERCIAL'],
