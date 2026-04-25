@@ -8,6 +8,9 @@ interface ProductInfo {
   slug: string
   title: string
   subtitle: string | null
+  fullDescription: string | null
+  stockProductCode: string | null
+  stockProductName: string | null
   badge: string | null
   pricePerUnit: number
   maxQty: number
@@ -719,6 +722,16 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
           ) : null}
           {product?.subtitle ? (
             <p className="text-zinc-500 text-xs mt-1 whitespace-pre-line">{product.subtitle}</p>
+          ) : null}
+          {product?.fullDescription ? (
+            <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2">
+              <p className="text-zinc-300 text-xs whitespace-pre-line leading-relaxed">{product.fullDescription}</p>
+            </div>
+          ) : null}
+          {(product?.stockProductCode || product?.stockProductName) ? (
+            <p className="text-zinc-600 text-[11px] mt-1">
+              Vinculado ao estoque: {product.stockProductCode || '—'}{product.stockProductName ? ` · ${product.stockProductName}` : ''}
+            </p>
           ) : null}
         </div>
 

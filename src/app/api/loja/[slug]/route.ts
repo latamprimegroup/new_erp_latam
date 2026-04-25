@@ -21,6 +21,51 @@ const DELIVERY_FLOW = {
   DELIVERED: 'DELIVERED',
 } as const
 
+function normalizeStockCode(v: string | null | undefined) {
+  const normalized = (v ?? '').trim().toUpperCase()
+  return normalized || null
+}
+
+function normalizeStockName(v: string | null | undefined) {
+  const normalized = (v ?? '').trim()
+  return normalized || null
+}
+
+function buildAssetWhere(listing: {
+  assetCategory: string
+  stockProductCode: string | null
+  stockProductName: string | null
+}) {
+  const code = normalizeStockCode(listing.stockProductCode)
+  const name = normalizeStockName(listing.stockProductName)
+  const base = {
+    category: listing.assetCategory as never,
+    status: 'AVAILABLE' as const,
+  }
+  if (code) {
+    return {
+      ...base,
+      OR: [
+        { adsId: code },
+        { specs: { path: '$.productCode', equals: code } },
+        { specs: { path: '$.codigoProduto', equals: code } },
+      ],
+    }
+  }
+  if (name) {
+    return {
+      ...base,
+      OR: [
+        { displayName: { equals: name, mode: 'insensitive' as const } },
+        { subCategory: { equals: name, mode: 'insensitive' as const } },
+        { specs: { path: '$.productName', equals: name } },
+        { specs: { path: '$.nomeProduto', equals: name } },
+      ],
+    }
+  }
+  return base
+}
+
 // ─── GET: retorna info do produto OU status do checkout ───────────────────────
 
 export async function GET(req: globalThis.Request, { params }: { params: { slug: string } }) {
@@ -80,9 +125,8 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
   // Conta estoque disponível — exclui ativos de fornecedores suspensos (stop-loss)
   const available = await prisma.asset.count({
     where: {
-      category: listing.assetCategory as never,
-      status:   'AVAILABLE',
-      vendor:   { suspended: false },
+      ...buildAssetWhere(listing),
+      vendor: { suspended: false },
     },
   })
 
@@ -91,7 +135,10 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     slug:         listing.slug,
     title:        listing.title,
     subtitle:     listing.subtitle,
+    fullDescription: listing.fullDescription,
     badge:        listing.badge,
+    stockProductCode: listing.stockProductCode,
+    stockProductName: listing.stockProductName,
     pricePerUnit: Number(listing.pricePerUnit),
     maxQty:       Math.min(listing.maxQty, available),
     available,
@@ -209,7 +256,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     checkout = await prisma.$transaction(async (tx) => {
       // Seleciona IDs dentro da transação para evitar leitura suja
       const candidates = await tx.asset.findMany({
-        where:   { category: listing.assetCategory as never, status: 'AVAILABLE' },
+        where:   buildAssetWhere(listing),
         select:  { id: true },
         take:    qty,
         orderBy: { createdAt: 'asc' },
@@ -240,6 +287,8 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           buyerWhatsapp:    waE164,
           buyerEmail:       email || null,
           qty,
+          stockProductCodeSnapshot: normalizeStockCode(listing.stockProductCode),
+          stockProductNameSnapshot: normalizeStockName(listing.stockProductName),
           totalAmount,
           status:           'PENDING',
           interTxid:        pixData.txid,
