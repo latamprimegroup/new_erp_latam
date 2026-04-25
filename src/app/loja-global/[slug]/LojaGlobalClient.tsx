@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { captureUtms, buildUtmPayload, type UtmData } from '@/lib/utm-tracker'
+import { QUICK_SALE_LEGAL_TERMS_TEXT } from '@/lib/quick-sale-legal-terms'
 
 type DocType = 'cpf' | 'cnpj'
 type Gateway = 'KAST' | 'MERCURY'
@@ -14,6 +15,7 @@ type RetryableGlobalCheckoutInput = {
   email: string
   qty: number
   paymentMethod: Gateway
+  acceptTerms: boolean
 }
 
 interface ProductInfo {
@@ -35,6 +37,7 @@ interface ProductInfo {
 
 type DeliveryFlowStatus =
   | 'PENDING_PAYMENT'
+  | 'PENDING_KYC'
   | 'WAITING_CUSTOMER_DATA'
   | 'DELIVERY_REQUESTED'
   | 'DELIVERY_IN_PROGRESS'
@@ -99,29 +102,35 @@ const DELIVERY_FLOW_LABELS: Record<DeliveryFlowStatus, { title: string; descript
     description: 'O pagamento global precisa ser confirmado para liberar a etapa de entrega.',
     order: 0,
   },
+  PENDING_KYC: {
+    title: 'Aguardando KYC',
+    description: 'Envie documento e selfie para validação de identidade.',
+    order: 1,
+  },
   WAITING_CUSTOMER_DATA: {
     title: 'Aguardando dados AdsPower',
     description: 'Preencha seu e-mail AdsPower e confirme que o perfil está liberado.',
-    order: 1,
+    order: 2,
   },
   DELIVERY_REQUESTED: {
     title: 'Dados de entrega recebidos',
     description: 'Estamos validando seu perfil e separando a entrega.',
-    order: 2,
+    order: 3,
   },
   DELIVERY_IN_PROGRESS: {
     title: 'Entrega em andamento',
     description: 'Equipe Ads Ativos está liberando o ativo.',
-    order: 3,
+    order: 4,
   },
   DELIVERED: {
     title: 'Entrega concluída',
     description: 'Seu ativo já foi entregue.',
-    order: 4,
+    order: 5,
   },
 }
 
 const DELIVERY_TIMELINE: DeliveryFlowStatus[] = [
+  'PENDING_KYC',
   'WAITING_CUSTOMER_DATA',
   'DELIVERY_REQUESTED',
   'DELIVERY_IN_PROGRESS',
@@ -236,6 +245,7 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [qty, setQty] = useState(1)
+  const [acceptTerms, setAcceptTerms] = useState(false)
   const [selectedGateway, setSelectedGateway] = useState<Gateway>('KAST')
   const [submitting, setSubmitting] = useState(false)
 
@@ -406,6 +416,7 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
         email: input.email.trim() || undefined,
         qty: Math.max(1, Math.min(input.qty, product.maxQty, product.available)),
         paymentMethod: input.paymentMethod,
+        acceptTerms: input.acceptTerms,
         sellerRef: sellerRef || undefined,
         ...utmPayload,
       }
@@ -449,6 +460,7 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
       email,
       qty,
       paymentMethod: selectedGateway,
+      acceptTerms,
     })
   }
 
@@ -674,6 +686,11 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
     const currentDelivery = deliveryState ?? getDefaultDeliveryState('PAID')
     const currentOrder = DELIVERY_FLOW_LABELS[currentDelivery.flowStatus].order
     const canEditData = currentDelivery.flowStatus === 'WAITING_CUSTOMER_DATA' || currentDelivery.flowStatus === 'DELIVERY_REQUESTED'
+    const waNumber = (process.env.NEXT_PUBLIC_WA_SUPPORT_NUMBER ?? '').replace(/\D/g, '')
+    const refreshUrl = `/loja-global/${slug}?checkoutId=${encodeURIComponent(checkoutData.checkoutId)}`
+    const waText = encodeURIComponent(
+      `Ola, equipe Ads Ativos. Pedido #${checkoutData.orderNumber ?? checkoutData.checkoutId}. Ja paguei e preciso acompanhar a entrega global.`,
+    )
     return (
       <main className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden max-w-xl w-full">
@@ -783,6 +800,35 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
                   )
                 })}
               </div>
+
+              <div className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-2 text-xs text-zinc-300 space-y-1">
+                <p><span className="text-zinc-500">Status atual:</span> {currentDelivery.deliveryStatusNote ?? 'Aguardando atualização da equipe.'}</p>
+                {currentDelivery.lastStatusAt ? (
+                  <p><span className="text-zinc-500">Última atualização:</span> {new Date(currentDelivery.lastStatusAt).toLocaleString('pt-BR')}</p>
+                ) : null}
+                {currentDelivery.deliveryRequestedAt ? (
+                  <p><span className="text-zinc-500">Dados enviados em:</span> {new Date(currentDelivery.deliveryRequestedAt).toLocaleString('pt-BR')}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {waNumber ? (
+                <a
+                  href={`https://wa.me/${waNumber}?text=${waText}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 min-w-[180px] text-center py-2.5 rounded-lg bg-[#25D366] hover:bg-[#1ebe5d] text-white text-sm font-semibold transition"
+                >
+                  Falar com suporte no WhatsApp
+                </a>
+              ) : null}
+              <a
+                href={refreshUrl}
+                className="flex-1 min-w-[180px] text-center py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm font-semibold transition"
+              >
+                Atualizar status agora
+              </a>
             </div>
           </div>
         </div>
@@ -954,9 +1000,21 @@ export function LojaGlobalClient({ slug, urlUtms, checkoutId, sellerRef }: Props
             <span className="text-white font-bold text-2xl">R$ {total.toFixed(2).replace('.', ',')}</span>
           </div>
 
+          <label className="flex items-start gap-3 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={acceptTerms}
+              onChange={(e) => setAcceptTerms(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-emerald-500"
+            />
+            <span className="text-xs text-zinc-300 leading-relaxed">
+              {QUICK_SALE_LEGAL_TERMS_TEXT}
+            </span>
+          </label>
+
           <button
             type="submit"
-            disabled={submitting || !product || product.available === 0}
+            disabled={submitting || !product || product.available === 0 || !acceptTerms}
             className="w-full py-4 rounded-xl font-bold text-white text-base tracking-wide transition disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: 'linear-gradient(135deg, #7c3aed, #2563eb)' }}
           >

@@ -30,20 +30,61 @@ import {
   sendWhatsAppEliteDelivery,
   sendWhatsApp,
 } from '@/lib/notifications/channels/whatsapp'
+import { sendEmail, buildDeliveryEmail } from '@/lib/notifications/channels/email'
 import {
   calculateQuickSaleIncentiveBreakdown,
   registerQuickSaleProductionBonus,
   getSalesCheckoutIncentiveBreakdown,
 } from '@/lib/incentive-engine'
+import {
+  adspowerMoveProfile,
+  evaluateQuickSaleRisk,
+  getQuickSaleAdspowerProfileRef,
+  resolveQuickSaleAdspowerGroupId,
+  setQuickSaleKycMeta,
+  sendFraudAlertToChatOps,
+  type QuickSaleRiskReason,
+} from '@/lib/smart-delivery-system'
 
 export const runtime = 'nodejs'
 
 const QUICK_DELIVERY_FLOW = {
   WAITING_CUSTOMER_DATA: 'WAITING_CUSTOMER_DATA',
+  PENDING_KYC: 'PENDING_KYC',
   DELIVERY_REQUESTED: 'DELIVERY_REQUESTED',
   DELIVERY_IN_PROGRESS: 'DELIVERY_IN_PROGRESS',
   DELIVERED: 'DELIVERED',
 } as const
+
+function riskReasonLabel(reason: QuickSaleRiskReason) {
+  if (reason === 'AMOUNT_ABOVE_KYC') return 'Valor acima do limite mínimo para KYC'
+  if (reason === 'SUSPICIOUS_EMAIL_DOMAIN') return 'E-mail com domínio suspeito'
+  if (reason === 'BLACKLISTED_IDENTITY') return 'Identidade em blacklist global'
+  return reason
+}
+
+async function tryAutoMoveAdspowerProfile(params: {
+  checkoutId: string
+  listingId: string
+}) {
+  const ref = await getQuickSaleAdspowerProfileRef(params.checkoutId).catch(() => null)
+  if (!ref?.profileId) {
+    return { moved: false as const, reason: 'NO_PROFILE_REF' as const }
+  }
+  const targetGroupId = ref.groupId || await resolveQuickSaleAdspowerGroupId(params.listingId)
+  if (!targetGroupId) {
+    return { moved: false as const, reason: 'NO_GROUP_MAP' as const, profileId: ref.profileId }
+  }
+  await adspowerMoveProfile({
+    profileId: ref.profileId,
+    targetGroupId,
+  })
+  return {
+    moved: true as const,
+    profileId: ref.profileId,
+    targetGroupId,
+  }
+}
 
 // ─── Log de auditoria de cada evento PIX ─────────────────────────────────────
 
@@ -417,7 +458,25 @@ export async function POST(req: NextRequest) {
         : []
       const warrantyDays = quickCheckout.listing.warrantyDays ?? 7
       const warrantyEndsAt = new Date(paidAt.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
+      const riskDecision = await evaluateQuickSaleRisk({
+        totalAmountBrl: Number(quickCheckout.totalAmount),
+        buyerEmail: quickCheckout.buyerEmail,
+        buyerDocument: quickCheckout.buyerCpf,
+      }).catch(() => ({
+        requiresKyc: false,
+        reasons: [] as QuickSaleRiskReason[],
+        minValueForKyc: 300,
+      }))
+      if (riskDecision.requiresKyc) {
+        await setQuickSaleKycMeta(quickCheckout.id, {
+          riskReasons: riskDecision.reasons,
+          minValueForKyc: riskDecision.minValueForKyc,
+        }).catch((e) => console.error('[QuickCheckout] Falha ao salvar meta KYC:', e))
+      }
       const paidFlowStatus =
+        riskDecision.requiresKyc
+          ? QUICK_DELIVERY_FLOW.PENDING_KYC
+          : (
         quickCheckout.deliveryFlowStatus === QUICK_DELIVERY_FLOW.DELIVERED
           ? QUICK_DELIVERY_FLOW.DELIVERED
           : quickCheckout.deliveryFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_IN_PROGRESS
@@ -425,8 +484,11 @@ export async function POST(req: NextRequest) {
             : quickCheckout.deliveryFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_REQUESTED
               ? QUICK_DELIVERY_FLOW.DELIVERY_REQUESTED
               : QUICK_DELIVERY_FLOW.WAITING_CUSTOMER_DATA
+          )
       const paidStatusNote =
-        paidFlowStatus === QUICK_DELIVERY_FLOW.DELIVERED
+        riskDecision.requiresKyc
+          ? 'Pagamento confirmado. Aguardando validação KYC para liberar entrega.'
+          : paidFlowStatus === QUICK_DELIVERY_FLOW.DELIVERED
           ? 'Pagamento confirmado e entrega concluída.'
           : paidFlowStatus === QUICK_DELIVERY_FLOW.DELIVERY_IN_PROGRESS
             ? 'Pagamento confirmado. Entrega em andamento pela equipe.'
@@ -598,12 +660,120 @@ export async function POST(req: NextRequest) {
 
       await logPixEvent({ txid, e2eid, amount: Number(quickCheckout.totalAmount), status: 'PROCESSED', flowType: 'QUICK_CHECKOUT', relatedId: quickCheckout.id, rawPayload })
 
-      // 3d. Pós-pagamento: direciona para tela pública de Entrega (AdsPower)
+      // 3d. Pós-pagamento: decisão híbrida (autoentrega ou KYC) + direcionamento
       const appBase = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
       const deliveryUrl = appBase
         ? `${appBase}/loja/${quickCheckout.listing.slug}?checkoutId=${encodeURIComponent(quickCheckout.id)}`
         : null
-      if (deliveryUrl) {
+      if (riskDecision.requiresKyc && deliveryUrl) {
+        const riskReasons = riskDecision.reasons.map(riskReasonLabel).join(' · ')
+        const kycGuidanceMessage = [
+          '✅ *Pagamento confirmado na Ads Ativos*',
+          '',
+          `Pedido: #${quickCheckout.id}`,
+          `Produto: ${quickCheckout.listing.title}`,
+          '',
+          '🛡️ *Liberação com verificação de identidade (KYC)*',
+          'Pagamento confirmado! Para liberar seu ativo de alto valor, realize a verificação de identidade em nosso portal seguro.',
+          '',
+          `Motivo da validação: ${riskReasons || 'Política de segurança.'}`,
+          deliveryUrl,
+          '',
+          'Após aprovação da equipe, sua entrega será liberada automaticamente.',
+        ].join('\n')
+        sendWhatsApp({ phone: quickCheckout.buyerWhatsapp, message: kycGuidanceMessage })
+          .catch((e) => console.error('[QuickCheckout] guia kyc whatsapp', e))
+        if (quickCheckout.buyerEmail) {
+          const terms = buildDeliveryEmail({
+            buyerName: quickCheckout.buyerName,
+            buyerEmail: quickCheckout.buyerEmail,
+            productTitle: quickCheckout.listing.title,
+            orderId: quickCheckout.id,
+            panelUrl: deliveryUrl,
+          })
+          sendEmail({
+            to: quickCheckout.buyerEmail,
+            subject: `🛡️ Verificação KYC pendente — Pedido #${quickCheckout.id}`,
+            html: `${terms.html}<p style="font-size:13px;color:#f59e0b;margin-top:12px;">Seu pagamento foi aprovado, mas a liberação deste ativo requer verificação de identidade (KYC). Envie documento e selfie no portal.</p>`,
+            text: `Pagamento aprovado para ${quickCheckout.listing.title}. Para liberar a entrega, envie documento e selfie: ${deliveryUrl}`,
+          }).catch((e) => console.error('[QuickCheckout] guia kyc email', e))
+        }
+        if (riskDecision.reasons.includes('BLACKLISTED_IDENTITY')) {
+          sendFraudAlertToChatOps({
+            title: 'Tentativa de compra com identidade em blacklist',
+            severity: 'CRITICAL',
+            details: {
+              checkoutId: quickCheckout.id,
+              buyerName: quickCheckout.buyerName,
+              buyerEmail: quickCheckout.buyerEmail ?? 'n/a',
+              buyerDocument: quickCheckout.buyerCpf,
+              listing: quickCheckout.listing.title,
+              riskReasons,
+            },
+          }).catch(() => {})
+        }
+      } else if (deliveryUrl) {
+        const autoMove = await tryAutoMoveAdspowerProfile({
+          checkoutId: quickCheckout.id,
+          listingId: quickCheckout.listingId,
+        }).catch((e) => {
+          console.error('[QuickCheckout] AdsPower move error', e)
+          return { moved: false as const, reason: 'MOVE_ERROR' as const }
+        })
+        if (autoMove.moved) {
+          await prisma.quickSaleCheckout.update({
+            where: { id: quickCheckout.id },
+            data: {
+              deliveryFlowStatus: QUICK_DELIVERY_FLOW.DELIVERED,
+              deliveryStatusNote: 'Entrega automática concluída após confirmação PIX (baixo risco).',
+              deliverySent: true,
+            },
+          }).catch((e) => console.error('[QuickCheckout] Falha ao marcar autoentrega:', e))
+        }
+        const autoDeliveryMessage = autoMove.moved
+          ? [
+              '✅ *Pagamento confirmado na Ads Ativos*',
+              '',
+              `Pedido: #${quickCheckout.id}`,
+              `Produto: ${quickCheckout.listing.title}`,
+              '',
+              '🚀 *Entrega automática concluída (baixo risco)*',
+              'Seu ativo foi liberado sem etapa adicional de KYC.',
+              '',
+              `Acompanhe detalhes: ${deliveryUrl}`,
+            ].join('\n')
+          : [
+              '✅ *Pagamento confirmado na Ads Ativos*',
+              '',
+              `Pedido: #${quickCheckout.id}`,
+              `Produto: ${quickCheckout.listing.title}`,
+              '',
+              '🚚 *Próximo passo obrigatório:*',
+              'Abra o link abaixo, informe seu e-mail do AdsPower e confirme que o perfil está liberado.',
+              '',
+              deliveryUrl,
+              '',
+              'Sem perfil AdsPower liberado o sistema não autoriza envio da entrega.',
+            ].join('\n')
+        sendWhatsApp({ phone: quickCheckout.buyerWhatsapp, message: autoDeliveryMessage })
+          .catch((e) => console.error('[QuickCheckout] guia entrega whatsapp', e))
+        if (quickCheckout.buyerEmail) {
+          const emailPayload = buildDeliveryEmail({
+            buyerName: quickCheckout.buyerName,
+            buyerEmail: quickCheckout.buyerEmail,
+            productTitle: quickCheckout.listing.title,
+            orderId: quickCheckout.id,
+            panelUrl: deliveryUrl,
+            warrantyEndsAt,
+          })
+          sendEmail({
+            to: quickCheckout.buyerEmail,
+            subject: emailPayload.subject,
+            html: emailPayload.html,
+            text: emailPayload.text,
+          }).catch((e) => console.error('[QuickCheckout] email pós-pagamento', e))
+        }
+      } else {
         const guidanceMessage = [
           '✅ *Pagamento confirmado na Ads Ativos*',
           '',

@@ -25,6 +25,7 @@ import {
   resolveQuickSalePaymentMethods,
   type QuickSalePaymentMethod,
 } from '@/lib/quick-sale-payments'
+import { acceptQuickSaleLegalTerms } from '@/lib/smart-delivery-system'
 
 const DELIVERY_FLOW = {
   PENDING_PAYMENT: 'PENDING_PAYMENT',
@@ -67,6 +68,9 @@ const checkoutSchema = z.object({
   fbclid: z.string().max(512).optional(),
   gclid: z.string().max(512).optional(),
   referrer: z.string().max(500).optional(),
+  acceptTerms: z.boolean().refine((value) => value === true, {
+    message: 'É obrigatório aceitar os termos legais para continuar.',
+  }),
 }).refine((d) => d.cpf || d.cnpj, { message: 'Informe CPF (PF) ou CNPJ (PJ)', path: ['cpf'] })
 
 const deliverySchema = z.object({
@@ -535,7 +539,13 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     fbclid,
     gclid,
     referrer,
+    acceptTerms,
   } = parsed.data
+  if (!acceptTerms) {
+    return NextResponse.json({
+      error: 'É obrigatório aceitar os termos legais para continuar.',
+    }, { status: 422 })
+  }
 
   if (!paymentConfig.paymentMethods.includes(paymentMethod)) {
     return NextResponse.json({ error: 'Forma de pagamento não habilitada para este link global.' }, { status: 409 })
@@ -704,6 +714,15 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
           data: { expiresAt: new Date(invoice.expiresAt) },
         }).catch(() => null)
       }
+      await acceptQuickSaleLegalTerms(checkout.id, {
+        buyerName: name,
+        buyerDocument: buyerDoc,
+        buyerEmail: email || null,
+        buyerWhatsapp: waE164,
+        ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+        userAgent: req.headers.get('user-agent') ?? null,
+      }).catch((e) => console.error('[Loja Global] Falha ao registrar aceite legal:', e))
+
       return NextResponse.json({
         checkoutId: checkout.id,
         orderNumber,
@@ -740,6 +759,15 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       create: { key: checkoutPaymentPayloadKey(checkout.id), value: JSON.stringify(payload) },
       update: { value: JSON.stringify(payload) },
     })
+    await acceptQuickSaleLegalTerms(checkout.id, {
+      buyerName: name,
+      buyerDocument: buyerDoc,
+      buyerEmail: email || null,
+      buyerWhatsapp: waE164,
+      ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: req.headers.get('user-agent') ?? null,
+    }).catch((e) => console.error('[Loja Global] Falha ao registrar aceite legal:', e))
+
     return NextResponse.json({
       checkoutId: checkout.id,
       orderNumber,
