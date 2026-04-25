@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, ExternalLink, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
+import { Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +105,7 @@ export function VendaRapidaTab() {
   const [pixError, setPixError] = useState<string | null>(null)
   const [pixResult, setPixResult] = useState<GeneratedPix | null>(null)
   const [copiedPix, setCopiedPix] = useState(false)
+  const [pixResultWhatsapp, setPixResultWhatsapp] = useState('')
 
   const selectedListing = useMemo(
     () => listings.find((l) => l.id === selectedListingId) ?? null,
@@ -239,6 +240,7 @@ export function VendaRapidaTab() {
         throw new Error((data as { error?: string }).error || 'Falha ao gerar PIX de teste')
       }
       setPixResult(data as GeneratedPix)
+      setPixResultWhatsapp(finalWhatsapp)
       await load()
     } catch (err) {
       setPixError(err instanceof Error ? err.message : 'Erro ao gerar PIX de teste')
@@ -252,6 +254,28 @@ export function VendaRapidaTab() {
     await navigator.clipboard.writeText(pixResult.pixCopyPaste)
     setCopiedPix(true)
     window.setTimeout(() => setCopiedPix(false), 2500)
+  }
+
+  const sendPixWhatsapp = () => {
+    if (!pixResult) return
+    const phone = pixResultWhatsapp.replace(/\D/g, '')
+    if (!phone) {
+      setPixError('WhatsApp do comprador indisponível para envio.')
+      return
+    }
+    const message = [
+      '🚀 PIX gerado na Ads Ativos',
+      '',
+      `Produto: ${pixResult.title}`,
+      `Quantidade: ${pixResult.qty}`,
+      `Valor: R$ ${pixResult.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      '',
+      'PIX copia e cola:',
+      pixResult.pixCopyPaste,
+      '',
+      `QR e status: ${pixResult.resumeUrl}`,
+    ].join('\n')
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
   const totalRevenue   = listings.reduce((s, l) => s + l.revenue, 0)
@@ -466,6 +490,14 @@ export function VendaRapidaTab() {
                     <QrCode className="w-3.5 h-3.5 inline mr-1" />
                     Abrir checkout/status
                   </a>
+                  <button
+                    type="button"
+                    onClick={sendPixWhatsapp}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 inline mr-1" />
+                    Enviar no WhatsApp
+                  </button>
                 </div>
               </div>
             </div>
