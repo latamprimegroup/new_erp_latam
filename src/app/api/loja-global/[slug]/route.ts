@@ -232,17 +232,25 @@ async function getListingStockQtyRemaining(listingId: string) {
   return Math.max(0, configured - used)
 }
 
-async function countAvailableAssetsWithFallback(listing: { assetCategory: string }) {
+async function countAvailableAssetsWithFallback(listing: {
+  assetCategory: string
+  stockProductCode: string | null
+  stockProductName: string | null
+}) {
+  const byCategory = {
+    category: listing.assetCategory as never,
+    status: 'AVAILABLE' as const,
+  }
   try {
-    return await prisma.asset.count({
-      where: {
-        category: listing.assetCategory as never,
-        status: 'AVAILABLE',
-      },
-    })
+    return await prisma.asset.count({ where: buildAssetWhere(listing) })
   } catch (err) {
-    console.error('[Loja Global GET] Falha no count por categoria:', err)
-    return 0
+    console.error('[Loja Global GET] Falha no count por vínculo produto/listing:', err)
+    try {
+      return await prisma.asset.count({ where: byCategory })
+    } catch (fallbackErr) {
+      console.error('[Loja Global GET] Falha no count por categoria:', fallbackErr)
+      return 0
+    }
   }
 }
 
