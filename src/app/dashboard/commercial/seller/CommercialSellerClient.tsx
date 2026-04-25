@@ -37,6 +37,7 @@ type StockResponse = {
 
 type CheckoutRow = {
   id: string
+  orderNumber?: string | null
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
   buyerName: string
   buyerWhatsapp: string
@@ -59,6 +60,7 @@ type CheckoutResponse = {
 
 type GeneratedCheckout = {
   checkoutId: string
+  orderNumber?: string | null
   txid: string
   pixCopyPaste: string
   qrCodeBase64: string
@@ -102,6 +104,7 @@ export function CommercialSellerClient({
   const [query, setQuery] = useState('')
   const [onlyActive, setOnlyActive] = useState(true)
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'>('ALL')
+  const [historySearch, setHistorySearch] = useState('')
 
   const [selectedListing, setSelectedListing] = useState<StockListing | null>(null)
   const [buyerName, setBuyerName] = useState('')
@@ -114,6 +117,7 @@ export function CommercialSellerClient({
 
   const [generated, setGenerated] = useState<GeneratedCheckout | null>(null)
   const [copiedPix, setCopiedPix] = useState(false)
+  const normalizedHistorySearch = historySearch.trim().toLowerCase()
 
   // Link personalizado por listing
   const [linkPanel, setLinkPanel]   = useState<string | null>(null) // listingId aberto
@@ -136,7 +140,10 @@ export function CommercialSellerClient({
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true)
     try {
-      const suffix = historyStatus === 'ALL' ? '' : `?status=${historyStatus}`
+      const params = new URLSearchParams()
+      if (historyStatus !== 'ALL') params.set('status', historyStatus)
+      if (historySearch.trim()) params.set('search', historySearch.trim())
+      const suffix = params.size > 0 ? `?${params.toString()}` : ''
       const res = await fetch(`/api/commercial/seller/checkouts${suffix}`)
       const data = (await res.json()) as CheckoutResponse | { error?: string }
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Erro ao carregar histórico')
@@ -146,7 +153,7 @@ export function CommercialSellerClient({
     } finally {
       setLoadingHistory(false)
     }
-  }, [historyStatus])
+  }, [historyStatus, historySearch])
 
   useEffect(() => {
     loadStock()
@@ -233,6 +240,7 @@ export function CommercialSellerClient({
       }
       setGenerated({
         checkoutId: (data as GeneratedCheckout).checkoutId,
+        orderNumber: (data as { orderNumber?: string | null }).orderNumber ?? null,
         txid: (data as GeneratedCheckout).txid,
         pixCopyPaste: (data as GeneratedCheckout).pixCopyPaste,
         qrCodeBase64: (data as GeneratedCheckout).qrCodeBase64,
@@ -270,6 +278,7 @@ export function CommercialSellerClient({
     const message = [
       '🚀 PIX gerado na Ads Ativos',
       '',
+      `Pedido: ${generated.orderNumber ?? generated.checkoutId}`,
       `Produto: ${generated.title}`,
       `Quantidade: ${generated.qty}`,
       `Valor: R$ ${generated.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
@@ -320,6 +329,20 @@ export function CommercialSellerClient({
 
   const pendingCount = history.filter((h) => h.status === 'PENDING').length
   const paidCount = history.filter((h) => h.status === 'PAID').length
+  const hasClientSideSearch = normalizedHistorySearch.length > 0
+  const visibleHistory = hasClientSideSearch
+    ? history.filter((item) => {
+        const haystack = [
+          item.orderNumber ?? '',
+          item.id,
+          item.buyerName,
+          item.buyerWhatsapp,
+          item.listing.title,
+          item.listing.slug,
+        ].join(' ').toLowerCase()
+        return haystack.includes(normalizedHistorySearch)
+      })
+    : history
 
   return (
     <div className="space-y-6">
@@ -603,7 +626,7 @@ export function CommercialSellerClient({
               </span>
             </div>
             <p className="text-sm text-gray-700 dark:text-gray-300">
-              {generated.title} · {generated.qty} un. ·{' '}
+              Pedido {generated.orderNumber ?? generated.checkoutId} · {generated.title} · {generated.qty} un. ·{' '}
               {generated.totalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </p>
             <div className="rounded-lg bg-white dark:bg-black/20 border border-emerald-100 dark:border-emerald-900 p-3">
@@ -640,31 +663,42 @@ export function CommercialSellerClient({
               Checkouts gerados por você com status em tempo real.
             </p>
           </div>
-          <select
-            className="input-field text-sm w-[180px]"
-            value={historyStatus}
-            onChange={(e) =>
-              setHistoryStatus(e.target.value as 'ALL' | 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED')
-            }
-          >
-            <option value="ALL">Todos os status</option>
-            <option value="PENDING">Pendentes</option>
-            <option value="PAID">Pagos</option>
-            <option value="EXPIRED">Expirados</option>
-            <option value="CANCELLED">Cancelados</option>
-          </select>
+          <div className="flex flex-wrap gap-2">
+            <label className="input-field flex items-center gap-2 text-sm w-[320px]">
+              <Search className="w-4 h-4 text-gray-400" />
+              <input
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Buscar pedido VR, cliente, telefone, produto..."
+                className="bg-transparent outline-none w-full"
+              />
+            </label>
+            <select
+              className="input-field text-sm w-[180px]"
+              value={historyStatus}
+              onChange={(e) =>
+                setHistoryStatus(e.target.value as 'ALL' | 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED')
+              }
+            >
+              <option value="ALL">Todos os status</option>
+              <option value="PENDING">Pendentes</option>
+              <option value="PAID">Pagos</option>
+              <option value="EXPIRED">Expirados</option>
+              <option value="CANCELLED">Cancelados</option>
+            </select>
+          </div>
         </div>
 
         {loadingHistory ? (
           <p className="text-sm text-gray-500">Carregando histórico...</p>
-        ) : history.length === 0 ? (
+        ) : visibleHistory.length === 0 ? (
           <p className="text-sm text-gray-500">Nenhum checkout encontrado para o filtro selecionado.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[760px]">
               <thead>
                 <tr className="text-left border-b border-gray-200 dark:border-white/10 text-gray-500">
-                  <th className="pb-2 pr-2">ID</th>
+                  <th className="pb-2 pr-2">Pedido</th>
                   <th className="pb-2 pr-2">Cliente</th>
                   <th className="pb-2 pr-2">Produto</th>
                   <th className="pb-2 pr-2">Valor</th>
@@ -674,9 +708,12 @@ export function CommercialSellerClient({
                 </tr>
               </thead>
               <tbody>
-                {history.map((item) => (
+                {visibleHistory.map((item) => (
                   <tr key={item.id} className="border-b border-gray-100 dark:border-white/5">
-                    <td className="py-2 pr-2 font-mono text-xs">{item.id.slice(0, 8)}</td>
+                    <td className="py-2 pr-2">
+                      <p className="font-mono text-xs">{item.orderNumber ?? item.id.slice(0, 8)}</p>
+                      <p className="text-[10px] text-gray-500">ref: {item.id.slice(0, 8)}</p>
+                    </td>
                     <td className="py-2 pr-2">{item.buyerName}</td>
                     <td className="py-2 pr-2">
                       {item.listing.title} · {item.qty} un.

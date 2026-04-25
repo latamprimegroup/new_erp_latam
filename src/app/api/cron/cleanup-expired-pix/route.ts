@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
   let quickReleased = 0
   if (expiredQuick.length > 0) {
     const assetIdsToRelease = expiredQuick.flatMap((c) => c.reservedAssetIds as string[])
+    const checkoutIds = expiredQuick.map((c) => c.id)
 
     await prisma.$transaction([
       // Libera ativos de volta ao estoque
@@ -42,8 +43,21 @@ export async function POST(req: NextRequest) {
       }),
       // Marca checkouts como EXPIRED
       prisma.quickSaleCheckout.updateMany({
-        where: { id: { in: expiredQuick.map((c) => c.id) } },
+        where: { id: { in: checkoutIds } },
         data:  { status: 'EXPIRED' },
+      }),
+      prisma.auditLog.create({
+        data: {
+          action: 'QUICK_SALE_EXPIRED_RELEASE',
+          entity: 'QuickSaleCheckout',
+          entityId: checkoutIds.join(','),
+          details: {
+            checkoutIds,
+            releasedAssetIds: assetIdsToRelease,
+            totalReleased: assetIdsToRelease.length,
+            reason: 'PIX expirado sem pagamento (cron cleanup)',
+          },
+        },
       }),
     ])
     quickReleased = assetIdsToRelease.length
