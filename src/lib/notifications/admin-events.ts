@@ -487,7 +487,7 @@ export async function notifyAdminProfitSaleSummary(opts: {
   utmifySynced: boolean
 }): Promise<void> {
   const adminIds = await getAdminIds()
-  const title = '🛡️ ADS ATIVOS - VENDA CONFIRMADA!'
+  const title = '🛡️ ADS ATIVOS GLOBAL - VENDA CONFIRMADA!'
   const message = [
     `💰 Bruto: ${opts.grossAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
     `👤 Vendedor: ${opts.sellerName}`,

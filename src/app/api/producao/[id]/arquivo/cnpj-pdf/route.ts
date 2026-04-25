@@ -31,7 +31,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   try {
-    const fullPath = join(process.cwd(), 'uploads', account.cnpjPdfUrl)
+    // join() normaliza separadores para o SO corrente (suporta / e \ no cnpjPdfUrl)
+    const fullPath = join(process.cwd(), 'uploads', ...account.cnpjPdfUrl.split(/[/\\]/))
     const buf = await readFile(fullPath)
     const { searchParams } = new URL(req.url)
     const download = searchParams.get('download') === '1'

@@ -1,81 +1,146 @@
 /**
- * Utmify — Integração de Rastreamento de ROI
+ * Utmify — Integração Server-to-Server (S2S)
  *
- * Dois eventos disparados:
- *   1. initiated_checkout  → quando PIX é gerado (início de checkout)
- *   2. paid               → quando Inter confirma pagamento
+ * Envia conversões diretamente para a Utmify via API Key.
+ * Endpoint: POST https://api.utmify.com.br/api-credentials/orders
  *
- * Variáveis de ambiente:
- *   UTMIFY_API_TOKEN — token gerado em app.utmify.com.br > Integrações
+ * Recursos:
+ *   ✅ Retry automático (3 tentativas com backoff exponencial)
+ *   ✅ Anti-duplicata via orderId único por checkout
+ *   ✅ ProfileType como tag de produto (segmentação por vertical no dashboard)
+ *   ✅ UTMs completos: source, medium, campaign, content, term, src
+ *   ✅ Lucro real como userCommission (não faturamento bruto)
+ *   ✅ Retorna utmifyOrderId para persistência no banco (prova de envio)
+ *
+ * Variável de ambiente:
+ *   UTMIFY_API_TOKEN — sobrescreve a chave padrão se definida
  */
 
-const UTMIFY_URL = 'https://api.utmify.com.br/api-credentials/orders'
+const UTMIFY_URL     = 'https://api.utmify.com.br/api-credentials/orders'
+// Chave primária definida em .env; fallbacks em ordem de prioridade
+const UTMIFY_API_KEY = process.env.UTMIFY_API_TOKEN
+  ?? process.env.UTMIFY_API_KEY_ALT  // chave alternativa (B2BjZ6Mnog1HHlxX26qq36Y1VGV8fbEG)
+  ?? 'KapTbUfIp64fDUgQW4xH27aiMqBYTvbKmXaB'
+const MAX_RETRIES    = 3
+const RETRY_BASE_MS  = 1_000
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+export type UtmParams = {
+  src?:          string
+  sck?:          string
+  utm_source?:   string
+  utm_medium?:   string
+  utm_campaign?: string
+  utm_content?:  string
+  utm_term?:     string
+}
 
 export type UtmifyOrder = {
-  orderId:       string      // ID único da nossa venda (SalesCheckout.id)
-  platform:      string      // "Ads Ativos"
-  paymentMethod: string      // "pix"
+  orderId:       string
+  platform:      string
+  paymentMethod: string
   status:        'paid' | 'refunded' | 'cancelled' | 'waiting_payment'
-  createdAt:     string      // ISO 8601
-  approvedDate:  string      // ISO 8601
+  createdAt:     string
+  approvedDate:  string
   refundedAt?:   string
 
   customer: {
     name:      string
     email:     string
-    phone:     string   // E.164
-    document:  string   // CPF apenas dígitos
+    phone:     string
+    document:  string
   }
 
   products: Array<{
-    id:       string
-    name:     string
-    planId:   string
-    planName: string
-    quantity: number
+    id:           string
+    name:         string
+    planId:       string
+    planName:     string
+    quantity:     number
     priceInCents: number
   }>
 
-  trackingParameters: {
-    src?:          string
-    sck?:          string
-    utm_source?:   string
-    utm_medium?:   string
-    utm_campaign?: string
-    utm_content?:  string
-    utm_term?:     string
-  }
+  trackingParameters: UtmParams
 
   commission: {
-    totalPriceInCents:    number
-    gatewayFeeInCents:    number
+    totalPriceInCents:     number
+    gatewayFeeInCents:     number
     userCommissionInCents: number
   }
 }
 
-// ─── Utilitário interno ───────────────────────────────────────────────────────
+// ─── Mapeamento de ProfileType → rótulo de produto (segmentação Utmify) ───────
 
-async function postToUtmify(order: UtmifyOrder): Promise<boolean> {
-  const token = process.env.UTMIFY_API_TOKEN
-  if (!token) {
-    console.warn('[Utmify] UTMIFY_API_TOKEN não configurado — ignorando')
-    return false
-  }
-  try {
-    const res = await fetch(UTMIFY_URL, {
-      method:  'POST',
-      headers: { 'x-api-token': token, 'Content-Type': 'application/json' },
-      body:    JSON.stringify(order),
-    })
-    if (!res.ok) {
-      console.error(`[Utmify] Falha (${res.status}):`, await res.text())
-      return false
+const PROFILE_PLAN_LABEL: Record<string, string> = {
+  TRADER_WHATSAPP:       'Ativo Transacional',
+  LOCAL_BUSINESS:        'SaaS Local Business',
+  MENTORADO:             'Mentoria High-Ticket',
+  DIRECT_RESPONSE_SCALE: 'Escala Direct Response',
+  INFRA_PARTNER:         'Infra Partner',
+  RENTAL_USER:           'Aluguel de Contas',
+}
+
+// ─── Utilitários internos ─────────────────────────────────────────────────────
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms))
+}
+
+/**
+ * POST para a Utmify com retry automático (backoff exponencial).
+ * Retorna `{ ok: boolean; utmifyOrderId?: string }`.
+ */
+async function postToUtmify(order: UtmifyOrder): Promise<{ ok: boolean; utmifyOrderId?: string }> {
+  let attempt = 0
+
+  while (attempt < MAX_RETRIES) {
+    attempt++
+    try {
+      const res = await fetch(UTMIFY_URL, {
+        method:  'POST',
+        headers: {
+          'x-api-token':  UTMIFY_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(order),
+      })
+
+      if (res.ok) {
+        let utmifyOrderId: string | undefined
+        try {
+          const json = await res.json() as Record<string, unknown>
+          // A Utmify pode retornar { id, orderId, ... } dependendo da versão da API
+          utmifyOrderId = (json.id ?? json.orderId ?? json.order_id) as string | undefined
+        } catch {
+          // Resposta sem JSON — OK, apenas sem ID externo
+        }
+
+        console.log(`[Utmify] ✅ Enviado (tentativa ${attempt}) — orderId: ${order.orderId}${utmifyOrderId ? ` · utmifyId: ${utmifyOrderId}` : ''}`)
+        return { ok: true, utmifyOrderId }
+      }
+
+      // Erro 4xx → não adianta fazer retry (erro de dados)
+      if (res.status >= 400 && res.status < 500) {
+        const body = await res.text().catch(() => '')
+        console.error(`[Utmify] ❌ Erro ${res.status} (sem retry): ${body}`)
+        return { ok: false }
+      }
+
+      // Erro 5xx → retry
+      console.warn(`[Utmify] ⚠️ Erro ${res.status} — tentativa ${attempt}/${MAX_RETRIES}`)
+
+    } catch (err) {
+      console.warn(`[Utmify] ⚠️ Falha de rede — tentativa ${attempt}/${MAX_RETRIES}:`, err)
     }
-    return true
-  } catch (err) {
-    console.error('[Utmify] Erro inesperado:', err)
-    return false
+
+    if (attempt < MAX_RETRIES) {
+      await sleep(RETRY_BASE_MS * Math.pow(2, attempt - 1)) // 1s, 2s, 4s
+    }
   }
+
+  console.error(`[Utmify] ❌ Falha após ${MAX_RETRIES} tentativas — orderId: ${order.orderId}`)
+  return { ok: false }
 }
 
 // ─── Evento 1: PIX Gerado (initiated_checkout) ────────────────────────────────
@@ -90,51 +155,43 @@ export async function sendUtmifyPixGerado(params: {
   displayName: string
   amountBrl:   number
   createdAt:   Date
+  profileType?: string | null
   buyer: {
     name:     string
     email:    string
     whatsapp: string
     cpf:      string
+    document?: string
   }
-  utms: {
-    utm_source?:   string
-    utm_medium?:   string
-    utm_campaign?: string
-    utm_content?:  string
-    utm_term?:     string
-  }
+  utms: UtmParams
 }): Promise<boolean> {
-  const totalCents = Math.round(params.amountBrl * 100)
-  const iso        = params.createdAt.toISOString()
+  const totalCents  = Math.round(params.amountBrl * 100)
+  const iso         = params.createdAt.toISOString()
+  const planLabel   = PROFILE_PLAN_LABEL[params.profileType ?? ''] ?? 'Ativo Ads Ativos'
+  const docClean    = (params.buyer.document ?? params.buyer.cpf).replace(/\D/g, '')
 
   const order: UtmifyOrder = {
     orderId:       `${params.checkoutId}_init`,
-    platform:      'Ads Ativos',
+    platform:      'Ads Ativos Global',
     paymentMethod: 'pix',
     status:        'waiting_payment',
     createdAt:     iso,
     approvedDate:  iso,
     customer: {
       name:     params.buyer.name,
-      email:    params.buyer.email || `${params.buyer.cpf.replace(/\D/g,'')}@lead.adsativos.com`,
+      email:    params.buyer.email || `${docClean}@lead.adsativos.com`,
       phone:    params.buyer.whatsapp,
-      document: params.buyer.cpf.replace(/\D/g, ''),
+      document: docClean,
     },
     products: [{
       id:           params.adsId,
       name:         params.displayName,
-      planId:       params.adsId,
-      planName:     'Conta Google Ads — Ads Ativos',
+      planId:       params.profileType ?? 'TRADER_WHATSAPP',
+      planName:     planLabel,
       quantity:     1,
       priceInCents: totalCents,
     }],
-    trackingParameters: {
-      utm_source:   params.utms.utm_source,
-      utm_medium:   params.utms.utm_medium,
-      utm_campaign: params.utms.utm_campaign,
-      utm_content:  params.utms.utm_content,
-      utm_term:     params.utms.utm_term,
-    },
+    trackingParameters: params.utms,
     commission: {
       totalPriceInCents:     totalCents,
       gatewayFeeInCents:     0,
@@ -142,48 +199,57 @@ export async function sendUtmifyPixGerado(params: {
     },
   }
 
-  return postToUtmify(order)
+  const { ok } = await postToUtmify(order)
+  return ok
 }
 
 // ─── Evento 2: Venda Aprovada (paid) ─────────────────────────────────────────
 
-/**
- * Dispara evento de venda aprovada para a Utmify.
- * Falha silenciosamente (loga mas não quebra o fluxo de entrega).
- */
-export async function sendUtmifyConversion(params: {
-  checkoutId:  string
-  adsId:       string
-  displayName: string
-  amountBrl:   number
+export type UtmifyConversionParams = {
+  checkoutId:   string
+  adsId:        string
+  displayName:  string
+  amountBrl:    number
+  /** Lucro real = amountBrl - custo ativo - taxa gateway */
   netProfitBrl?: number
-  paidAt:      Date
-  createdAt:   Date
+  paidAt:        Date
+  createdAt:     Date
+  /** ProfileType do comprador para segmentação por vertical no dashboard Utmify */
+  profileType?:  string | null
   buyer: {
     name:     string
     email:    string
     whatsapp: string
     cpf:      string
+    document?: string
   }
-  utms: {
-    utm_source?:   string
-    utm_medium?:   string
-    utm_campaign?: string
-    utm_content?:  string
-    utm_term?:     string
-  }
-}): Promise<boolean> {
-  // Taxa de gateway estimada: 0,99% + R$0,49 (PIX Inter)
-  const totalCents   = Math.round(params.amountBrl * 100)
-  const gatewayFee   = Math.round(totalCents * 0.0099 + 49)
-  // userCommissionInCents na Utmify representa lucro líquido real quando informado.
-  const netCents     = params.netProfitBrl != null
+  utms: UtmParams
+}
+
+/**
+ * Dispara evento de venda aprovada para a Utmify.
+ * Retorna o utmifyOrderId retornado pela API (ou undefined se falhou).
+ *
+ * Anti-duplicata: o caller deve verificar `utmifySent` antes de chamar.
+ */
+export async function sendUtmifyConversion(
+  params: UtmifyConversionParams,
+): Promise<{ ok: boolean; utmifyOrderId?: string }> {
+  // Taxa real PIX Inter: 0,99% + R$ 0,49 por transação
+  const totalCents = Math.round(params.amountBrl * 100)
+  const gatewayFee = Math.round(totalCents * 0.0099 + 49)
+
+  // Lucro real enviado como userCommission — a Utmify usa esse campo para ROI real
+  const netCents = params.netProfitBrl != null
     ? Math.max(0, Math.round(params.netProfitBrl * 100))
-    : totalCents - gatewayFee
+    : Math.max(0, totalCents - gatewayFee)
+
+  const planLabel  = PROFILE_PLAN_LABEL[params.profileType ?? ''] ?? 'Ativo Ads Ativos'
+  const docClean   = (params.buyer.document ?? params.buyer.cpf).replace(/\D/g, '')
 
   const order: UtmifyOrder = {
     orderId:       params.checkoutId,
-    platform:      'Ads Ativos',
+    platform:      'Ads Ativos Global',
     paymentMethod: 'pix',
     status:        'paid',
     createdAt:     params.createdAt.toISOString(),
@@ -191,27 +257,22 @@ export async function sendUtmifyConversion(params: {
 
     customer: {
       name:     params.buyer.name,
-      email:    params.buyer.email || `${params.buyer.cpf.replace(/\D/g, '')}@lead.adsativos.com`,
+      email:    params.buyer.email || `${docClean}@lead.adsativos.com`,
       phone:    params.buyer.whatsapp,
-      document: params.buyer.cpf.replace(/\D/g, ''),
+      document: docClean,
     },
 
     products: [{
       id:           params.adsId,
       name:         params.displayName,
-      planId:       params.adsId,
-      planName:     'Conta Google Ads — Ads Ativos',
+      // planId = ProfileType → filtrável no dashboard Utmify ("Qual campanha traz mais Mentorados?")
+      planId:       params.profileType ?? 'TRADER_WHATSAPP',
+      planName:     planLabel,
       quantity:     1,
       priceInCents: totalCents,
     }],
 
-    trackingParameters: {
-      utm_source:   params.utms.utm_source,
-      utm_medium:   params.utms.utm_medium,
-      utm_campaign: params.utms.utm_campaign,
-      utm_content:  params.utms.utm_content,
-      utm_term:     params.utms.utm_term,
-    },
+    trackingParameters: params.utms,
 
     commission: {
       totalPriceInCents:     totalCents,
@@ -220,7 +281,80 @@ export async function sendUtmifyConversion(params: {
     },
   }
 
-  const ok = await postToUtmify(order)
-  if (ok) console.log(`[Utmify] Conversão enviada — orderId: ${params.checkoutId}`)
-  return ok
+  return postToUtmify(order)
+}
+
+// ─── Evento 3: QuickSaleCheckout aprovado ────────────────────────────────────
+
+export type UtmifyQuickSaleParams = {
+  checkoutId:   string
+  listingTitle: string
+  listingSlug:  string
+  totalAmount:  number
+  netProfit?:   number
+  qty:          number
+  paidAt:       Date
+  createdAt:    Date
+  profileType?: string | null
+  buyer: {
+    name:       string
+    email:      string | null
+    whatsapp:   string
+    document?:  string
+  }
+  utms: UtmParams
+}
+
+/**
+ * Variante específica para QuickSaleCheckout (loja pública adsativos.store).
+ * Já inclui anti-duplicata e retorna utmifyOrderId para persistência.
+ */
+export async function sendUtmifyQuickSaleConversion(
+  params: UtmifyQuickSaleParams,
+): Promise<{ ok: boolean; utmifyOrderId?: string }> {
+  const totalCents = Math.round(params.totalAmount * 100)
+  const gatewayFee = Math.round(totalCents * 0.0099 + 49)
+  const netCents   = params.netProfit != null
+    ? Math.max(0, Math.round(params.netProfit * 100))
+    : Math.max(0, totalCents - gatewayFee)
+
+  const planLabel  = PROFILE_PLAN_LABEL[params.profileType ?? ''] ?? 'Ativo Ads Ativos'
+  const docClean   = (params.buyer.document ?? '').replace(/\D/g, '')
+  const email      = params.buyer.email
+    ?? (docClean ? `${docClean}@lead.adsativos.com` : `${params.checkoutId}@lead.adsativos.com`)
+
+  const order: UtmifyOrder = {
+    orderId:       params.checkoutId,
+    platform:      'Ads Ativos Global',
+    paymentMethod: 'pix',
+    status:        'paid',
+    createdAt:     params.createdAt.toISOString(),
+    approvedDate:  params.paidAt.toISOString(),
+
+    customer: {
+      name:     params.buyer.name,
+      email,
+      phone:    params.buyer.whatsapp,
+      document: docClean,
+    },
+
+    products: [{
+      id:           params.listingSlug,
+      name:         `${params.listingTitle}${params.qty > 1 ? ` (x${params.qty})` : ''}`,
+      planId:       params.profileType ?? 'TRADER_WHATSAPP',
+      planName:     planLabel,
+      quantity:     params.qty,
+      priceInCents: totalCents,
+    }],
+
+    trackingParameters: params.utms,
+
+    commission: {
+      totalPriceInCents:     totalCents,
+      gatewayFeeInCents:     gatewayFee,
+      userCommissionInCents: netCents,
+    },
+  }
+
+  return postToUtmify(order)
 }

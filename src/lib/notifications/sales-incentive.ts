@@ -64,7 +64,7 @@ export async function notifyAdminSaleProfitSummary(opts: {
 }): Promise<void> {
   const status = opts.utmifySynced ? 'Sincronizado' : 'Falha (reprocessar)'
   const text = [
-    `🛡️ ADS ATIVOS - VENDA CONFIRMADA!`,
+    `🛡️ ADS ATIVOS GLOBAL - VENDA CONFIRMADA!`,
     `💰 Bruto: ${brl(opts.saleValue)}`,
     `👤 Vendedor: ${opts.sellerName || 'N/D'}`,
     `📉 Custo Ativo: ${brl(opts.supplierCost)}`,
