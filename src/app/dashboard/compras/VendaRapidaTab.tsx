@@ -10,8 +10,11 @@ interface Listing {
   slug:           string
   title:          string
   subtitle:       string | null
+  fullDescription: string | null
   badge:          string | null
   assetCategory:  string
+  stockProductCode: string | null
+  stockProductName: string | null
   pricePerUnit:   number
   maxQty:         number
   active:         boolean
@@ -88,7 +91,10 @@ export function VendaRapidaTab() {
   // Formulário
   const [title, setTitle]           = useState('')
   const [subtitle, setSubtitle]     = useState('')
+  const [fullDescription, setFullDescription] = useState('')
   const [category, setCategory]     = useState('GOOGLE_ADS')
+  const [stockProductCode, setStockProductCode] = useState('')
+  const [stockProductName, setStockProductName] = useState('')
   const [price, setPrice]           = useState('')
   const [maxQty, setMaxQty]         = useState('10')
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
@@ -170,7 +176,10 @@ export function VendaRapidaTab() {
       body: JSON.stringify({
         title:         title.trim(),
         subtitle:      subtitle.trim() || undefined,
+        fullDescription: fullDescription.trim() || undefined,
         assetCategory: category,
+        stockProductCode: stockProductCode.trim() || undefined,
+        stockProductName: stockProductName.trim() || undefined,
         pricePerUnit:  parseFloat(price),
         maxQty:        parseInt(maxQty),
         badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
@@ -180,7 +189,14 @@ export function VendaRapidaTab() {
     setSaving(false)
     if (res.ok) {
       setShowForm(false)
-      setTitle(''); setSubtitle(''); setPrice(''); setMaxQty('10'); setBadge('ENTREGA AUTOMÁTICA')
+      setTitle('')
+      setSubtitle('')
+      setFullDescription('')
+      setStockProductCode('')
+      setStockProductName('')
+      setPrice('')
+      setMaxQty('10')
+      setBadge('ENTREGA AUTOMÁTICA')
       load()
     } else {
       const d = await res.json()
@@ -529,11 +545,40 @@ export function VendaRapidaTab() {
               <Field label="Subtítulo (opcional)">
                 <textarea
                   value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
-                  rows={5}
+                  rows={3}
+                  placeholder="Resumo rápido do produto para o card"
+                  className="input-dark"
+                />
+              </Field>
+              <Field label="Descrição completa (copiar e colar)">
+                <textarea
+                  value={fullDescription} onChange={(e) => setFullDescription(e.target.value)}
+                  rows={6}
                   placeholder={`Ex:\n✅ Verificado no Developers\n✅ Ano de Criação: 2018 a 2022\n✅ 2FA + Cookies`}
                   className="input-dark"
                 />
               </Field>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Field label="Código do produto no estoque (opcional)">
+                  <input
+                    value={stockProductCode}
+                    onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
+                    placeholder="AA-CONT-000001"
+                    className="input-dark"
+                  />
+                </Field>
+                <Field label="Nome do produto no estoque (opcional)">
+                  <input
+                    value={stockProductName}
+                    onChange={(e) => setStockProductName(e.target.value)}
+                    placeholder="Perfil Real Verificado"
+                    className="input-dark"
+                  />
+                </Field>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Se preencher código ou nome, a Venda Rápida vai tentar atrelar e baixar o estoque desse produto automaticamente no pagamento.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Categoria do ativo">
                   <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
@@ -627,7 +672,15 @@ export function VendaRapidaTab() {
                       </span>
                     </div>
                     {l.subtitle && <p className="text-zinc-500 text-sm mt-0.5">{l.subtitle}</p>}
+                    {l.fullDescription && (
+                      <p className="text-zinc-400 text-xs mt-1 whitespace-pre-line">{l.fullDescription}</p>
+                    )}
                     <p className="text-zinc-600 text-xs mt-1">{l.assetCategory.replace('_', ' ')} · R$ {l.pricePerUnit.toFixed(2)}/un · máx {l.maxQty} un</p>
+                    {(l.stockProductCode || l.stockProductName) && (
+                      <p className="text-zinc-500 text-[11px] mt-1">
+                        Vínculo estoque: {l.stockProductCode || '—'} {l.stockProductName ? `· ${l.stockProductName}` : ''}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">

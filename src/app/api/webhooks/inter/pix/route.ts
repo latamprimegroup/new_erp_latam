@@ -481,6 +481,27 @@ export async function POST(req: NextRequest) {
         },
       }).catch((e) => console.error('[QuickCheckout] Falha ao registrar receita financeira:', e))
 
+      await prisma.auditLog.create({
+        data: {
+          action: 'QUICK_SALE_ORDER_CONFIRMED',
+          entity: 'QuickSaleCheckout',
+          entityId: quickCheckout.id,
+          userId: quickCheckout.sellerId ?? quickCheckout.managerId ?? null,
+          details: {
+            checkoutId: quickCheckout.id,
+            buyerName: quickCheckout.buyerName,
+            buyerWhatsapp: quickCheckout.buyerWhatsapp,
+            listingId: quickCheckout.listingId,
+            listingTitle: quickCheckout.listing.title,
+            stockProductCode: quickCheckout.stockProductCodeSnapshot,
+            stockProductName: quickCheckout.stockProductNameSnapshot,
+            qty: quickCheckout.qty,
+            totalAmount: Number(quickCheckout.totalAmount),
+            paidAt: paidAt.toISOString(),
+          },
+        },
+      }).catch((e) => console.error('[QuickCheckout] Falha ao registrar auditoria da compra:', e))
+
       // 3b. Marca todos os ativos reservados como SOLD
       if (assetIds.length > 0) {
         await prisma.asset.updateMany({
@@ -493,7 +514,7 @@ export async function POST(req: NextRequest) {
           data: assetIds.map((aid) => ({
             assetId:  aid,
             toStatus: 'SOLD' as const,
-            reason:   `Venda Rápida — Comprador: ${quickCheckout.buyerName} | CPF: ${quickCheckout.buyerCpf} | Checkout: ${quickCheckout.id}`,
+            reason:   `Venda Rápida — Comprador: ${quickCheckout.buyerName} | CPF: ${quickCheckout.buyerCpf} | Produto estoque: ${quickCheckout.stockProductCodeSnapshot ?? quickCheckout.stockProductNameSnapshot ?? quickCheckout.listing.title} | Checkout: ${quickCheckout.id}`,
           })),
           skipDuplicates: true,
         }).catch((e) => console.error('[QuickCheckout] Falha ao registrar movimentos:', e))
