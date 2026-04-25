@@ -58,7 +58,6 @@ export async function GET(req: NextRequest) {
     listingSlug: listing.slug,
     paymentMode,
     source: ISSUE_SOURCE.PAY_ONE_NEW,
-    ttlMinutes: 15,
     maxUses: 1,
     closeOnPaid: true,
     sellerRef,

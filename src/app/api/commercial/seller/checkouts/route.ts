@@ -112,7 +112,6 @@ export async function GET(req: NextRequest) {
         checkoutId: checkout.id,
         listingSlug: checkout.listing.slug,
         mode: checkoutMode,
-        ttlMinutes: 15,
         maxUses: 1,
         closeOnPaid: true,
       }).catch(() => null)

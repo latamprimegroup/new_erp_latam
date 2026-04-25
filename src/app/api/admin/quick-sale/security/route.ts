@@ -13,9 +13,18 @@ import {
   SMART_DELIVERY_DEFAULTS,
   upsertQuickSaleAdspowerGroupMap,
 } from '@/lib/smart-delivery-system'
+import {
+  getInvisibleCheckoutTtlMinutes,
+  INVISIBLE_LINK_EXPIRATION_MAX_MINUTES,
+  INVISIBLE_LINK_EXPIRATION_MIN_MINUTES,
+  setInvisibleCheckoutTtlMinutes,
+} from '@/lib/invisible-checkout'
 
 type SecurityPayload = {
   minValueForKycBrl: number
+  linkExpirationTime: number
+  linkExpirationMin: number
+  linkExpirationMax: number
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
   pendingKycCount: number
@@ -32,8 +41,9 @@ function maskToken(token: string | null) {
 }
 
 async function buildSecurityPayload(): Promise<SecurityPayload> {
-  const [minValueForKycBrl, suspiciousEmailDomains, antiFraudBlocks, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
+  const [minValueForKycBrl, linkExpirationTime, suspiciousEmailDomains, antiFraudBlocks, pendingKycCount, mapSetting, utmifyToken] = await Promise.all([
     getMinValueForKycBrl(),
+    getInvisibleCheckoutTtlMinutes(),
     getSuspiciousEmailDomains(),
     getQuickSaleAntiFraudCounter(),
     prisma.quickSaleCheckout.count({
@@ -58,6 +68,9 @@ async function buildSecurityPayload(): Promise<SecurityPayload> {
 
   return {
     minValueForKycBrl,
+    linkExpirationTime,
+    linkExpirationMin: INVISIBLE_LINK_EXPIRATION_MIN_MINUTES,
+    linkExpirationMax: INVISIBLE_LINK_EXPIRATION_MAX_MINUTES,
     suspiciousEmailDomains,
     antiFraudBlocks,
     pendingKycCount,
@@ -87,6 +100,7 @@ export async function PATCH(req: NextRequest) {
 
   const input = body as {
     minValueForKycBrl?: number
+    linkExpirationTime?: number
     suspiciousEmailDomains?: string[]
     adspowerGroupMap?: Record<string, string>
     utmifyToken?: string | null
@@ -94,6 +108,9 @@ export async function PATCH(req: NextRequest) {
 
   if (typeof input.minValueForKycBrl === 'number') {
     await setMinValueForKycBrl(input.minValueForKycBrl)
+  }
+  if (typeof input.linkExpirationTime === 'number') {
+    await setInvisibleCheckoutTtlMinutes(input.linkExpirationTime)
   }
   if (Array.isArray(input.suspiciousEmailDomains)) {
     await setSuspiciousEmailDomains(input.suspiciousEmailDomains)
@@ -113,6 +130,7 @@ export async function PATCH(req: NextRequest) {
       userId: auth.session.user.id,
       details: {
         minValueForKycBrl: input.minValueForKycBrl ?? null,
+        linkExpirationTime: input.linkExpirationTime ?? null,
         suspiciousEmailDomainsCount: Array.isArray(input.suspiciousEmailDomains)
           ? input.suspiciousEmailDomains.length
           : null,

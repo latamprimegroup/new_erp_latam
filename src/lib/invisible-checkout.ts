@@ -8,6 +8,7 @@ const INVISIBLE_TOKEN_PREFIX = 'quick_sale_invisible_token:'
 const INVISIBLE_ALLOWED_COUNTRIES_KEY = 'quick_sale_invisible_allowed_countries'
 const INVISIBLE_DECOY_URL_KEY = 'quick_sale_invisible_decoy_url'
 const INVISIBLE_BLOCKED_ORG_KEYWORDS = 'quick_sale_invisible_blocked_org_keywords'
+export const INVISIBLE_LINK_EXPIRATION_TIME_KEY = 'LINK_EXPIRATION_TIME'
 
 const DEFAULT_ALLOWED_COUNTRIES = ['BR', 'US']
 const DEFAULT_BLOCKED_ORG_KEYWORDS = [
@@ -29,8 +30,10 @@ const DEFAULT_DECOY_URL =
   process.env.INVISIBLE_CHECKOUT_BAIT_URL?.trim()
   || 'https://news.ycombinator.com'
 
-const DEFAULT_TTL_MINUTES = 15
+const DEFAULT_TTL_MINUTES = 60
 const DEFAULT_MAX_USES = 1
+export const INVISIBLE_LINK_EXPIRATION_MIN_MINUTES = 15
+export const INVISIBLE_LINK_EXPIRATION_MAX_MINUTES = 120
 
 export const ISSUE_SOURCE = {
   API_LOJA_PIX: 'API_LOJA_PIX',
@@ -61,6 +64,7 @@ type InvisibleTokenRecord = {
   lockedIp: string | null
   lastAccessAt: string | null
   lastUserAgent: string | null
+  sharingAlertedAt: string | null
 }
 
 function tokenKey(token: string) {
@@ -145,6 +149,33 @@ export async function getInvisiblePolicySettings() {
   }
 }
 
+function normalizeInvisibleTtlMinutes(input: unknown, fallback = DEFAULT_TTL_MINUTES) {
+  const parsed = Number.parseInt(String(input ?? '').trim(), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(
+    INVISIBLE_LINK_EXPIRATION_MIN_MINUTES,
+    Math.min(INVISIBLE_LINK_EXPIRATION_MAX_MINUTES, parsed),
+  )
+}
+
+export async function getInvisibleCheckoutTtlMinutes() {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: INVISIBLE_LINK_EXPIRATION_TIME_KEY },
+    select: { value: true },
+  }).catch(() => null)
+  return normalizeInvisibleTtlMinutes(setting?.value, DEFAULT_TTL_MINUTES)
+}
+
+export async function setInvisibleCheckoutTtlMinutes(ttlMinutes: number) {
+  const safe = normalizeInvisibleTtlMinutes(ttlMinutes, DEFAULT_TTL_MINUTES)
+  await prisma.systemSetting.upsert({
+    where: { key: INVISIBLE_LINK_EXPIRATION_TIME_KEY },
+    create: { key: INVISIBLE_LINK_EXPIRATION_TIME_KEY, value: String(safe) },
+    update: { value: String(safe) },
+  })
+  return safe
+}
+
 async function readTokenRecord(token: string) {
   const row = await prisma.systemSetting.findUnique({
     where: { key: tokenKey(token) },
@@ -207,7 +238,8 @@ export async function issueInvisibleCheckoutAccess(input: {
 }) {
   const policy = await getInvisiblePolicySettings()
   const token = randomBytes(20).toString('base64url')
-  const ttlMinutes = Math.max(1, Math.min(180, Number(input.ttlMinutes ?? DEFAULT_TTL_MINUTES)))
+  const globalTtlMinutes = await getInvisibleCheckoutTtlMinutes()
+  const ttlMinutes = normalizeInvisibleTtlMinutes(input.ttlMinutes, globalTtlMinutes)
   const maxUses = Math.max(1, Math.min(3, Number(input.maxUses ?? DEFAULT_MAX_USES)))
   const now = Date.now()
   const record: InvisibleTokenRecord = {
@@ -229,6 +261,7 @@ export async function issueInvisibleCheckoutAccess(input: {
     lockedIp: null,
     lastAccessAt: null,
     lastUserAgent: null,
+    sharingAlertedAt: null,
   }
   await saveTokenRecord(record)
   const secureUrl = buildInvisibleOneTimeCheckoutUrl(token, input.baseUrl)
@@ -301,21 +334,73 @@ export async function consumeInvisibleCheckoutToken(token: string, input?: {
 }) {
   const record = await readTokenRecord(token)
   if (!record) return { ok: false as const, reason: 'TOKEN_NOT_FOUND' as const }
-  if (record.status !== 'ACTIVE') return { ok: false as const, reason: 'TOKEN_INVALIDATED' as const }
+  const requestIp = parseIp(input?.ip)
+  if (record.status !== 'ACTIVE') {
+    return {
+      ok: false as const,
+      reason: 'TOKEN_INVALIDATED' as const,
+      invalidatedReason: record.invalidatedReason,
+      checkoutId: record.checkoutId,
+      listingSlug: record.listingSlug,
+      listingId: record.listingSlug,
+      lockedIp: record.lockedIp,
+      requestIp,
+    }
+  }
   if (new Date(record.expiresAt).getTime() <= Date.now()) {
     await invalidateInvisibleCheckoutToken(token, 'TOKEN_EXPIRED').catch(() => {})
-    return { ok: false as const, reason: 'TOKEN_EXPIRED' as const }
+    return {
+      ok: false as const,
+      reason: 'TOKEN_EXPIRED' as const,
+      checkoutId: record.checkoutId,
+      listingSlug: record.listingSlug,
+      listingId: record.listingSlug,
+      lockedIp: record.lockedIp,
+      requestIp,
+    }
   }
   if (record.useCount >= record.maxUses) {
     await invalidateInvisibleCheckoutToken(token, 'TOKEN_EXHAUSTED').catch(() => {})
-    return { ok: false as const, reason: 'TOKEN_EXHAUSTED' as const }
+    return {
+      ok: false as const,
+      reason: 'TOKEN_EXHAUSTED' as const,
+      checkoutId: record.checkoutId,
+      listingSlug: record.listingSlug,
+      listingId: record.listingSlug,
+      lockedIp: record.lockedIp,
+      requestIp,
+    }
   }
   if (record.closeOnPaid && await checkoutClosed(record.checkoutId)) {
     await invalidateInvisibleCheckoutToken(token, 'CHECKOUT_CLOSED').catch(() => {})
-    return { ok: false as const, reason: 'CHECKOUT_CLOSED' as const }
+    return {
+      ok: false as const,
+      reason: 'CHECKOUT_CLOSED' as const,
+      checkoutId: record.checkoutId,
+      listingSlug: record.listingSlug,
+      listingId: record.listingSlug,
+      lockedIp: record.lockedIp,
+      requestIp,
+    }
   }
 
-  const requestIp = parseIp(input?.ip)
+  if (record.lockedIp && requestIp && record.lockedIp !== requestIp) {
+    record.status = 'INVALIDATED'
+    record.invalidatedReason = 'LINK_SHARING_ATTEMPT'
+    if (!record.sharingAlertedAt) {
+      record.sharingAlertedAt = new Date().toISOString()
+    }
+    await saveTokenRecord(record)
+    return {
+      ok: false as const,
+      reason: 'LINK_SHARING_ATTEMPT' as const,
+      checkoutId: record.checkoutId,
+      listingSlug: record.listingSlug,
+      listingId: record.listingSlug,
+      lockedIp: record.lockedIp,
+      requestIp,
+    }
+  }
   if (!record.lockedIp && requestIp) record.lockedIp = requestIp
   record.useCount += 1
   record.lastAccessAt = new Date().toISOString()
@@ -430,6 +515,38 @@ export async function trackInvisibleCheckoutProbe(input: {
   }).catch(() => {})
 }
 
+export async function trackInvisibleCheckoutShareAlert(input: {
+  token: string
+  checkoutId?: string | null
+  listingId?: string | null
+  originalIp?: string | null
+  sharingAttemptIp?: string | null
+  userAgent?: string | null
+}) {
+  const sanitizedExtra = JSON.parse(JSON.stringify({
+    originalIp: parseIp(input.originalIp),
+    sharingAttemptIp: parseIp(input.sharingAttemptIp),
+  })) as Prisma.InputJsonValue
+  await prisma.auditLog.create({
+    data: {
+      action: 'QUICK_SALE_LINK_SHARING_ATTEMPT',
+      entity: 'InvisibleCheckoutToken',
+      entityId: input.token,
+      userId: null,
+      details: {
+        token: input.token,
+        reason: 'LINK_SHARING_ATTEMPT',
+        checkoutId: input.checkoutId ?? null,
+        listingId: input.listingId ?? null,
+        ip: parseIp(input.sharingAttemptIp),
+        userAgent: String(input.userAgent ?? '').slice(0, 300) || null,
+        countryCode: null,
+        extra: sanitizedExtra,
+      },
+    },
+  }).catch(() => {})
+}
+
 export async function getInvisibleCheckoutPayloadForCheckout(checkoutId: string) {
   const checkout = await prisma.quickSaleCheckout.findUnique({
     where: { id: checkoutId },
@@ -454,7 +571,6 @@ export async function getInvisibleCheckoutPayloadForCheckout(checkoutId: string)
     checkoutId: checkout.id,
     listingSlug: checkout.listing.slug,
     mode,
-    ttlMinutes: DEFAULT_TTL_MINUTES,
     maxUses: 1,
     closeOnPaid: true,
     source: ISSUE_SOURCE.API_LOJA_PIX,

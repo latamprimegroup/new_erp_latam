@@ -4,6 +4,9 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react'
 
 type SecurityPayload = {
   minValueForKycBrl: number
+  linkExpirationTime: number
+  linkExpirationMin: number
+  linkExpirationMax: number
   suspiciousEmailDomains: string[]
   antiFraudBlocks: number
   pendingKycCount: number
@@ -60,12 +63,14 @@ export function QuickSaleSecurityPanel() {
   const [error, setError] = useState('')
 
   const [minValueForKycBrl, setMinValueForKycBrl] = useState('300')
+  const [linkExpirationTime, setLinkExpirationTime] = useState('60')
   const [suspiciousDomainsText, setSuspiciousDomainsText] = useState('')
   const [utmifyTokenInput, setUtmifyTokenInput] = useState('')
   const [adspowerGroupMapText, setAdspowerGroupMapText] = useState('{\n  \n}')
 
   const fillForm = useCallback((payload: SecurityPayload) => {
     setMinValueForKycBrl(String(payload.minValueForKycBrl))
+    setLinkExpirationTime(String(payload.linkExpirationTime))
     setSuspiciousDomainsText(payload.suspiciousEmailDomains.join('\n'))
     setAdspowerGroupMapText(JSON.stringify(payload.adspowerGroupMap, null, 2))
   }, [])
@@ -117,6 +122,12 @@ export function QuickSaleSecurityPanel() {
       if (!Number.isFinite(parsedMin) || parsedMin <= 0) {
         throw new Error('Informe um valor valido para o limite minimo de KYC.')
       }
+      const parsedLinkExpiration = Number.parseInt(String(linkExpirationTime).trim(), 10)
+      const minAllowed = security?.linkExpirationMin ?? 15
+      const maxAllowed = security?.linkExpirationMax ?? 120
+      if (!Number.isFinite(parsedLinkExpiration) || parsedLinkExpiration < minAllowed || parsedLinkExpiration > maxAllowed) {
+        throw new Error(`LINK_EXPIRATION_TIME deve ficar entre ${minAllowed} e ${maxAllowed} minutos.`)
+      }
 
       let parsedMap: Record<string, string> = {}
       try {
@@ -132,6 +143,7 @@ export function QuickSaleSecurityPanel() {
 
       const body = {
         minValueForKycBrl: parsedMin,
+        linkExpirationTime: parsedLinkExpiration,
         suspiciousEmailDomains,
         adspowerGroupMap: parsedMap,
         utmifyToken: utmifyTokenInput.trim() ? utmifyTokenInput.trim() : undefined,
@@ -247,6 +259,24 @@ export function QuickSaleSecurityPanel() {
               className="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-white"
             />
           </label>
+          <label className="space-y-1">
+            <span className="text-xs text-zinc-400 uppercase tracking-wider">LINK_EXPIRATION_TIME (minutos)</span>
+            <input
+              type="number"
+              min={security?.linkExpirationMin ?? 15}
+              max={security?.linkExpirationMax ?? 120}
+              step="1"
+              value={linkExpirationTime}
+              onChange={(e) => setLinkExpirationTime(e.target.value)}
+              className="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-white"
+            />
+            <span className="text-[11px] text-zinc-500">
+              Intervalo permitido: {security?.linkExpirationMin ?? 15} a {security?.linkExpirationMax ?? 120} minutos (padrão 60).
+            </span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
           <label className="space-y-1">
             <span className="text-xs text-zinc-400 uppercase tracking-wider">Novo token Utmify (opcional)</span>
             <input
