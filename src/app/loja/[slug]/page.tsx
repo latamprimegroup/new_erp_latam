@@ -23,6 +23,10 @@ export default function LojaPage({ params, searchParams }: Props) {
     typeof searchParams.checkoutId === 'string' ? searchParams.checkoutId : undefined
   const sellerRef =
     typeof searchParams.ref === 'string' ? searchParams.ref : undefined
+  // Cupom pré-carregado via URL (?cupom=CODIGO) — só aparece se o operador
+  // enviar o link com o cupom embutido. Clientes sem o parâmetro não veem o campo.
+  const urlCupom =
+    typeof searchParams.cupom === 'string' ? searchParams.cupom.trim().toUpperCase() : undefined
 
   return (
     <LojaClient
@@ -30,6 +34,7 @@ export default function LojaPage({ params, searchParams }: Props) {
       urlUtms={utms}
       checkoutId={initialCheckoutId}
       sellerRef={sellerRef}
+      urlCupom={urlCupom}
     />
   )
 }

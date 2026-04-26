@@ -244,9 +244,11 @@ interface Props {
   urlUtms: Record<string, string | undefined>
   checkoutId?: string
   sellerRef?: string
+  /** Cupom pré-carregado via URL (?cupom=CODIGO) — só exibe o campo se presente */
+  urlCupom?: string
 }
 
-export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
+export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: Props) {
   const [step, setStep] = useState<Step>('loading')
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
@@ -260,13 +262,22 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  // Cupom de desconto
-  const [couponInput, setCouponInput]       = useState('')
+  // Cupom de desconto — só visível quando urlCupom está presente na URL
+  const showCouponField = Boolean(urlCupom)
+  const [couponInput, setCouponInput]       = useState(urlCupom ?? '')
   const [couponApplied, setCouponApplied]   = useState<{
     code: string; discountAmount: number; description: string | null
   } | null>(null)
   const [couponLoading, setCouponLoading]   = useState(false)
   const [couponError, setCouponError]       = useState<string | null>(null)
+
+  // Auto-aplica cupom da URL assim que o produto carrega
+  useEffect(() => {
+    if (urlCupom && product) {
+      applyCoupon()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlCupom, product?.id])
 
   const applyCoupon = async () => {
     if (!product || !couponInput.trim()) return
@@ -1182,8 +1193,8 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             </div>
           ) : null}
 
-          {/* ── Cupom de desconto ──────────────────────────────────────── */}
-          <div className="space-y-2">
+          {/* ── Cupom de desconto — só visível se urlCupom foi passado na URL ── */}
+          {showCouponField && <div className="space-y-2">
             {!couponApplied ? (
               <div className="flex gap-2">
                 <input
@@ -1223,7 +1234,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             {couponError && (
               <p className="text-red-400 text-xs px-1">{couponError}</p>
             )}
-          </div>
+          </div>}
 
           <div className="space-y-1 py-2 border-t border-zinc-800">
             {couponApplied && (
