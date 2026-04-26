@@ -303,6 +303,48 @@ export function VendaRapidaTab({
     isStockQtyValid &&
     isGlobalGatewayValid
 
+  // Estoque Rápido
+  const [showEstoqueRapido, setShowEstoqueRapido] = useState(false)
+  const [estoqueRapidoForm, setEstoqueRapidoForm] = useState({
+    displayName: '', productCode: '', salePrice: '', qty: '1', notes: '',
+  })
+  const [estoqueRapidoSaving, setEstoqueRapidoSaving] = useState(false)
+  const [estoqueRapidoMsg, setEstoqueRapidoMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  const handleEstoqueRapido = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEstoqueRapidoSaving(true)
+    setEstoqueRapidoMsg(null)
+    try {
+      const res = await fetch('/api/admin/estoque-rapido', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category:    category,
+          displayName: estoqueRapidoForm.displayName.trim(),
+          productCode: estoqueRapidoForm.productCode.trim() || undefined,
+          salePrice:   Number(estoqueRapidoForm.salePrice),
+          qty:         Number(estoqueRapidoForm.qty) || 1,
+          notes:       estoqueRapidoForm.notes.trim() || undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; qty?: number; message?: string; error?: string }
+      if (res.ok && data.ok) {
+        setEstoqueRapidoMsg({ type: 'ok', text: data.message ?? `${data.qty} unidade(s) adicionada(s) ao estoque!` })
+        setEstoqueRapidoForm({ displayName: '', productCode: '', salePrice: '', qty: '1', notes: '' })
+        // Recarrega sugestões de estoque para refletir o novo item
+        if (estoqueRapidoForm.displayName.trim()) {
+          setStockSearch(estoqueRapidoForm.displayName.trim())
+          setStockSearchOpen(true)
+        }
+      } else {
+        setEstoqueRapidoMsg({ type: 'err', text: data.error ?? 'Erro ao adicionar estoque.' })
+      }
+    } finally {
+      setEstoqueRapidoSaving(false)
+    }
+  }
+
   // Teste rápido PIX integrado
   const [pixBuyerName, setPixBuyerName] = useState('')
   const [pixBuyerWhatsapp, setPixBuyerWhatsapp] = useState('')
@@ -1214,6 +1256,101 @@ export function VendaRapidaTab({
                     Campo obrigatório: escolha um produto no autocomplete para continuar.
                   </p>
                 ) : null}
+
+                {/* ── Estoque Rápido ─────────────────────────────────────────── */}
+                <div className="border-t border-zinc-800 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShowEstoqueRapido(!showEstoqueRapido); setEstoqueRapidoMsg(null) }}
+                    className="flex items-center gap-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition"
+                  >
+                    <span className="text-base leading-none">{showEstoqueRapido ? '▲' : '▼'}</span>
+                    ⚡ Adicionar estoque rápido (sem sair desta tela)
+                  </button>
+
+                  {showEstoqueRapido && (
+                    <form onSubmit={handleEstoqueRapido} className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2">
+                      <p className="text-[11px] text-zinc-400">
+                        Adiciona unidades direto ao banco · Categoria selecionada: <strong className="text-white">{category.replace('_', ' ')}</strong>
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="col-span-2">
+                          <label className="block text-[11px] text-zinc-400 mb-1">Nome do produto *</label>
+                          <input
+                            required
+                            className="input-dark text-xs w-full"
+                            placeholder="Ex: Google Ads Verificada Premium"
+                            value={estoqueRapidoForm.displayName}
+                            onChange={(e) => setEstoqueRapidoForm({ ...estoqueRapidoForm, displayName: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-zinc-400 mb-1">Preço de venda (R$) *</label>
+                          <input
+                            required
+                            type="number"
+                            min="1"
+                            step="0.01"
+                            className="input-dark text-xs w-full"
+                            placeholder="150.00"
+                            value={estoqueRapidoForm.salePrice}
+                            onChange={(e) => setEstoqueRapidoForm({ ...estoqueRapidoForm, salePrice: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-zinc-400 mb-1">Quantidade *</label>
+                          <input
+                            required
+                            type="number"
+                            min="1"
+                            max="500"
+                            className="input-dark text-xs w-full"
+                            placeholder="1"
+                            value={estoqueRapidoForm.qty}
+                            onChange={(e) => setEstoqueRapidoForm({ ...estoqueRapidoForm, qty: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-zinc-400 mb-1">Código (opcional)</label>
+                          <input
+                            className="input-dark text-xs w-full"
+                            placeholder="Ex: AA-CONT-000001"
+                            value={estoqueRapidoForm.productCode}
+                            onChange={(e) => setEstoqueRapidoForm({ ...estoqueRapidoForm, productCode: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-zinc-400 mb-1">Notas internas</label>
+                          <input
+                            className="input-dark text-xs w-full"
+                            placeholder="Ex: Safra 2022, proxy dedicado..."
+                            value={estoqueRapidoForm.notes}
+                            onChange={(e) => setEstoqueRapidoForm({ ...estoqueRapidoForm, notes: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      {estoqueRapidoMsg && (
+                        <p className={`text-[11px] rounded-lg px-2 py-1.5 ${
+                          estoqueRapidoMsg.type === 'ok'
+                            ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-300 border border-red-500/20'
+                        }`}>
+                          {estoqueRapidoMsg.text}
+                        </p>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={estoqueRapidoSaving}
+                        className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition disabled:opacity-50"
+                      >
+                        {estoqueRapidoSaving
+                          ? 'Adicionando ao banco...'
+                          : `Adicionar ${Number(estoqueRapidoForm.qty) || 1} unidade(s) ao estoque`
+                        }
+                      </button>
+                    </form>
+                  )}
+                </div>
                 </section>
               ) : null}
 
