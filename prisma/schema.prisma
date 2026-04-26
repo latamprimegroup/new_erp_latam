@@ -5471,7 +5471,8 @@ model QuickSaleCheckout {
   @@index([gclid])
   @@map("quick_sale_checkouts")
 
-  credentials QuickSaleCredential[]
+  credentials    QuickSaleCredential[]
+  magicLinks     DeliveryMagicLink[]
 }
 
 // ─── Motor de Recorrência — Subscription ─────────────────────────────────────
@@ -5854,6 +5855,7 @@ model QuickSaleCredential {
   updatedAt        DateTime @updatedAt      @map("updated_at")
 
   logs             QuickSaleCredentialLog[]
+  magicLinks       DeliveryMagicLink[] @relation("MagicLinkCredential")
 
   @@index([checkoutId])
   @@index([assetId])
@@ -5913,4 +5915,49 @@ enum QuickSaleCredentialAction {
   NOTE_UPDATED     // Observação técnica atualizada
   REPLACED         // Conta substituída
   EXTRA_UPDATED    // Dados extras atualizados
+}
+
+// ─── Magic Link de Entrega Segura ────────────────────────────────────────────
+
+/// Token efêmero para entrega segura de credenciais ao cliente.
+/// O cliente acessa via /entrega/[token] e o IP de acesso é logado.
+model DeliveryMagicLink {
+  id           String   @id @default(cuid())
+  /// Token público único (urlsafe 32 chars)
+  token        String   @unique @db.VarChar(64)
+  checkoutId   String   @map("checkout_id")
+  checkout     QuickSaleCheckout @relation(fields: [checkoutId], references: [id])
+  credentialId String?  @map("credential_id")
+  credential   QuickSaleCredential? @relation("MagicLinkCredential", fields: [credentialId], references: [id])
+  /// Quantas vezes pode ser acessado (padrão: ilimitado enquanto ativo)
+  maxViews     Int      @default(0) @map("max_views")
+  viewCount    Int      @default(0) @map("view_count")
+  /// Ativo até (nulo = válido enquanto a garantia durar)
+  expiresAt    DateTime? @map("expires_at")
+  /// Revogado manualmente (ex: após substituição de conta)
+  revokedAt    DateTime? @map("revoked_at")
+  revokeReason String?   @map("revoke_reason") @db.VarChar(200)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  accessLogs   DeliveryAccessLog[]
+
+  @@index([checkoutId])
+  @@index([credentialId])
+  @@index([token])
+  @@map("delivery_magic_links")
+}
+
+/// Log de cada acesso ao Magic Link (IP, user-agent, timestamp)
+model DeliveryAccessLog {
+  id          String   @id @default(cuid())
+  linkId      String   @map("link_id")
+  link        DeliveryMagicLink @relation(fields: [linkId], references: [id])
+  ip          String?  @db.VarChar(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(300)
+  referer     String?  @db.VarChar(500)
+  accessedAt  DateTime @default(now()) @map("accessed_at")
+
+  @@index([linkId])
+  @@index([accessedAt])
+  @@map("delivery_access_logs")
 }

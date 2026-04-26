@@ -5,20 +5,23 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
-  Clock,
   Copy,
   ExternalLink,
   Eye,
   EyeOff,
+  Heart,
+  Link2,
   MessageCircle,
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Shield,
   ShieldAlert,
   X,
 } from 'lucide-react'
+import { SaudeClient } from './SaudeClient'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -229,6 +232,18 @@ function OrderModal({
   const [activeTab, setActiveTab] = useState<'credenciais' | 'pedido' | 'logs'>('credenciais')
   const [adding, setAdding] = useState(false)
   const [replaceCredId, setReplaceCredId] = useState<string | null>(null)
+  const [trocaRapidaCredId, setTrocaRapidaCredId] = useState<string | null>(null)
+  const [trocaRapidaForm, setTrocaRapidaForm] = useState({
+    replacementReason: 'PROFILE_ERROR' as ReplacementReason,
+    replacementNote: '',
+    newLoginEmail: '', newLoginPassword: '', newRecoveryEmail: '', newTwoFaSeed: '',
+    newAssetOrigin: 'INTERNAL' as AssetOrigin,
+    newExecutorName: '', newSupplierName: '',
+    sendWhatsapp: true,
+  })
+  const [trocaSaving, setTrocaSaving] = useState(false)
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false)
+  const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null)
   const [noteCredId, setNoteCredId] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
   const [noteSaving, setNoteSaving] = useState(false)
@@ -312,6 +327,68 @@ function OrderModal({
       await load()
     } finally {
       setFormSaving(false)
+    }
+  }
+
+  const generateMagicLink = async (credentialId: string, sendWa: boolean) => {
+    setMagicLinkLoading(true)
+    setMagicLinkUrl(null)
+    try {
+      const res = await fetch('/api/admin/pos-venda/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkoutId,
+          credentialId,
+          expiryHours: 72,
+          revokeOld: true,
+          sendWhatsapp: sendWa,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { url?: string; error?: string }
+      if (res.ok && data.url) {
+        setMagicLinkUrl(data.url)
+        await navigator.clipboard.writeText(data.url).catch(() => {})
+      } else {
+        alert(data.error ?? 'Erro ao gerar magic link.')
+      }
+    } finally {
+      setMagicLinkLoading(false)
+    }
+  }
+
+  const submitTrocaRapida = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!trocaRapidaCredId) return
+    setTrocaSaving(true)
+    setFormError(null)
+    try {
+      const res = await fetch('/api/admin/pos-venda/troca-rapida', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkoutId,
+          credentialId:      trocaRapidaCredId,
+          replacementReason: trocaRapidaForm.replacementReason,
+          replacementNote:   trocaRapidaForm.replacementNote || undefined,
+          newLoginEmail:     trocaRapidaForm.newLoginEmail     || undefined,
+          newLoginPassword:  trocaRapidaForm.newLoginPassword  || undefined,
+          newRecoveryEmail:  trocaRapidaForm.newRecoveryEmail  || undefined,
+          newTwoFaSeed:      trocaRapidaForm.newTwoFaSeed      || undefined,
+          newAssetOrigin:    trocaRapidaForm.newAssetOrigin,
+          newExecutorName:   trocaRapidaForm.newExecutorName   || undefined,
+          newSupplierName:   trocaRapidaForm.newSupplierName   || undefined,
+          sendWhatsapp:      trocaRapidaForm.sendWhatsapp,
+          expiryHours:       72,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string; newMagicUrl?: string }
+      if (!res.ok) { setFormError(data.error ?? 'Erro ao executar troca rápida.'); return }
+      if (data.newMagicUrl) setMagicLinkUrl(data.newMagicUrl)
+      setTrocaRapidaCredId(null)
+      await load()
+    } finally {
+      setTrocaSaving(false)
     }
   }
 
@@ -510,16 +587,39 @@ function OrderModal({
                         </div>
                       )}
 
-                      {/* Botão enviar no WhatsApp */}
+                      {/* Ações rápidas */}
                       {cred.assetStatus !== 'REPLACED' && (
-                        <button
-                          type="button"
-                          onClick={() => sendWhatsapp(cred)}
-                          className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          Copiar para suporte (WhatsApp)
-                        </button>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => sendWhatsapp(cred)}
+                            className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            Mensagem WhatsApp
+                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => generateMagicLink(cred.id, true)}
+                              disabled={magicLinkLoading}
+                              className="flex items-center gap-1.5 text-[11px] text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                            >
+                              <Link2 className="w-3.5 h-3.5" />
+                              {magicLinkLoading ? 'Gerando...' : 'Gerar Magic Link'}
+                            </button>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setTrocaRapidaCredId(cred.id)}
+                              className="flex items-center gap-1.5 text-[11px] text-amber-400 hover:text-amber-300"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Troca Rápida
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -536,15 +636,48 @@ function OrderModal({
                 </>
               )}
 
-              {/* Botão WhatsApp geral */}
-              <button
-                type="button"
-                onClick={() => sendWhatsapp(activeCreds[0] ?? null)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600/10 border border-blue-500/20 text-blue-400 text-sm font-semibold hover:bg-blue-600/20 transition"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Enviar atualização no WhatsApp
-              </button>
+              {/* Magic link gerado */}
+              {magicLinkUrl && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+                  <p className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5" /> Magic Link gerado e copiado!
+                  </p>
+                  <p className="text-[11px] font-mono text-zinc-300 break-all">{magicLinkUrl}</p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(magicLinkUrl)}
+                      className="text-[11px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" /> Copiar
+                    </button>
+                    <button type="button" onClick={() => setMagicLinkUrl(null)} className="text-[11px] text-zinc-500 hover:text-zinc-300">fechar</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Botões de ação global */}
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => sendWhatsapp(activeCreds[0] ?? null)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600/10 border border-blue-500/20 text-blue-400 text-sm font-semibold hover:bg-blue-600/20 transition"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  WhatsApp
+                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => generateMagicLink(activeCreds[0]?.id ?? '', true)}
+                    disabled={magicLinkLoading || !activeCreds[0]}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-600/20 transition disabled:opacity-40"
+                  >
+                    <Link2 className="w-4 h-4" />
+                    {magicLinkLoading ? 'Gerando...' : 'Magic Link'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -718,6 +851,68 @@ function OrderModal({
           </div>
         )}
 
+        {/* Modal: Troca Rápida 1 clique */}
+        {trocaRapidaCredId && (
+          <div className="absolute inset-0 z-10 bg-black/60 flex items-end justify-center" onClick={() => setTrocaRapidaCredId(null)}>
+            <div className="bg-zinc-900 border border-amber-500/30 rounded-t-2xl w-full max-w-3xl p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-white flex items-center gap-2"><RotateCcw className="w-4 h-4 text-amber-400" /> Troca Rápida</p>
+                  <p className="text-[11px] text-zinc-500">Substitui a conta, reserva novo ativo do estoque e gera novo magic link automaticamente.</p>
+                </div>
+                <button onClick={() => setTrocaRapidaCredId(null)} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+              </div>
+              <form onSubmit={submitTrocaRapida} className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Motivo">
+                    <select className="input-dark" value={trocaRapidaForm.replacementReason} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, replacementReason: e.target.value as ReplacementReason })}>
+                      {Object.entries(REPLACEMENT_REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Nota (opcional)">
+                    <input className="input-dark" value={trocaRapidaForm.replacementNote} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, replacementNote: e.target.value })} placeholder="Detalhes..." />
+                  </Field>
+                </div>
+                <p className="text-xs font-semibold text-zinc-400">Credenciais da nova conta (opcional — pode preencher depois):</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Login / E-mail">
+                    <input className="input-dark" value={trocaRapidaForm.newLoginEmail} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, newLoginEmail: e.target.value })} />
+                  </Field>
+                  <Field label="Senha">
+                    <input className="input-dark" type="text" value={trocaRapidaForm.newLoginPassword} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, newLoginPassword: e.target.value })} />
+                  </Field>
+                  <Field label="Origem">
+                    <select className="input-dark" value={trocaRapidaForm.newAssetOrigin} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, newAssetOrigin: e.target.value as AssetOrigin })}>
+                      <option value="INTERNAL">Produção Interna</option>
+                      <option value="EXTERNAL">Fornecedor Externo</option>
+                    </select>
+                  </Field>
+                  {trocaRapidaForm.newAssetOrigin === 'INTERNAL' ? (
+                    <Field label="Executor">
+                      <input className="input-dark" value={trocaRapidaForm.newExecutorName} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, newExecutorName: e.target.value })} placeholder="Ex: Ramon" />
+                    </Field>
+                  ) : (
+                    <Field label="Fornecedor">
+                      <input className="input-dark" value={trocaRapidaForm.newSupplierName} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, newSupplierName: e.target.value })} />
+                    </Field>
+                  )}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+                  <input type="checkbox" checked={trocaRapidaForm.sendWhatsapp} onChange={(e) => setTrocaRapidaForm({ ...trocaRapidaForm, sendWhatsapp: e.target.checked })} className="rounded" />
+                  Enviar WhatsApp com novo link ao cliente
+                </label>
+                {formError && <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg">{formError}</p>}
+                <div className="flex gap-2 justify-end">
+                  <button type="button" onClick={() => setTrocaRapidaCredId(null)} className="px-4 py-2 text-xs text-zinc-400 hover:text-white">Cancelar</button>
+                  <button type="submit" disabled={trocaSaving} className="px-4 py-2 rounded-lg bg-amber-600/80 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50">
+                    {trocaSaving ? 'Executando...' : '⚡ Trocar em 1 Clique'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* Modal: substituição */}
         {replaceCredId && (
           <div className="absolute inset-0 z-10 bg-black/50 flex items-end justify-center" onClick={() => setReplaceCredId(null)}>
@@ -784,6 +979,7 @@ function OrderModal({
 export function PosVendaClient({ userRole }: { userRole: string }) {
   const canEdit = ['ADMIN', 'CEO', 'DELIVERER'].includes(userRole)
 
+  const [mainTab, setMainTab] = useState<'pedidos' | 'saude'>('pedidos')
   const [rows, setRows]         = useState<OrderRow[]>([])
   const [total, setTotal]       = useState(0)
   const [loading, setLoading]   = useState(true)
@@ -820,6 +1016,33 @@ export function PosVendaClient({ userRole }: { userRole: string }) {
 
   return (
     <div className="space-y-5">
+
+      {/* Tabs principais */}
+      <div className="flex gap-1 border-b border-zinc-800 pb-2">
+        {([
+          { id: 'pedidos', label: 'Pedidos & Credenciais' },
+          { id: 'saude',   label: '❤️ Saúde por Fornecedor' },
+        ] as const).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setMainTab(tab.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              mainTab === tab.id
+                ? 'bg-zinc-700 text-white'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Saúde */}
+      {mainTab === 'saude' && <SaudeClient />}
+
+      {/* Tab: Pedidos */}
+      {mainTab !== 'saude' && <>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -973,6 +1196,8 @@ export function PosVendaClient({ userRole }: { userRole: string }) {
           onClose={() => setSelectedId(null)}
         />
       )}
+
+      </> /* fim tab pedidos */}
     </div>
   )
 }
