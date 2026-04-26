@@ -638,16 +638,18 @@ export async function POST(req: NextRequest) {
 
       if (quickIncentive.sellerId) {
         sendSaleIncentiveNotifications({
-          sellerId: quickIncentive.sellerId,
-          sellerName: quickIncentive.sellerName,
-          publicId: quickIncentive.publicAssetId,
-          grossValue: quickIncentive.grossValue,
-          sellerCommission: quickIncentive.sellerCommission,
+          sellerId:          quickIncentive.sellerId,
+          sellerName:        quickIncentive.sellerName,
+          publicId:          quickIncentive.publicAssetId,
+          grossValue:        quickIncentive.grossValue,
+          sellerCommission:  quickIncentive.sellerCommission,
           managerCommission: quickIncentive.managerCommission,
-          supplierCost: quickIncentive.supplierCost,
-          netProfit: quickIncentive.netProfit,
+          supplierCost:      quickIncentive.supplierCost,
+          netProfit:         quickIncentive.netProfit,
           remainingToUnlock: quickIncentive.sellerRemainingToUnlock ?? 0,
-          utmifySynced: quickUtmifySynced,
+          utmifySynced:      quickUtmifySynced,
+          productTitle:      quickCheckout.listing.title,
+          buyerName:         quickCheckout.buyerName,
         }).catch((e) => console.error('[QuickCheckout] Incentive notify', e))
       }
 
@@ -673,6 +675,8 @@ export async function POST(req: NextRequest) {
 
       // 3d. Pós-pagamento: decisão híbrida (autoentrega ou KYC) + direcionamento
       const appBase = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+      // Página de Obrigado com upsell + referral (para fluxos sem KYC)
+      const obrigadoUrl = appBase ? `${appBase}/obrigado/${quickCheckout.id}` : null
       const deliveryUrl = magicLinkData?.url ?? (appBase
         ? `${appBase}/loja/${quickCheckout.listing.slug}?checkoutId=${encodeURIComponent(quickCheckout.id)}`
         : null)
@@ -751,7 +755,7 @@ export async function POST(req: NextRequest) {
               '🚀 *Entrega automática concluída (baixo risco)*',
               'Seu ativo foi liberado sem etapa adicional de KYC.',
               '',
-              `Acompanhe detalhes: ${deliveryUrl}`,
+              obrigadoUrl ? `🎉 Acompanhe seu pedido: ${obrigadoUrl}` : `Acompanhe detalhes: ${deliveryUrl}`,
             ].join('\n')
           : [
               '✅ *Pagamento confirmado na Ads Ativos*',
@@ -764,8 +768,9 @@ export async function POST(req: NextRequest) {
               '',
               deliveryUrl,
               '',
+              obrigadoUrl ? `🎉 Resumo do pedido: ${obrigadoUrl}` : '',
               'Sem perfil AdsPower liberado o sistema não autoriza envio da entrega.',
-            ].join('\n')
+            ].filter(Boolean).join('\n')
         sendWhatsApp({ phone: quickCheckout.buyerWhatsapp, message: autoDeliveryMessage })
           .catch((e) => console.error('[QuickCheckout] guia entrega whatsapp', e))
         if (quickCheckout.buyerEmail) {

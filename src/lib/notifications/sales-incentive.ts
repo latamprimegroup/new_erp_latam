@@ -20,20 +20,29 @@ export async function notifySellerSaleApproved(opts: {
   saleValue: number
   sellerCommission: number
   remainingToUnlock: number
+  productTitle?: string
+  buyerName?: string
 }): Promise<void> {
   const seller = await prisma.user.findUnique({
     where: { id: opts.sellerId },
-    select: { id: true, phone: true },
+    select: { id: true, phone: true, name: true },
   })
   if (!seller) return
 
+  const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   const message = [
-    `🚀 VENDA REALIZADA!`,
-    `ID: ${opts.publicId}`,
-    `Valor: ${brl(opts.saleValue)}`,
-    `Sua Comissão: ${brl(opts.sellerCommission)}`,
-    `Faltam ${brl(Math.max(0, opts.remainingToUnlock))} para liberar seus saques de comissão do mês!`,
-  ].join(' | ')
+    `💰 *VENDA APROVADA — Ads Ativos*`,
+    ``,
+    opts.productTitle ? `📦 Produto: ${opts.productTitle}` : `🆔 ID: ${opts.publicId}`,
+    opts.buyerName    ? `👤 Cliente: ${opts.buyerName}` : '',
+    `💵 Valor: ${brl(opts.saleValue)}`,
+    `🏆 Sua comissão: *${brl(opts.sellerCommission)}*`,
+    opts.remainingToUnlock > 0
+      ? `📊 Faltam ${brl(opts.remainingToUnlock)} para desbloquear saques do mês`
+      : `✅ Meta do mês atingida!`,
+    ``,
+    `🕐 ${now} · War Room OS`,
+  ].filter(Boolean).join('\n')
 
   await notify({
     userId: seller.id,
@@ -90,13 +99,17 @@ export async function sendSaleIncentiveNotifications(opts: {
   netProfit: number
   remainingToUnlock: number
   utmifySynced: boolean
+  productTitle?: string
+  buyerName?: string
 }): Promise<void> {
   await notifySellerSaleApproved({
-    sellerId: opts.sellerId,
-    publicId: opts.publicId,
-    saleValue: opts.grossValue,
-    sellerCommission: opts.sellerCommission,
+    sellerId:          opts.sellerId,
+    publicId:          opts.publicId,
+    saleValue:         opts.grossValue,
+    sellerCommission:  opts.sellerCommission,
     remainingToUnlock: opts.remainingToUnlock,
+    productTitle:      opts.productTitle,
+    buyerName:         opts.buyerName,
   })
 
   await notifyAdminSaleProfitSummary({
