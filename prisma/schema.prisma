@@ -168,6 +168,8 @@ model User {
   purchaseEntriesCreated   PurchaseEntry[]           @relation("PurchaseEntryCreator")
   quickSaleCheckoutsSold   QuickSaleCheckout[]       @relation("QuickSaleSeller")
   quickSaleCheckoutsManaged QuickSaleCheckout[]      @relation("QuickSaleManager")
+  quickSaleCredentialsExecuted QuickSaleCredential[] @relation("QuickSaleCredentialExecutor")
+  quickSaleCredentialLogsAuthored QuickSaleCredentialLog[] @relation("QuickSaleCredentialLogActor")
 
   @@index([phone])
   @@index([status])
@@ -4618,6 +4620,7 @@ model Asset {
   salesOrders   AssetSalesOrder[]
   rmaAsOriginal RMATicket[]      @relation("RMAOriginalAsset")
   rmaAsReplacement RMATicket[]   @relation("RMAReplacementAsset")
+  quickSaleCredentials QuickSaleCredential[] @relation("QuickSaleCredentialAsset")
 
   @@index([status])
   @@index([vendorId])
@@ -5467,6 +5470,8 @@ model QuickSaleCheckout {
   @@index([fbclid])
   @@index([gclid])
   @@map("quick_sale_checkouts")
+
+  credentials QuickSaleCredential[]
 }
 
 // ─── Motor de Recorrência — Subscription ─────────────────────────────────────
@@ -5793,4 +5798,119 @@ model AdSpendLog {
   @@index([date])
   @@index([monitoringId, date])
   @@map("ad_spend_logs")
+}
+
+// ─── Módulo Pós-Venda & Rastreabilidade ──────────────────────────────────────
+
+/// Credenciais e dados de acesso de um ativo entregue em um QuickSaleCheckout.
+/// Cada registro representa UM ativo físico dentro do pedido (qty > 1 = vários registros).
+model QuickSaleCredential {
+  id               String   @id @default(cuid())
+  /// Pedido de origem
+  checkoutId       String   @map("checkout_id")
+  checkout         QuickSaleCheckout @relation(fields: [checkoutId], references: [id])
+  /// ID do Asset entregue (pode ser nulo se entrega manual)
+  assetId          String?  @map("asset_id")
+  asset            Asset?   @relation("QuickSaleCredentialAsset", fields: [assetId], references: [id])
+
+  /// ── Credenciais de acesso ─────────────────────────────────────────────────
+  /// Login da plataforma (e-mail ou usuário)
+  loginEmail       String?  @map("login_email") @db.VarChar(300)
+  /// Senha de acesso (armazenada encriptada via application-level encryption)
+  loginPassword    String?  @map("login_password") @db.VarChar(500)
+  /// E-mail de recuperação vinculado à conta
+  recoveryEmail    String?  @map("recovery_email") @db.VarChar(300)
+  /// Token / seed de 2FA (TOTP)
+  twoFaSeed        String?  @map("two_fa_seed") @db.VarChar(500)
+  /// Dados adicionais em JSON livre (ex: cookies, proxy, perfil AdsPower)
+  extraData        Json?    @map("extra_data")
+
+  /// ── Origem do ativo ──────────────────────────────────────────────────────
+  assetOrigin      QuickSaleAssetOrigin @default(INTERNAL) @map("asset_origin")
+  /// Nome do colaborador executor (ex: "Ramon", "Gabriela") — produção interna
+  executorName     String?  @map("executor_name") @db.VarChar(100)
+  /// ID do usuário executor (relação com User se produção interna)
+  executorId       String?  @map("executor_id")
+  executor         User?    @relation("QuickSaleCredentialExecutor", fields: [executorId], references: [id])
+  /// Nome do fornecedor externo (quando assetOrigin = EXTERNAL)
+  supplierName     String?  @map("supplier_name") @db.VarChar(100)
+
+  /// ── Status operacional do ativo ──────────────────────────────────────────
+  assetStatus      QuickSaleAssetStatus @default(DELIVERED) @map("asset_status")
+  /// Observações técnicas para o time de suporte
+  supportNote      String?  @map("support_note") @db.Text
+
+  /// ── Garantia e substituição ───────────────────────────────────────────────
+  /// Se foi substituído, aponta para o novo registro
+  replacedById     String?  @map("replaced_by_id")
+  replacedBy       QuickSaleCredential? @relation("ReplacementChain", fields: [replacedById], references: [id])
+  replacements     QuickSaleCredential[] @relation("ReplacementChain")
+  /// Motivo da substituição (preenchido quando substituído)
+  replacementReason QuickSaleReplacementReason? @map("replacement_reason")
+  replacementNote  String?  @map("replacement_note") @db.VarChar(500)
+  replacedAt       DateTime? @map("replaced_at")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt      @map("updated_at")
+
+  logs             QuickSaleCredentialLog[]
+
+  @@index([checkoutId])
+  @@index([assetId])
+  @@index([assetStatus])
+  @@index([executorId])
+  @@index([createdAt])
+  @@map("quick_sale_credentials")
+}
+
+/// Log de auditoria de alterações nas credenciais (quem mexeu, quando e o quê)
+model QuickSaleCredentialLog {
+  id             String   @id @default(cuid())
+  credentialId   String   @map("credential_id")
+  credential     QuickSaleCredential @relation(fields: [credentialId], references: [id])
+  /// Usuário que realizou a ação (admin/suporte)
+  actorId        String?  @map("actor_id")
+  actor          User?    @relation("QuickSaleCredentialLogActor", fields: [actorId], references: [id])
+  actorName      String?  @map("actor_name") @db.VarChar(100)
+  /// Tipo da ação
+  action         QuickSaleCredentialAction @map("action")
+  /// Resumo do que foi alterado (JSON diff simplificado)
+  details        Json?    @map("details")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([credentialId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("quick_sale_credential_logs")
+}
+
+enum QuickSaleAssetOrigin {
+  INTERNAL  // Produção interna da equipe
+  EXTERNAL  // Fornecedor externo (Purchasing)
+}
+
+enum QuickSaleAssetStatus {
+  DELIVERED    // Entregue e ativa
+  WARMING      // Em aquecimento (preparando para uso)
+  SUSPENDED    // Suspensa pela plataforma
+  REPLACED     // Substituída por outra conta
+  RETURNED     // Devolvida ao estoque (garantia)
+}
+
+enum QuickSaleReplacementReason {
+  PROFILE_ERROR    // Erro no perfil / configuração
+  DIRTY_PROXY      // Proxy sujo / IP comprometido
+  CREATIVE_ISSUE   // Problema no criativo / anúncio
+  PLATFORM_BAN     // Banimento pela plataforma
+  CLIENT_REQUEST   // Solicitação do cliente
+  OTHER            // Outro motivo
+}
+
+enum QuickSaleCredentialAction {
+  CREATED          // Credencial criada
+  PASSWORD_CHANGED // Senha atualizada
+  STATUS_CHANGED   // Status do ativo alterado
+  NOTE_UPDATED     // Observação técnica atualizada
+  REPLACED         // Conta substituída
+  EXTRA_UPDATED    // Dados extras atualizados
 }
