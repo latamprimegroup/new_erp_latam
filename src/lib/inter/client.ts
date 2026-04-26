@@ -373,20 +373,23 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
 
   if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'registerWebhook')
 
+  const accountNumber = process.env.INTER_ACCOUNT_NUMBER?.trim() ?? ''
+  const webhookHeaders: Record<string, string> = {
+    Authorization:  `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  }
+  if (accountNumber) webhookHeaders['x-conta-corrente'] = accountNumber
+
   const res = await mtlsFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     method:  'PUT',
-    headers: {
-      Authorization:      `Bearer ${token}`,
-      'Content-Type':     'application/json',
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
-    },
-    body: JSON.stringify({ webhookUrl: callbackUrl }),
+    headers: webhookHeaders,
+    body:    JSON.stringify({ webhookUrl: callbackUrl }),
     agent,
   })
 
   if (!res.ok) {
     const txt = await res.text()
-    throw new InterApiError(res.status, txt, 'PUT /pix/v2/webhook')
+    throw new InterApiError(res.status, txt, `PUT /pix/v2/webhook (conta=${accountNumber || 'não definida'}, chave=${chavePix})`)
   }
 
   console.log(`[Inter] Webhook registrado em: ${callbackUrl}`)
@@ -401,11 +404,12 @@ export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; cria
   const agent    = createMtlsAgent()
   const chavePix = process.env.INTER_PIX_KEY ?? ''
 
+  const accountNum = process.env.INTER_ACCOUNT_NUMBER?.trim() ?? ''
+  const getHeaders: Record<string, string> = { Authorization: `Bearer ${token}` }
+  if (accountNum) getHeaders['x-conta-corrente'] = accountNum
+
   const res = await mtlsFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
-    headers: {
-      Authorization:      `Bearer ${token}`,
-      'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
-    },
+    headers: getHeaders,
     agent,
   })
 
