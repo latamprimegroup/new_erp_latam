@@ -152,15 +152,17 @@ export async function POST(req: NextRequest) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // Incrementa sequência
+        // Incrementa sequência (upsert garante criação se não existir)
         const seq = await tx.systemSetting.findUnique({
           where: { key: QUICK_SALE_ORDER_SEQUENCE_KEY },
           select: { id: true, value: true },
         })
         const nextSeq = parseSequence(seq?.value) + 1
-        if (seq) {
-          await tx.systemSetting.update({ where: { id: seq.id }, data: { value: String(nextSeq) } })
-        }
+        await tx.systemSetting.upsert({
+          where: { key: QUICK_SALE_ORDER_SEQUENCE_KEY },
+          create: { key: QUICK_SALE_ORDER_SEQUENCE_KEY, value: String(nextSeq) },
+          update: { value: String(nextSeq) },
+        })
         const orderNum = formatOrderNumber(nextSeq)
 
         const checkoutIds: string[] = []

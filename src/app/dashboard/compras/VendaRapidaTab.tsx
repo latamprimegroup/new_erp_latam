@@ -2339,7 +2339,7 @@ export function VendaRapidaTab({
         <div className="flex items-center justify-center h-32">
           <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : listings.length === 0 ? (
+      ) : filteredListings.length === 0 ? (
         <div className="border border-zinc-800 rounded-2xl p-8 bg-zinc-900/40">
           <div className="max-w-2xl mx-auto text-center space-y-4">
             <p className="text-4xl">🚀</p>
@@ -2376,7 +2376,7 @@ export function VendaRapidaTab({
         </div>
       ) : (
         <div className="grid gap-4">
-          {listings.map((l, idx) => {
+          {filteredListings.map((l, idx) => {
             const listingMode = l.paymentMode ?? 'PIX'
             const url = listingMode === 'GLOBAL'
               ? buildPublicGlobalCheckoutUrl(l.slug)
