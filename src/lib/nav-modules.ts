@@ -204,7 +204,7 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
-    href: '/dashboard/commercial/seller',
+    href: '/dashboard/venda-rapida',
     label: 'Venda Rápida — PIX',
     roles: ['ADMIN', 'COMMERCIAL'],
     icon: 'Zap',
@@ -471,6 +471,13 @@ export const MODULES_ERP: NavItem[] = [
   },
 
   // ── Configurações & Sistema ────────────────────────────────────────────────
+  {
+    href: '/dashboard/admin/smart-delivery',
+    label: 'SmartDelivery System',
+    roles: ['ADMIN'],
+    icon: 'ShieldAlert',
+    group: 'Sistema',
+  },
   {
     href: '/dashboard/admin/config',
     label: 'Configurações',
