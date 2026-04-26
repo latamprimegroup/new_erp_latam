@@ -2365,15 +2365,27 @@ model IntelligenceLeadEvent {
 
 /// Cupons criados pelo comercial (ex.: CLIENTE10 — 10% em lote mínimo)
 model CommercialCoupon {
-  id           String   @id @default(cuid())
-  code         String   @unique @db.VarChar(40)
-  percentOff   Int      @map("percent_off")
-  minQuantity  Int      @default(1) @map("min_quantity")
-  active       Boolean  @default(true)
-  description  String?  @db.VarChar(200)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id           String    @id @default(cuid())
+  code         String    @unique @db.VarChar(40)
+  percentOff   Int       @map("percent_off")
+  /// Desconto fixo em R$ (alternativa ao percentual)
+  amountOff    Decimal?  @map("amount_off") @db.Decimal(10, 2)
+  minQuantity  Int       @default(1) @map("min_quantity")
+  active       Boolean   @default(true)
+  description  String?   @db.VarChar(200)
+  /// Data de expiração (null = sem validade)
+  expiresAt    DateTime? @map("expires_at")
+  /// Limite total de usos (null = ilimitado)
+  usageLimit   Int?      @map("usage_limit")
+  /// Usos registrados
+  usageCount   Int       @default(0) @map("usage_count")
+  /// Restrição a um listing específico (null = qualquer listing)
+  listingId    String?   @map("listing_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
+  @@index([code, active])
+  @@index([expiresAt])
   @@map("commercial_coupons")
 }
 
@@ -5457,10 +5469,16 @@ model QuickSaleCheckout {
   gclid          String?        @map("gclid")        @db.VarChar(512)
   /// Referrer HTTP da sessão de entrada (para tráfego sem UTMs)
   referrer       String?        @map("referrer")     @db.VarChar(500)
+  /// Código de cupom aplicado na compra
+  couponCode     String?        @map("coupon_code") @db.VarChar(40)
+  /// Desconto aplicado pelo cupom (R$)
+  couponDiscount Decimal?       @map("coupon_discount") @db.Decimal(10, 2)
   /// Timestamp do WhatsApp de recuperação de abandono (PIX não pago)
   recoveryMsgSentAt DateTime?   @map("recovery_msg_sent_at")
   /// Timestamp do WhatsApp de recompra inteligente (pós-ativação da conta)
   repurchaseMsgSentAt DateTime? @map("repurchase_msg_sent_at")
+  /// Timestamp do WhatsApp de alerta de garantia expirando
+  warrantyAlertSentAt DateTime? @map("warranty_alert_sent_at")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt      @map("updated_at")
 

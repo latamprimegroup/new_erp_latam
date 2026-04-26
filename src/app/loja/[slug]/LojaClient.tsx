@@ -260,6 +260,52 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  // Cupom de desconto
+  const [couponInput, setCouponInput]       = useState('')
+  const [couponApplied, setCouponApplied]   = useState<{
+    code: string; discountAmount: number; description: string | null
+  } | null>(null)
+  const [couponLoading, setCouponLoading]   = useState(false)
+  const [couponError, setCouponError]       = useState<string | null>(null)
+
+  const applyCoupon = async () => {
+    if (!product || !couponInput.trim()) return
+    setCouponLoading(true)
+    setCouponError(null)
+    try {
+      const res  = await fetch('/api/loja/cupom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code:      couponInput.trim(),
+          listingId: product.id,
+          qty,
+          unitPrice: product.pricePerUnit,
+        }),
+      })
+      const data = await res.json() as {
+        valid: boolean; error?: string
+        code?: string; discountAmount?: number; description?: string | null
+        finalTotal?: number
+      }
+      if (!res.ok || !data.valid) {
+        setCouponError(data.error ?? 'Cupom inválido.')
+        setCouponApplied(null)
+      } else {
+        setCouponApplied({
+          code:           data.code ?? couponInput.trim().toUpperCase(),
+          discountAmount: data.discountAmount ?? 0,
+          description:    data.description ?? null,
+        })
+        setCouponError(null)
+      }
+    } catch {
+      setCouponError('Erro ao validar cupom.')
+    } finally {
+      setCouponLoading(false)
+    }
+  }
+
   const [pixData, setPixData] = useState<PixData | null>(null)
   const [copied, setCopied] = useState(false)
   const [deliveryState, setDeliveryState] = useState<DeliveryState | null>(null)
@@ -421,6 +467,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
       qty: Math.max(1, Math.min(input.qty, product.maxQty, product.available)),
       acceptTerms: input.acceptTerms,
       sellerRef: sellerRef || undefined,
+      couponCode: couponApplied?.code || undefined,
       ...utmPayload,
     }
     if (input.docType === 'cnpj') body.cnpj = docClean
@@ -1086,9 +1133,68 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             </div>
           ) : null}
 
-          <div className="flex items-center justify-between py-2 border-t border-zinc-800">
-            <span className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Total</span>
-            <span className="text-white font-bold text-2xl">R$ {total.toFixed(2).replace('.', ',')}</span>
+          {/* ── Cupom de desconto ──────────────────────────────────────── */}
+          <div className="space-y-2">
+            {!couponApplied ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponInput}
+                  onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponError(null) }}
+                  placeholder="Cupom de desconto (opcional)"
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-white placeholder-zinc-600 text-sm focus:outline-none focus:border-emerald-500 transition uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={applyCoupon}
+                  disabled={couponLoading || !couponInput.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm font-semibold transition disabled:opacity-50"
+                >
+                  {couponLoading ? '...' : 'Aplicar'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-2.5">
+                <div>
+                  <p className="text-emerald-300 text-sm font-bold">🎟 {couponApplied.code}</p>
+                  {couponApplied.description && (
+                    <p className="text-emerald-400 text-xs">{couponApplied.description}</p>
+                  )}
+                  <p className="text-emerald-400 text-xs">Desconto: − R$ {couponApplied.discountAmount.toFixed(2).replace('.', ',')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setCouponApplied(null); setCouponInput('') }}
+                  className="text-zinc-500 hover:text-red-400 text-xs transition"
+                >
+                  Remover
+                </button>
+              </div>
+            )}
+            {couponError && (
+              <p className="text-red-400 text-xs px-1">{couponError}</p>
+            )}
+          </div>
+
+          <div className="space-y-1 py-2 border-t border-zinc-800">
+            {couponApplied && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Subtotal</span>
+                <span className="text-zinc-400">R$ {total.toFixed(2).replace('.', ',')}</span>
+              </div>
+            )}
+            {couponApplied && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Desconto ({couponApplied.code})</span>
+                <span className="text-emerald-400">− R$ {couponApplied.discountAmount.toFixed(2).replace('.', ',')}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400 text-sm font-medium uppercase tracking-wider">Total</span>
+              <span className="text-white font-bold text-2xl">
+                R$ {Math.max(0.01, total - (couponApplied?.discountAmount ?? 0)).toFixed(2).replace('.', ',')}
+              </span>
+            </div>
           </div>
 
           <label className="flex items-start gap-3 rounded-xl border border-zinc-700 bg-zinc-800/60 p-3 cursor-pointer">

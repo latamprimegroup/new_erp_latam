@@ -584,6 +584,7 @@ const schema = z.object({
   whatsapp:     z.string().regex(/^\+?55\d{8,11}$/, 'WhatsApp inválido (+5511999999999)'),
   email:        z.string().email().optional().or(z.literal('')),
   qty:          z.number().int().min(1).max(50),
+  couponCode:   z.string().max(40).optional(),
   sellerRef:    z.string().max(100).optional(), // sellerId codificado pelo vendedor
   utm_source:   z.string().max(100).optional(),
   utm_medium:   z.string().max(100).optional(),
@@ -638,6 +639,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     whatsapp,
     email,
     qty,
+    couponCode,
     sellerRef,
     utm_source,
     utm_medium,
@@ -687,7 +689,38 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     }, { status: 409 })
   }
 
-  const totalAmount = Number(listing.pricePerUnit) * qty
+  // ── Cupom de desconto ────────────────────────────────────────────────────
+  let couponDiscount = 0
+  let appliedCouponCode: string | null = null
+  if (couponCode) {
+    const normalizedCoupon = couponCode.trim().toUpperCase()
+    const coupon = await prisma.commercialCoupon.findUnique({
+      where: { code: normalizedCoupon },
+    }).catch(() => null)
+
+    if (coupon && coupon.active
+      && (!coupon.expiresAt || coupon.expiresAt > new Date())
+      && (coupon.usageLimit == null || coupon.usageCount < coupon.usageLimit)
+      && qty >= coupon.minQuantity
+      && (!coupon.listingId || coupon.listingId === listing.id)
+    ) {
+      const subtotal = Number(listing.pricePerUnit) * qty
+      couponDiscount = coupon.amountOff
+        ? Math.min(subtotal, Number(coupon.amountOff))
+        : subtotal * (coupon.percentOff / 100)
+      couponDiscount = Math.round(couponDiscount * 100) / 100
+      appliedCouponCode = normalizedCoupon
+
+      // Incrementa uso do cupom (fire-and-forget)
+      prisma.commercialCoupon.update({
+        where: { code: normalizedCoupon },
+        data:  { usageCount: { increment: 1 } },
+      }).catch((e) => console.error('[Cupom] Falha ao incrementar uso:', e))
+    }
+  }
+
+  const subtotalAmount = Number(listing.pricePerUnit) * qty
+  const totalAmount = Math.max(0.01, subtotalAmount - couponDiscount)
   const txid        = randomUUID().replace(/-/g, '').slice(0, 35)
 
   const reusableCheckout = await getReusablePendingCheckout({
@@ -826,6 +859,8 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
             fbclid:           fbclid       ?? null,
             gclid:            gclid        ?? null,
             referrer:         referrer     ?? null,
+            couponCode:       appliedCouponCode,
+            couponDiscount:   couponDiscount > 0 ? couponDiscount : null,
           })
           await attachQuickSaleOrderNumber(tx, createdCheckout.id, reservedOrder.orderNumber)
 
@@ -941,6 +976,9 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     pixCopyPaste: pixData.pixCopyPaste,
     qrCodeBase64: pixData.qrCodeBase64,
     expiresAt:    pixData.expiresAt.toISOString(),
+    subtotalAmount,
+    couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
+    couponCode:     appliedCouponCode ?? undefined,
     totalAmount,
     qty,
     title:        listing.title,

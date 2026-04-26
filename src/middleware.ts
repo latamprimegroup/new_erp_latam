@@ -42,6 +42,7 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/admin/sell-through': ['ADMIN', 'CEO', 'PRODUCTION_MANAGER', 'COMMERCIAL'],
   '/api/admin/sell-through': ['ADMIN', 'CEO', 'PRODUCTION_MANAGER', 'COMMERCIAL'],
   '/dashboard/commercial/comissao': ['ADMIN', 'CEO', 'COMMERCIAL'],
+  '/api/admin/plano-ativo': ['ADMIN', 'CEO', 'COMMERCIAL'],
   '/dashboard/commercial': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial/seller': ['ADMIN', 'COMMERCIAL'],
   '/dashboard/commercial/manager': ['ADMIN', 'COMMERCIAL'],
