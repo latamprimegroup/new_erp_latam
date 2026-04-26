@@ -32,7 +32,7 @@ const createSchema = z.object({
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  const allowed = ['ADMIN', 'COMMERCIAL']
+  const allowed = ['ADMIN', 'CEO', 'COMMERCIAL']
   if (!session.user?.role || !allowed.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
@@ -121,7 +121,7 @@ export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const roles = ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE']
+  const roles = ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER', 'FINANCE']
   if (!session.user?.role || !roles.includes(session.user.role)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
