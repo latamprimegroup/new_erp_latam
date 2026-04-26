@@ -99,6 +99,10 @@ function buildInvisibleCheckoutUrl(slug: string, mode?: 'PIX' | 'GLOBAL') {
   return `${base}/pay/one/new?${search.toString()}`
 }
 
+function formatBrl(value: number) {
+  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function buildPreviewSlug(raw: string) {
   return raw
     .normalize('NFD')
@@ -224,6 +228,8 @@ export function VendaRapidaTab({
   const [globalGatewayMercury, setGlobalGatewayMercury] = useState(true)
   const [copyAutoFilledFromStock, setCopyAutoFilledFromStock] = useState(false)
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
+  const [commissionPct, setCommissionPct] = useState('10')
+  const [estimatedUnitCost, setEstimatedUnitCost] = useState('')
   const [selectedListingId, setSelectedListingId] = useState('')
   const fixedMode = listingModeFilter === 'ALL' ? null : listingModeFilter
 
@@ -238,11 +244,17 @@ export function VendaRapidaTab({
   const parsedPrice = Number.parseFloat(price)
   const parsedMaxQty = Number.parseInt(maxQty, 10)
   const parsedStockQty = Number.parseInt(stockQty, 10)
+  const parsedCommissionPct = Number.parseFloat(commissionPct)
+  const parsedEstimatedUnitCost = Number.parseFloat(estimatedUnitCost)
   const isStep1Valid = Boolean(selectedStockInfo)
   const isStep2Valid = normalizedTitle.length >= 3
   const isPriceValid = Number.isFinite(parsedPrice) && parsedPrice > 0
   const isMaxQtyValid = Number.isFinite(parsedMaxQty) && parsedMaxQty >= 1
   const isStockQtyValid = Number.isFinite(parsedStockQty) && parsedStockQty >= 1
+  const isCommissionPctValid = Number.isFinite(parsedCommissionPct) && parsedCommissionPct >= 0 && parsedCommissionPct <= 100
+  const hasEstimatedUnitCost = estimatedUnitCost.trim().length > 0
+  const isEstimatedUnitCostValid = !hasEstimatedUnitCost || (Number.isFinite(parsedEstimatedUnitCost) && parsedEstimatedUnitCost >= 0)
+  const effectiveCommissionPct = isCommissionPctValid ? parsedCommissionPct : 0
   const isGlobalGatewayValid = effectivePaymentMode !== 'GLOBAL' || selectedGlobalGateways.length > 0
   const wizardProgressPct = createStep === 1 ? 33 : createStep === 2 ? 66 : 100
   const summaryProductName = normalizedTitle || selectedStockInfo?.displayName || 'Não definido'
@@ -250,15 +262,33 @@ export function VendaRapidaTab({
   const summaryStockName = stockProductName.trim() || selectedStockInfo?.displayName || 'Não definido'
   const summaryModeLabel = effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'
   const summaryPriceLabel = isPriceValid
-    ? `R$ ${parsedPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    ? formatBrl(parsedPrice)
     : 'Preço pendente'
   const summaryMaxQtyLabel = isMaxQtyValid ? String(parsedMaxQty) : 'Quantidade pendente'
   const summaryStockQtyLabel = isStockQtyValid ? String(parsedStockQty) : 'Quantidade pendente'
   const summaryPotentialMaxValue = isPriceValid && isMaxQtyValid
     ? parsedPrice * parsedMaxQty
     : null
+  const estimatedCommissionPerUnit = isPriceValid ? parsedPrice * (effectiveCommissionPct / 100) : null
+  const estimatedCommissionPerOrder = estimatedCommissionPerUnit != null && isMaxQtyValid
+    ? estimatedCommissionPerUnit * parsedMaxQty
+    : null
+  const estimatedNetPerUnit = estimatedCommissionPerUnit != null ? parsedPrice - estimatedCommissionPerUnit : null
+  const estimatedNetPerOrder = estimatedCommissionPerOrder != null && summaryPotentialMaxValue != null
+    ? summaryPotentialMaxValue - estimatedCommissionPerOrder
+    : null
+  const estimatedMarginPerUnit = isPriceValid && hasEstimatedUnitCost && isEstimatedUnitCostValid
+    ? parsedPrice - parsedEstimatedUnitCost - (estimatedCommissionPerUnit ?? 0)
+    : null
+  const estimatedMarginPerOrder = estimatedMarginPerUnit != null && isMaxQtyValid
+    ? estimatedMarginPerUnit * parsedMaxQty
+    : null
+  const estimatedMarginPct = estimatedMarginPerUnit != null && parsedPrice > 0
+    ? (estimatedMarginPerUnit / parsedPrice) * 100
+    : null
+  const isEstimatedMarginNegative = estimatedMarginPerUnit != null && estimatedMarginPerUnit < 0
   const summaryPotentialMaxValueLabel = summaryPotentialMaxValue != null
-    ? `R$ ${summaryPotentialMaxValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    ? formatBrl(summaryPotentialMaxValue)
     : 'Pendente'
   const createPreviewSlug = useMemo(
     () => buildPreviewSlug(title.trim() || selectedStockInfo?.displayName || ''),
@@ -539,6 +569,8 @@ export function VendaRapidaTab({
         setGlobalGatewayMercury(true)
         setCopyAutoFilledFromStock(false)
         setBadge('ENTREGA AUTOMÁTICA')
+        setCommissionPct('10')
+        setEstimatedUnitCost('')
         setCreateStep(1)
         load()
         return
@@ -1422,6 +1454,82 @@ export function VendaRapidaTab({
                         <p className="text-zinc-500">Vínculo de estoque</p>
                         <p className="text-zinc-200 break-words">{summaryStockCode}</p>
                         <p className="text-zinc-400 break-words">{summaryStockName}</p>
+                      </div>
+                      <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-950/70 p-2.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-200">Comissão estimada</p>
+                        <div>
+                          <label className="text-[11px] text-zinc-400">Comissão do vendedor (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={commissionPct}
+                            onChange={(e) => setCommissionPct(e.target.value)}
+                            className="input-dark mt-1 h-8 text-xs"
+                          />
+                          {!isCommissionPctValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Use um percentual entre 0 e 100.</p>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Comissão/un</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedCommissionPerUnit != null ? formatBrl(estimatedCommissionPerUnit) : 'Pendente'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Comissão pedido</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedCommissionPerOrder != null ? formatBrl(estimatedCommissionPerOrder) : 'Pendente'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Líquido/un</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedNetPerUnit != null ? formatBrl(estimatedNetPerUnit) : 'Pendente'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Líquido pedido</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedNetPerOrder != null ? formatBrl(estimatedNetPerOrder) : 'Pendente'}
+                            </p>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-zinc-400">Custo base estimado / unidade (opcional)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={estimatedUnitCost}
+                            onChange={(e) => setEstimatedUnitCost(e.target.value)}
+                            placeholder="Ex.: 120.00"
+                            className="input-dark mt-1 h-8 text-xs"
+                          />
+                          {!isEstimatedUnitCostValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Informe um custo válido igual ou maior que zero.</p>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Margem/un</p>
+                            <p className={`font-semibold ${isEstimatedMarginNegative ? 'text-red-300' : 'text-zinc-100'}`}>
+                              {estimatedMarginPerUnit != null ? formatBrl(estimatedMarginPerUnit) : 'Informe custo base'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Margem %</p>
+                            <p className={`font-semibold ${isEstimatedMarginNegative ? 'text-red-300' : 'text-zinc-100'}`}>
+                              {estimatedMarginPct != null ? `${estimatedMarginPct.toFixed(1)}%` : 'Informe custo base'}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-zinc-400">
+                          Margem pedido: {estimatedMarginPerOrder != null ? formatBrl(estimatedMarginPerOrder) : 'Informe custo base'}
+                        </p>
                       </div>
                       <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${
                         canSubmitCreateStepThree
