@@ -99,6 +99,21 @@ function buildInvisibleCheckoutUrl(slug: string, mode?: 'PIX' | 'GLOBAL') {
   return `${base}/pay/one/new?${search.toString()}`
 }
 
+function formatBrl(value: number) {
+  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function buildPreviewSlug(raw: string) {
+  return raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+}
+
 async function issueInvisibleCheckoutUrl(input: { slug: string; mode?: 'PIX' | 'GLOBAL' }) {
   const mode = input.mode === 'GLOBAL' ? 'GLOBAL' : 'PIX'
   const params = new URLSearchParams({
@@ -187,6 +202,7 @@ export function VendaRapidaTab({
   const [generatedLinkTitle, setGeneratedLinkTitle] = useState('')
   const [generatedLinkCopied, setGeneratedLinkCopied] = useState(false)
   const [syncingStockListingId, setSyncingStockListingId] = useState<string | null>(null)
+  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
 
   // Formulário
   const [title, setTitle]           = useState('')
@@ -212,6 +228,8 @@ export function VendaRapidaTab({
   const [globalGatewayMercury, setGlobalGatewayMercury] = useState(true)
   const [copyAutoFilledFromStock, setCopyAutoFilledFromStock] = useState(false)
   const [badge, setBadge]           = useState('ENTREGA AUTOMÁTICA')
+  const [commissionPct, setCommissionPct] = useState('10')
+  const [estimatedUnitCost, setEstimatedUnitCost] = useState('')
   const [selectedListingId, setSelectedListingId] = useState('')
   const fixedMode = listingModeFilter === 'ALL' ? null : listingModeFilter
 
@@ -222,6 +240,68 @@ export function VendaRapidaTab({
     return methods
   }, [globalGatewayKast, globalGatewayMercury])
   const effectivePaymentMode: 'PIX' | 'GLOBAL' = fixedMode ?? paymentMode
+  const normalizedTitle = title.trim()
+  const parsedPrice = Number.parseFloat(price)
+  const parsedMaxQty = Number.parseInt(maxQty, 10)
+  const parsedStockQty = Number.parseInt(stockQty, 10)
+  const parsedCommissionPct = Number.parseFloat(commissionPct)
+  const parsedEstimatedUnitCost = Number.parseFloat(estimatedUnitCost)
+  const isStep1Valid = Boolean(selectedStockInfo)
+  const isStep2Valid = normalizedTitle.length >= 3
+  const isPriceValid = Number.isFinite(parsedPrice) && parsedPrice > 0
+  const isMaxQtyValid = Number.isFinite(parsedMaxQty) && parsedMaxQty >= 1
+  const isStockQtyValid = Number.isFinite(parsedStockQty) && parsedStockQty >= 1
+  const isCommissionPctValid = Number.isFinite(parsedCommissionPct) && parsedCommissionPct >= 0 && parsedCommissionPct <= 100
+  const hasEstimatedUnitCost = estimatedUnitCost.trim().length > 0
+  const isEstimatedUnitCostValid = !hasEstimatedUnitCost || (Number.isFinite(parsedEstimatedUnitCost) && parsedEstimatedUnitCost >= 0)
+  const effectiveCommissionPct = isCommissionPctValid ? parsedCommissionPct : 0
+  const isGlobalGatewayValid = effectivePaymentMode !== 'GLOBAL' || selectedGlobalGateways.length > 0
+  const wizardProgressPct = createStep === 1 ? 33 : createStep === 2 ? 66 : 100
+  const summaryProductName = normalizedTitle || selectedStockInfo?.displayName || 'Não definido'
+  const summaryStockCode = stockProductCode.trim() || selectedStockInfo?.adsId || 'Não definido'
+  const summaryStockName = stockProductName.trim() || selectedStockInfo?.displayName || 'Não definido'
+  const summaryModeLabel = effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'
+  const summaryPriceLabel = isPriceValid
+    ? formatBrl(parsedPrice)
+    : 'Preço pendente'
+  const summaryMaxQtyLabel = isMaxQtyValid ? String(parsedMaxQty) : 'Quantidade pendente'
+  const summaryStockQtyLabel = isStockQtyValid ? String(parsedStockQty) : 'Quantidade pendente'
+  const summaryPotentialMaxValue = isPriceValid && isMaxQtyValid
+    ? parsedPrice * parsedMaxQty
+    : null
+  const estimatedCommissionPerUnit = isPriceValid ? parsedPrice * (effectiveCommissionPct / 100) : null
+  const estimatedCommissionPerOrder = estimatedCommissionPerUnit != null && isMaxQtyValid
+    ? estimatedCommissionPerUnit * parsedMaxQty
+    : null
+  const estimatedNetPerUnit = estimatedCommissionPerUnit != null ? parsedPrice - estimatedCommissionPerUnit : null
+  const estimatedNetPerOrder = estimatedCommissionPerOrder != null && summaryPotentialMaxValue != null
+    ? summaryPotentialMaxValue - estimatedCommissionPerOrder
+    : null
+  const estimatedMarginPerUnit = isPriceValid && hasEstimatedUnitCost && isEstimatedUnitCostValid
+    ? parsedPrice - parsedEstimatedUnitCost - (estimatedCommissionPerUnit ?? 0)
+    : null
+  const estimatedMarginPerOrder = estimatedMarginPerUnit != null && isMaxQtyValid
+    ? estimatedMarginPerUnit * parsedMaxQty
+    : null
+  const estimatedMarginPct = estimatedMarginPerUnit != null && parsedPrice > 0
+    ? (estimatedMarginPerUnit / parsedPrice) * 100
+    : null
+  const isEstimatedMarginNegative = estimatedMarginPerUnit != null && estimatedMarginPerUnit < 0
+  const summaryPotentialMaxValueLabel = summaryPotentialMaxValue != null
+    ? formatBrl(summaryPotentialMaxValue)
+    : 'Pendente'
+  const createPreviewSlug = useMemo(
+    () => buildPreviewSlug(title.trim() || selectedStockInfo?.displayName || ''),
+    [title, selectedStockInfo],
+  )
+  const createPreviewUrl = createPreviewSlug
+    ? buildInvisibleCheckoutUrl(createPreviewSlug, effectivePaymentMode)
+    : ''
+  const canSubmitCreateStepThree =
+    isPriceValid &&
+    isMaxQtyValid &&
+    isStockQtyValid &&
+    isGlobalGatewayValid
 
   // Teste rápido PIX integrado
   const [pixBuyerName, setPixBuyerName] = useState('')
@@ -374,23 +454,62 @@ export function VendaRapidaTab({
     load()
   }
 
+  const openCreateModal = (mode?: 'PIX' | 'GLOBAL') => {
+    if (!fixedMode && mode) {
+      setPaymentMode(mode)
+    }
+    if (fixedMode) {
+      setPaymentMode(fixedMode)
+    }
+    setCreateStep(1)
+    setShowForm(true)
+  }
+
+  const advanceCreateStep = () => {
+    if (createStep === 1) {
+      if (!isStep1Valid) {
+        alert('Selecione um produto da base no autocomplete para continuar.')
+        return
+      }
+      setCreateStep(2)
+      return
+    }
+
+    if (createStep === 2) {
+      if (!isStep2Valid) {
+        alert('Informe um título comercial com pelo menos 3 caracteres para continuar.')
+        return
+      }
+      setCreateStep(3)
+    }
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (paymentMode === 'GLOBAL' && selectedGlobalGateways.length === 0) {
+    if (createStep < 3) {
+      advanceCreateStep()
+      return
+    }
+    if (!selectedStockInfo) {
+      alert('Vínculo obrigatório: selecione um produto da base via autocomplete.')
+      setCreateStep(1)
+      return
+    }
+    if (effectivePaymentMode === 'GLOBAL' && selectedGlobalGateways.length === 0) {
       alert('Selecione pelo menos um gateway global para gerar o link.')
       return
     }
     const payloadBase = {
-      title:         title.trim(),
+      title:         normalizedTitle,
       subtitle:      subtitle.trim() || undefined,
       fullDescription: fullDescription.trim() || undefined,
       assetCategory: category,
       stockProductCode: stockProductCode.trim() || undefined,
       stockProductName: stockProductName.trim() || undefined,
-      pricePerUnit:  parseFloat(price),
-      maxQty:        parseInt(maxQty),
-      stockQty:      parseInt(stockQty),
-      paymentMode,
+      pricePerUnit:  parsedPrice,
+      maxQty:        parsedMaxQty,
+      stockQty:      parsedStockQty,
+      paymentMode: effectivePaymentMode,
       globalGateways: selectedGlobalGateways,
       badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
       active:        true,
@@ -412,7 +531,7 @@ export function VendaRapidaTab({
 
       if (!res.ok && data.code === 'STOCK_QTY_ABOVE_SUGGESTED' && data.canForce) {
         const shouldForce = window.confirm(
-          `O estoque solicitado (${data.requestedStockQty ?? parseInt(stockQty)}) está acima do sugerido (${data.suggestedStockQty ?? 1}).\n\nDeseja forçar mesmo assim?`,
+          `O estoque solicitado (${data.requestedStockQty ?? parseInt(stockQty, 10)}) está acima do sugerido (${data.suggestedStockQty ?? 1}).\n\nDeseja forçar mesmo assim?`,
         )
         if (shouldForce) {
           res = await submitCreate(true)
@@ -422,7 +541,7 @@ export function VendaRapidaTab({
 
       if (res.ok) {
         if (data.slug) {
-          const generatedMode = data.paymentMode ?? paymentMode
+          const generatedMode = data.paymentMode ?? effectivePaymentMode
           const link = await issueInvisibleCheckoutUrl({
             slug: data.slug,
             mode: generatedMode,
@@ -445,11 +564,14 @@ export function VendaRapidaTab({
         setPrice('')
         setMaxQty('10')
         setStockQty('1')
-        setPaymentMode(defaultPaymentMode)
+        setPaymentMode(fixedMode ?? defaultPaymentMode)
         setGlobalGatewayKast(true)
         setGlobalGatewayMercury(true)
         setCopyAutoFilledFromStock(false)
         setBadge('ENTREGA AUTOMÁTICA')
+        setCommissionPct('10')
+        setEstimatedUnitCost('')
+        setCreateStep(1)
         load()
         return
       }
@@ -661,7 +783,7 @@ export function VendaRapidaTab({
           <p className="text-zinc-500 text-sm">Gere links públicos de checkout e acompanhe as vendas</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => openCreateModal()}
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition"
         >
           <Plus className="w-4 h-4" />
@@ -669,7 +791,7 @@ export function VendaRapidaTab({
         </button>
       </div>
 
-      <QuickSaleSecurityPanel />
+      {showSecurityPanel ? <QuickSaleSecurityPanel /> : null}
 
       {generatedLink ? (
         <section className="border border-emerald-500/30 rounded-2xl p-4 bg-emerald-500/5 space-y-3">
@@ -924,22 +1046,57 @@ export function VendaRapidaTab({
       {/* Modal de criação */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-xl max-h-[90vh] p-5 sm:p-6 space-y-4 flex flex-col">
+          <div className={`bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-h-[90vh] p-5 sm:p-6 space-y-4 flex flex-col ${
+            createStep === 3 ? 'max-w-4xl' : 'max-w-xl'
+          }`}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-lg">Criar Link de Venda</h3>
               <button onClick={() => setShowForm(false)} className="text-zinc-500 hover:text-white transition">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-zinc-500">
-              Formulário compacto: campos avançados ficam recolhidos para agilizar o lançamento.
-            </p>
+            <p className="text-xs text-zinc-500">Fluxo guiado em 3 etapas para acelerar o lançamento sem perder qualidade.</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { step: 1 as const, title: 'Estoque' },
+                { step: 2 as const, title: 'Copy' },
+                { step: 3 as const, title: 'Checkout' },
+              ].map((item) => (
+                <button
+                  key={item.step}
+                  type="button"
+                  onClick={() => {
+                    if (item.step < createStep) setCreateStep(item.step)
+                  }}
+                  className={`rounded-lg border px-2 py-2 text-left transition ${
+                    createStep === item.step
+                      ? 'border-emerald-500/50 bg-emerald-500/10'
+                      : createStep > item.step
+                        ? 'border-zinc-700 bg-zinc-800/60'
+                        : 'border-zinc-800 bg-zinc-950/40'
+                  }`}
+                >
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wide">Etapa {item.step}</p>
+                  <p className="text-xs font-semibold text-white">{item.title}</p>
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1">
+              <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${wizardProgressPct}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-zinc-400 text-right">Progresso do lançamento: {wizardProgressPct}%</p>
+            </div>
 
             <form onSubmit={handleCreate} className="space-y-4 overflow-y-auto pr-1 max-h-[68vh]">
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+              {createStep === 1 ? (
+                <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                 <h4 className="text-sm font-semibold text-white">1) Produto da base de dados / estoque</h4>
                 <p className="text-xs text-zinc-500">
-                  Primeiro selecione o produto da base. O sistema puxa código, nome e categoria automaticamente.
+                  Etapa obrigatória: selecione no autocomplete para vincular estoque real no checkout.
                 </p>
                 <Field label="Buscar no estoque por código ou nome">
                   <div ref={stockSearchWrapRef} className="relative">
@@ -1051,9 +1208,16 @@ export function VendaRapidaTab({
                     </a>
                   </div>
                 )}
-              </section>
+                {!isStep1Valid ? (
+                  <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-2">
+                    Campo obrigatório: escolha um produto no autocomplete para continuar.
+                  </p>
+                ) : null}
+                </section>
+              ) : null}
 
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+              {createStep === 2 ? (
+                <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                 <h4 className="text-sm font-semibold text-white">2) Copy comercial (copiar e colar)</h4>
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
                   <p className="text-xs text-emerald-200">
@@ -1067,6 +1231,11 @@ export function VendaRapidaTab({
                     className="input-dark"
                   />
                 </Field>
+                {!isStep2Valid ? (
+                  <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-2">
+                    Título comercial obrigatório com pelo menos 3 caracteres.
+                  </p>
+                ) : null}
                 {copyAutoFilledFromStock ? (
                   <p className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2 py-1">
                     Copy preenchida automaticamente com base no produto do estoque selecionado.
@@ -1088,152 +1257,340 @@ export function VendaRapidaTab({
                     className="input-dark"
                   />
                 </Field>
-              </section>
+                </section>
+              ) : null}
 
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
-                <h4 className="text-sm font-semibold text-white">3) Configuração da venda e geração do link</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Código do produto no estoque (manual)">
-                    <input
-                      value={stockProductCode}
-                      onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
-                      placeholder="AA-CONT-000001"
-                      className="input-dark"
-                    />
-                  </Field>
-                  <Field label="Nome do produto no estoque (manual)">
-                    <input
-                      value={stockProductName}
-                      onChange={(e) => setStockProductName(e.target.value)}
-                      placeholder="Perfil Real Verificado"
-                      className="input-dark"
-                    />
-                  </Field>
-                </div>
-                <p className="text-xs text-zinc-500">
-                  Esses campos já são preenchidos automaticamente ao selecionar item da base acima.
-                </p>
+              {createStep === 3 ? (
+                <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                  <h4 className="text-sm font-semibold text-white">3) Configuração da venda e geração do link</h4>
+                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4">
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Field label="Código do produto no estoque (manual)">
+                          <input
+                            value={stockProductCode}
+                            onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
+                            placeholder="AA-CONT-000001"
+                            className="input-dark"
+                          />
+                        </Field>
+                        <Field label="Nome do produto no estoque (manual)">
+                          <input
+                            value={stockProductName}
+                            onChange={(e) => setStockProductName(e.target.value)}
+                            placeholder="Perfil Real Verificado"
+                            className="input-dark"
+                          />
+                        </Field>
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        Esses campos já são preenchidos automaticamente ao selecionar item da base acima.
+                      </p>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Categoria do ativo">
-                    <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
-                      {ASSET_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>{c.replace('_', ' ')}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Preço por unidade (R$)">
-                    <input
-                      required type="number" min="1" step="0.01"
-                      value={price} onChange={(e) => setPrice(e.target.value)}
-                      placeholder="150.00"
-                      className="input-dark"
-                    />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Máx. unidades por pedido">
-                    <input
-                      type="number" min="1" max="100"
-                      value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
-                      className="input-dark"
-                    />
-                  </Field>
-                  <Field label="Estoque inicial para o link (quantidade)">
-                    <input
-                      type="number" min="1" max="100000"
-                      value={stockQty} onChange={(e) => setStockQty(e.target.value)}
-                      className="input-dark"
-                    />
-                  </Field>
-                </div>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
-                  <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">Modo de pagamento do link</h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
-                      paymentMode === 'PIX'
-                        ? 'border-emerald-500/50 bg-emerald-500/10'
-                        : 'border-zinc-700 bg-zinc-900/60'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="paymentMode"
-                        checked={paymentMode === 'PIX'}
-                        onChange={() => setPaymentMode('PIX')}
-                        className="sr-only"
-                      />
-                      <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
-                      <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
-                    </label>
-                    <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
-                      paymentMode === 'GLOBAL'
-                        ? 'border-emerald-500/50 bg-emerald-500/10'
-                        : 'border-zinc-700 bg-zinc-900/60'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="paymentMode"
-                        checked={paymentMode === 'GLOBAL'}
-                        onChange={() => setPaymentMode('GLOBAL')}
-                        className="sr-only"
-                      />
-                      <p className="text-sm font-medium text-white">Venda rápida Global</p>
-                      <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
-                    </label>
-                  </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Categoria do ativo">
+                          <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
+                            {ASSET_CATEGORIES.map((c) => (
+                              <option key={c} value={c}>{c.replace('_', ' ')}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Preço por unidade (R$)">
+                          <input
+                            required type="number" min="1" step="0.01"
+                            value={price} onChange={(e) => setPrice(e.target.value)}
+                            placeholder="150.00"
+                            className="input-dark"
+                          />
+                          {!isPriceValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Informe um preço válido maior que zero.</p>
+                          ) : null}
+                        </Field>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Máx. unidades por pedido">
+                          <input
+                            type="number" min="1" max="100"
+                            value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
+                            className="input-dark"
+                          />
+                          {!isMaxQtyValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Máximo por pedido deve ser 1 ou mais.</p>
+                          ) : null}
+                        </Field>
+                        <Field label="Estoque inicial para o link (quantidade)">
+                          <input
+                            type="number" min="1" max="100000"
+                            value={stockQty} onChange={(e) => setStockQty(e.target.value)}
+                            className="input-dark"
+                          />
+                          {!isStockQtyValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Estoque inicial do link deve ser 1 ou mais.</p>
+                          ) : null}
+                        </Field>
+                      </div>
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                        <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">Modo de pagamento do link</h5>
+                        {fixedMode ? (
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2">
+                            <p className="text-sm font-medium text-white">
+                              {effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'}
+                            </p>
+                            <p className="text-xs text-zinc-400">
+                              Este menu está fixado para o modo {effectivePaymentMode}.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                              paymentMode === 'PIX'
+                                ? 'border-emerald-500/50 bg-emerald-500/10'
+                                : 'border-zinc-700 bg-zinc-900/60'
+                            }`}>
+                              <input
+                                type="radio"
+                                name="paymentMode"
+                                checked={paymentMode === 'PIX'}
+                                onChange={() => setPaymentMode('PIX')}
+                                className="sr-only"
+                              />
+                              <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
+                              <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
+                            </label>
+                            <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                              paymentMode === 'GLOBAL'
+                                ? 'border-emerald-500/50 bg-emerald-500/10'
+                                : 'border-zinc-700 bg-zinc-900/60'
+                            }`}>
+                              <input
+                                type="radio"
+                                name="paymentMode"
+                                checked={paymentMode === 'GLOBAL'}
+                                onChange={() => setPaymentMode('GLOBAL')}
+                                className="sr-only"
+                              />
+                              <p className="text-sm font-medium text-white">Venda rápida Global</p>
+                              <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
+                            </label>
+                          </div>
+                        )}
 
-                  {paymentMode === 'GLOBAL' ? (
-                    <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
-                      <p className="text-xs text-zinc-300">Gateways habilitados para o link global:</p>
-                      <label className="flex items-center gap-2 text-sm text-zinc-200">
-                        <input
-                          type="checkbox"
-                          checked={globalGatewayKast}
-                          onChange={(e) => setGlobalGatewayKast(e.target.checked)}
-                          className="accent-emerald-500"
-                        />
-                        Kast (cripto)
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-zinc-200">
-                        <input
-                          type="checkbox"
-                          checked={globalGatewayMercury}
-                          onChange={(e) => setGlobalGatewayMercury(e.target.checked)}
-                          className="accent-emerald-500"
-                        />
-                        Mercury (wire USD)
-                      </label>
-                      {!globalGatewayKast && !globalGatewayMercury ? (
-                        <p className="text-xs text-amber-300">
-                          Selecione pelo menos um gateway global para gerar o link.
-                        </p>
-                      ) : null}
+                        {effectivePaymentMode === 'GLOBAL' ? (
+                          <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
+                            <p className="text-xs text-zinc-300">Gateways habilitados para o link global:</p>
+                            <label className="flex items-center gap-2 text-sm text-zinc-200">
+                              <input
+                                type="checkbox"
+                                checked={globalGatewayKast}
+                                onChange={(e) => setGlobalGatewayKast(e.target.checked)}
+                                className="accent-emerald-500"
+                              />
+                              Kast (cripto)
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-zinc-200">
+                              <input
+                                type="checkbox"
+                                checked={globalGatewayMercury}
+                                onChange={(e) => setGlobalGatewayMercury(e.target.checked)}
+                                className="accent-emerald-500"
+                              />
+                              Mercury (wire USD)
+                            </label>
+                            {!globalGatewayKast && !globalGatewayMercury ? (
+                              <p className="text-xs text-amber-300">
+                                Selecione pelo menos um gateway global para gerar o link.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Badge (topo da página)">
+                          <input
+                            value={badge} onChange={(e) => setBadge(e.target.value)}
+                            placeholder="ENTREGA AUTOMÁTICA"
+                            className="input-dark"
+                          />
+                        </Field>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Badge (topo da página)">
-                    <input
-                      value={badge} onChange={(e) => setBadge(e.target.value)}
-                      placeholder="ENTREGA AUTOMÁTICA"
-                      className="input-dark"
-                    />
-                  </Field>
-                </div>
-              </section>
+
+                    <aside className="lg:sticky lg:top-2 h-fit rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Resumo lateral do checkout</p>
+                      <div className="space-y-1 text-xs">
+                        <p className="text-zinc-400">Produto</p>
+                        <p className="text-zinc-100 font-medium break-words">{summaryProductName}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Preço/un</p>
+                          <p className="text-zinc-100 font-semibold">{summaryPriceLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Máx pedido</p>
+                          <p className="text-zinc-100 font-semibold">{summaryMaxQtyLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Estoque link</p>
+                          <p className="text-zinc-100 font-semibold">{summaryStockQtyLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Ticket máx/pedido</p>
+                          <p className="text-zinc-100 font-semibold">{summaryPotentialMaxValueLabel}</p>
+                        </div>
+                      </div>
+                      <div className="text-xs space-y-1">
+                        <p className="text-zinc-500">Modo</p>
+                        <p className="text-zinc-200">{summaryModeLabel}</p>
+                        {effectivePaymentMode === 'GLOBAL' ? (
+                          <p className="text-zinc-400">
+                            Gateways: {selectedGlobalGateways.length > 0 ? selectedGlobalGateways.join(' · ') : 'Pendente'}
+                          </p>
+                        ) : (
+                          <p className="text-zinc-400">Gateway: PIX Inter</p>
+                        )}
+                      </div>
+                      <div className="text-xs space-y-1">
+                        <p className="text-zinc-500">Vínculo de estoque</p>
+                        <p className="text-zinc-200 break-words">{summaryStockCode}</p>
+                        <p className="text-zinc-400 break-words">{summaryStockName}</p>
+                      </div>
+                      <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-950/70 p-2.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-200">Comissão estimada</p>
+                        <div>
+                          <label className="text-[11px] text-zinc-400">Comissão do vendedor (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={commissionPct}
+                            onChange={(e) => setCommissionPct(e.target.value)}
+                            className="input-dark mt-1 h-8 text-xs"
+                          />
+                          {!isCommissionPctValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Use um percentual entre 0 e 100.</p>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Comissão/un</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedCommissionPerUnit != null ? formatBrl(estimatedCommissionPerUnit) : 'Pendente'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Comissão pedido</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedCommissionPerOrder != null ? formatBrl(estimatedCommissionPerOrder) : 'Pendente'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Líquido/un</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedNetPerUnit != null ? formatBrl(estimatedNetPerUnit) : 'Pendente'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Líquido pedido</p>
+                            <p className="text-zinc-100 font-semibold">
+                              {estimatedNetPerOrder != null ? formatBrl(estimatedNetPerOrder) : 'Pendente'}
+                            </p>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-zinc-400">Custo base estimado / unidade (opcional)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={estimatedUnitCost}
+                            onChange={(e) => setEstimatedUnitCost(e.target.value)}
+                            placeholder="Ex.: 120.00"
+                            className="input-dark mt-1 h-8 text-xs"
+                          />
+                          {!isEstimatedUnitCostValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Informe um custo válido igual ou maior que zero.</p>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Margem/un</p>
+                            <p className={`font-semibold ${isEstimatedMarginNegative ? 'text-red-300' : 'text-zinc-100'}`}>
+                              {estimatedMarginPerUnit != null ? formatBrl(estimatedMarginPerUnit) : 'Informe custo base'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-2">
+                            <p className="text-zinc-500">Margem %</p>
+                            <p className={`font-semibold ${isEstimatedMarginNegative ? 'text-red-300' : 'text-zinc-100'}`}>
+                              {estimatedMarginPct != null ? `${estimatedMarginPct.toFixed(1)}%` : 'Informe custo base'}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-zinc-400">
+                          Margem pedido: {estimatedMarginPerOrder != null ? formatBrl(estimatedMarginPerOrder) : 'Informe custo base'}
+                        </p>
+                      </div>
+                      <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${
+                        canSubmitCreateStepThree
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                      }`}>
+                        {canSubmitCreateStepThree
+                          ? 'Pronto para criar o link com segurança.'
+                          : 'Complete os campos obrigatórios para habilitar a criação do link.'}
+                      </div>
+                    </aside>
+                  </div>
+                </section>
+              ) : null}
+
+              {createStep === 3 ? (
+                <section className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Prévia do link antes de salvar</p>
+                  <p className="text-xs text-zinc-300">
+                    Produto: <span className="font-medium text-white">{title.trim() || 'Seu produto'}</span>
+                  </p>
+                  <p className="text-xs text-zinc-400 break-all">
+                    {createPreviewUrl || 'Preencha um título para visualizar a prévia.'}
+                  </p>
+                  <p className="text-[11px] text-zinc-500">
+                    Observação: após salvar, o sistema gera o checkout efêmero final com token seguro.
+                  </p>
+                </section>
+              ) : null}
 
               <div className="flex gap-3 pt-2 sticky bottom-0 bg-zinc-900/95 backdrop-blur-sm pb-1">
                 <button
-                  type="button" onClick={() => setShowForm(false)}
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false)
+                    setCreateStep(1)
+                  }}
                   className="flex-1 py-3 rounded-xl border border-zinc-700 text-zinc-400 text-sm hover:text-white transition"
                 >
                   Cancelar
                 </button>
+                {createStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep((prev) => (prev === 3 ? 2 : 1))}
+                    className="flex-1 py-3 rounded-xl border border-zinc-700 text-zinc-200 text-sm hover:text-white transition"
+                  >
+                    Voltar
+                  </button>
+                ) : null}
                 <button
-                  type="submit" disabled={saving}
+                  type="submit"
+                  disabled={
+                    saving ||
+                    (createStep === 1 && !isStep1Valid) ||
+                    (createStep === 2 && !isStep2Valid) ||
+                    (createStep === 3 && !canSubmitCreateStepThree)
+                  }
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition disabled:opacity-50"
                 >
-                  {saving ? 'Criando...' : 'Criar Link'}
+                  {createStep < 3 ? `Continuar (${wizardProgressPct}%)` : saving ? 'Criando...' : 'Criar Link'}
                 </button>
               </div>
             </form>
@@ -1247,10 +1604,39 @@ export function VendaRapidaTab({
           <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : listings.length === 0 ? (
-        <div className="text-center py-16 text-zinc-500">
-          <p className="text-4xl mb-3">🛍️</p>
-          <p className="font-medium">Nenhum link criado ainda</p>
-          <p className="text-sm mt-1">Crie seu primeiro link de venda rápida para começar</p>
+        <div className="border border-zinc-800 rounded-2xl p-8 bg-zinc-900/40">
+          <div className="max-w-2xl mx-auto text-center space-y-4">
+            <p className="text-4xl">🚀</p>
+            <p className="text-xl font-semibold text-white">Comece sua operação de Venda Rápida agora</p>
+            <p className="text-sm text-zinc-400">
+              Crie o primeiro link em menos de 1 minuto com estoque vinculado, copy automática e checkout pronto para WhatsApp.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
+              {(fixedMode === null || fixedMode === 'PIX') ? (
+                <button
+                  type="button"
+                  onClick={() => openCreateModal('PIX')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar link PIX
+                </button>
+              ) : null}
+              {(fixedMode === null || fixedMode === 'GLOBAL') ? (
+                <button
+                  type="button"
+                  onClick={() => openCreateModal('GLOBAL')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-200 text-sm font-semibold transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar link Global
+                </button>
+              ) : null}
+            </div>
+            <p className="text-xs text-zinc-500">
+              Dica: selecione o produto da base para preencher copy, preço e estoque automaticamente.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4">
