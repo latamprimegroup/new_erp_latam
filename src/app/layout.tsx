@@ -1,4 +1,4 @@
-// build-fingerprint: 2026-04-26T17:12:00Z — inter resiliente + carrinho + fix esgotado
+// build-fingerprint: 2026-04-26T23:00:00Z — fix definitivo categoria + webhook + carrinho
 import type { Metadata, Viewport } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
