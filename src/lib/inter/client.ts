@@ -146,8 +146,18 @@ export async function getInterToken(): Promise<string> {
     return _cachedToken.token
   }
 
-  const clientId = firstEnvValue('INTER_CLIENT_ID', 'BANCO_INTER_CLIENT_ID')
-  const clientSecret = firstEnvValue('INTER_CLIENT_SECRET', 'BANCO_INTER_CLIENT_SECRET')
+  const clientId = firstEnvValue(
+    'INTER_CLIENT_ID',
+    'BANCO_INTER_CLIENT_ID',
+    'BANCO_INTER_APP_CLIENT_ID',
+    'BANK_INTER_CLIENT_ID',
+  )
+  const clientSecret = firstEnvValue(
+    'INTER_CLIENT_SECRET',
+    'BANCO_INTER_CLIENT_SECRET',
+    'BANCO_INTER_APP_CLIENT_SECRET',
+    'BANK_INTER_CLIENT_SECRET',
+  )
 
   if (!clientId || !clientSecret) {
     throw new InterApiError(
@@ -242,8 +252,19 @@ export async function createImmediateCharge(params: {
 }): Promise<CreatePixChargeResult> {
   const token      = await getInterToken()
   const agent      = createMtlsAgent()
-  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY')
-  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
+  const chavePix = firstEnvValue(
+    'INTER_PIX_KEY',
+    'BANCO_INTER_PIX_KEY',
+    'BANCO_INTER_CHAVE_PIX',
+    'BANK_INTER_PIX_KEY',
+  )
+  const accountNumber = firstEnvValue(
+    'INTER_ACCOUNT_NUMBER',
+    'INTER_ACCOUNT_KEY',
+    'BANCO_INTER_ACCOUNT_NUMBER',
+    'BANCO_INTER_CONTA_CORRENTE',
+    'BANK_INTER_ACCOUNT_NUMBER',
+  )
 
   if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'createImmediateCharge')
   if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'createImmediateCharge')
@@ -330,7 +351,13 @@ export const generatePixCharge = createImmediateCharge
 export async function getPixChargeStatus(txid: string): Promise<PixChargeResponse> {
   const token = await getInterToken()
   const agent = createMtlsAgent()
-  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
+  const accountNumber = firstEnvValue(
+    'INTER_ACCOUNT_NUMBER',
+    'INTER_ACCOUNT_KEY',
+    'BANCO_INTER_ACCOUNT_NUMBER',
+    'BANCO_INTER_CONTA_CORRENTE',
+    'BANK_INTER_ACCOUNT_NUMBER',
+  )
   if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', `GET /pix/v2/cob/${txid}`)
 
   const res = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
@@ -359,8 +386,19 @@ export async function getPixChargeStatus(txid: string): Promise<PixChargeRespons
 export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: boolean; message: string }> {
   const token    = await getInterToken()
   const agent    = createMtlsAgent()
-  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY')
-  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
+  const chavePix = firstEnvValue(
+    'INTER_PIX_KEY',
+    'BANCO_INTER_PIX_KEY',
+    'BANCO_INTER_CHAVE_PIX',
+    'BANK_INTER_PIX_KEY',
+  )
+  const accountNumber = firstEnvValue(
+    'INTER_ACCOUNT_NUMBER',
+    'INTER_ACCOUNT_KEY',
+    'BANCO_INTER_ACCOUNT_NUMBER',
+    'BANCO_INTER_CONTA_CORRENTE',
+    'BANK_INTER_ACCOUNT_NUMBER',
+  )
 
   if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'registerWebhook')
   if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'registerWebhook')
@@ -392,8 +430,19 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
 export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; criacao: string } | null> {
   const token    = await getInterToken()
   const agent    = createMtlsAgent()
-  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY')
-  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER')
+  const chavePix = firstEnvValue(
+    'INTER_PIX_KEY',
+    'BANCO_INTER_PIX_KEY',
+    'BANCO_INTER_CHAVE_PIX',
+    'BANK_INTER_PIX_KEY',
+  )
+  const accountNumber = firstEnvValue(
+    'INTER_ACCOUNT_NUMBER',
+    'INTER_ACCOUNT_KEY',
+    'BANCO_INTER_ACCOUNT_NUMBER',
+    'BANCO_INTER_CONTA_CORRENTE',
+    'BANK_INTER_ACCOUNT_NUMBER',
+  )
   if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'GET /pix/v2/webhook')
   if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'GET /pix/v2/webhook')
 
