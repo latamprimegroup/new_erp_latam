@@ -245,6 +245,21 @@ export function VendaRapidaTab({
   const isStockQtyValid = Number.isFinite(parsedStockQty) && parsedStockQty >= 1
   const isGlobalGatewayValid = effectivePaymentMode !== 'GLOBAL' || selectedGlobalGateways.length > 0
   const wizardProgressPct = createStep === 1 ? 33 : createStep === 2 ? 66 : 100
+  const summaryProductName = normalizedTitle || selectedStockInfo?.displayName || 'Não definido'
+  const summaryStockCode = stockProductCode.trim() || selectedStockInfo?.adsId || 'Não definido'
+  const summaryStockName = stockProductName.trim() || selectedStockInfo?.displayName || 'Não definido'
+  const summaryModeLabel = effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'
+  const summaryPriceLabel = isPriceValid
+    ? `R$ ${parsedPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : 'Preço pendente'
+  const summaryMaxQtyLabel = isMaxQtyValid ? String(parsedMaxQty) : 'Quantidade pendente'
+  const summaryStockQtyLabel = isStockQtyValid ? String(parsedStockQty) : 'Quantidade pendente'
+  const summaryPotentialMaxValue = isPriceValid && isMaxQtyValid
+    ? parsedPrice * parsedMaxQty
+    : null
+  const summaryPotentialMaxValueLabel = summaryPotentialMaxValue != null
+    ? `R$ ${summaryPotentialMaxValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : 'Pendente'
   const createPreviewSlug = useMemo(
     () => buildPreviewSlug(title.trim() || selectedStockInfo?.displayName || ''),
     [title, selectedStockInfo],
@@ -999,7 +1014,9 @@ export function VendaRapidaTab({
       {/* Modal de criação */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-xl max-h-[90vh] p-5 sm:p-6 space-y-4 flex flex-col">
+          <div className={`bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-h-[90vh] p-5 sm:p-6 space-y-4 flex flex-col ${
+            createStep === 3 ? 'max-w-4xl' : 'max-w-xl'
+          }`}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-white text-lg">Criar Link de Venda</h3>
               <button onClick={() => setShowForm(false)} className="text-zinc-500 hover:text-white transition">
@@ -1213,155 +1230,210 @@ export function VendaRapidaTab({
 
               {createStep === 3 ? (
                 <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
-                <h4 className="text-sm font-semibold text-white">3) Configuração da venda e geração do link</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Código do produto no estoque (manual)">
-                    <input
-                      value={stockProductCode}
-                      onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
-                      placeholder="AA-CONT-000001"
-                      className="input-dark"
-                    />
-                  </Field>
-                  <Field label="Nome do produto no estoque (manual)">
-                    <input
-                      value={stockProductName}
-                      onChange={(e) => setStockProductName(e.target.value)}
-                      placeholder="Perfil Real Verificado"
-                      className="input-dark"
-                    />
-                  </Field>
-                </div>
-                <p className="text-xs text-zinc-500">
-                  Esses campos já são preenchidos automaticamente ao selecionar item da base acima.
-                </p>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Categoria do ativo">
-                    <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
-                      {ASSET_CATEGORIES.map((c) => (
-                        <option key={c} value={c}>{c.replace('_', ' ')}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Preço por unidade (R$)">
-                    <input
-                      required type="number" min="1" step="0.01"
-                      value={price} onChange={(e) => setPrice(e.target.value)}
-                      placeholder="150.00"
-                      className="input-dark"
-                    />
-                    {!isPriceValid ? (
-                      <p className="mt-1 text-[11px] text-red-300">Informe um preço válido maior que zero.</p>
-                    ) : null}
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Máx. unidades por pedido">
-                    <input
-                      type="number" min="1" max="100"
-                      value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
-                      className="input-dark"
-                    />
-                    {!isMaxQtyValid ? (
-                      <p className="mt-1 text-[11px] text-red-300">Máximo por pedido deve ser 1 ou mais.</p>
-                    ) : null}
-                  </Field>
-                  <Field label="Estoque inicial para o link (quantidade)">
-                    <input
-                      type="number" min="1" max="100000"
-                      value={stockQty} onChange={(e) => setStockQty(e.target.value)}
-                      className="input-dark"
-                    />
-                    {!isStockQtyValid ? (
-                      <p className="mt-1 text-[11px] text-red-300">Estoque inicial do link deve ser 1 ou mais.</p>
-                    ) : null}
-                  </Field>
-                </div>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
-                  <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">Modo de pagamento do link</h5>
-                  {fixedMode ? (
-                    <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2">
-                      <p className="text-sm font-medium text-white">
-                        {effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'}
+                  <h4 className="text-sm font-semibold text-white">3) Configuração da venda e geração do link</h4>
+                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4">
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Field label="Código do produto no estoque (manual)">
+                          <input
+                            value={stockProductCode}
+                            onChange={(e) => setStockProductCode(e.target.value.toUpperCase())}
+                            placeholder="AA-CONT-000001"
+                            className="input-dark"
+                          />
+                        </Field>
+                        <Field label="Nome do produto no estoque (manual)">
+                          <input
+                            value={stockProductName}
+                            onChange={(e) => setStockProductName(e.target.value)}
+                            placeholder="Perfil Real Verificado"
+                            className="input-dark"
+                          />
+                        </Field>
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        Esses campos já são preenchidos automaticamente ao selecionar item da base acima.
                       </p>
-                      <p className="text-xs text-zinc-400">
-                        Este menu está fixado para o modo {effectivePaymentMode}.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
-                        paymentMode === 'PIX'
-                          ? 'border-emerald-500/50 bg-emerald-500/10'
-                          : 'border-zinc-700 bg-zinc-900/60'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="paymentMode"
-                          checked={paymentMode === 'PIX'}
-                          onChange={() => setPaymentMode('PIX')}
-                          className="sr-only"
-                        />
-                        <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
-                        <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
-                      </label>
-                      <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
-                        paymentMode === 'GLOBAL'
-                          ? 'border-emerald-500/50 bg-emerald-500/10'
-                          : 'border-zinc-700 bg-zinc-900/60'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="paymentMode"
-                          checked={paymentMode === 'GLOBAL'}
-                          onChange={() => setPaymentMode('GLOBAL')}
-                          className="sr-only"
-                        />
-                        <p className="text-sm font-medium text-white">Venda rápida Global</p>
-                        <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
-                      </label>
-                    </div>
-                  )}
 
-                  {effectivePaymentMode === 'GLOBAL' ? (
-                    <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
-                      <p className="text-xs text-zinc-300">Gateways habilitados para o link global:</p>
-                      <label className="flex items-center gap-2 text-sm text-zinc-200">
-                        <input
-                          type="checkbox"
-                          checked={globalGatewayKast}
-                          onChange={(e) => setGlobalGatewayKast(e.target.checked)}
-                          className="accent-emerald-500"
-                        />
-                        Kast (cripto)
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-zinc-200">
-                        <input
-                          type="checkbox"
-                          checked={globalGatewayMercury}
-                          onChange={(e) => setGlobalGatewayMercury(e.target.checked)}
-                          className="accent-emerald-500"
-                        />
-                        Mercury (wire USD)
-                      </label>
-                      {!globalGatewayKast && !globalGatewayMercury ? (
-                        <p className="text-xs text-amber-300">
-                          Selecione pelo menos um gateway global para gerar o link.
-                        </p>
-                      ) : null}
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Categoria do ativo">
+                          <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-dark">
+                            {ASSET_CATEGORIES.map((c) => (
+                              <option key={c} value={c}>{c.replace('_', ' ')}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Preço por unidade (R$)">
+                          <input
+                            required type="number" min="1" step="0.01"
+                            value={price} onChange={(e) => setPrice(e.target.value)}
+                            placeholder="150.00"
+                            className="input-dark"
+                          />
+                          {!isPriceValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Informe um preço válido maior que zero.</p>
+                          ) : null}
+                        </Field>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Máx. unidades por pedido">
+                          <input
+                            type="number" min="1" max="100"
+                            value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
+                            className="input-dark"
+                          />
+                          {!isMaxQtyValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Máximo por pedido deve ser 1 ou mais.</p>
+                          ) : null}
+                        </Field>
+                        <Field label="Estoque inicial para o link (quantidade)">
+                          <input
+                            type="number" min="1" max="100000"
+                            value={stockQty} onChange={(e) => setStockQty(e.target.value)}
+                            className="input-dark"
+                          />
+                          {!isStockQtyValid ? (
+                            <p className="mt-1 text-[11px] text-red-300">Estoque inicial do link deve ser 1 ou mais.</p>
+                          ) : null}
+                        </Field>
+                      </div>
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                        <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">Modo de pagamento do link</h5>
+                        {fixedMode ? (
+                          <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2">
+                            <p className="text-sm font-medium text-white">
+                              {effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'}
+                            </p>
+                            <p className="text-xs text-zinc-400">
+                              Este menu está fixado para o modo {effectivePaymentMode}.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                              paymentMode === 'PIX'
+                                ? 'border-emerald-500/50 bg-emerald-500/10'
+                                : 'border-zinc-700 bg-zinc-900/60'
+                            }`}>
+                              <input
+                                type="radio"
+                                name="paymentMode"
+                                checked={paymentMode === 'PIX'}
+                                onChange={() => setPaymentMode('PIX')}
+                                className="sr-only"
+                              />
+                              <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
+                              <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
+                            </label>
+                            <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                              paymentMode === 'GLOBAL'
+                                ? 'border-emerald-500/50 bg-emerald-500/10'
+                                : 'border-zinc-700 bg-zinc-900/60'
+                            }`}>
+                              <input
+                                type="radio"
+                                name="paymentMode"
+                                checked={paymentMode === 'GLOBAL'}
+                                onChange={() => setPaymentMode('GLOBAL')}
+                                className="sr-only"
+                              />
+                              <p className="text-sm font-medium text-white">Venda rápida Global</p>
+                              <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
+                            </label>
+                          </div>
+                        )}
+
+                        {effectivePaymentMode === 'GLOBAL' ? (
+                          <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
+                            <p className="text-xs text-zinc-300">Gateways habilitados para o link global:</p>
+                            <label className="flex items-center gap-2 text-sm text-zinc-200">
+                              <input
+                                type="checkbox"
+                                checked={globalGatewayKast}
+                                onChange={(e) => setGlobalGatewayKast(e.target.checked)}
+                                className="accent-emerald-500"
+                              />
+                              Kast (cripto)
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-zinc-200">
+                              <input
+                                type="checkbox"
+                                checked={globalGatewayMercury}
+                                onChange={(e) => setGlobalGatewayMercury(e.target.checked)}
+                                className="accent-emerald-500"
+                              />
+                              Mercury (wire USD)
+                            </label>
+                            {!globalGatewayKast && !globalGatewayMercury ? (
+                              <p className="text-xs text-amber-300">
+                                Selecione pelo menos um gateway global para gerar o link.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Badge (topo da página)">
+                          <input
+                            value={badge} onChange={(e) => setBadge(e.target.value)}
+                            placeholder="ENTREGA AUTOMÁTICA"
+                            className="input-dark"
+                          />
+                        </Field>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Badge (topo da página)">
-                    <input
-                      value={badge} onChange={(e) => setBadge(e.target.value)}
-                      placeholder="ENTREGA AUTOMÁTICA"
-                      className="input-dark"
-                    />
-                  </Field>
-                </div>
+
+                    <aside className="lg:sticky lg:top-2 h-fit rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Resumo lateral do checkout</p>
+                      <div className="space-y-1 text-xs">
+                        <p className="text-zinc-400">Produto</p>
+                        <p className="text-zinc-100 font-medium break-words">{summaryProductName}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Preço/un</p>
+                          <p className="text-zinc-100 font-semibold">{summaryPriceLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Máx pedido</p>
+                          <p className="text-zinc-100 font-semibold">{summaryMaxQtyLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Estoque link</p>
+                          <p className="text-zinc-100 font-semibold">{summaryStockQtyLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-zinc-700 bg-zinc-950/60 p-2">
+                          <p className="text-zinc-500">Ticket máx/pedido</p>
+                          <p className="text-zinc-100 font-semibold">{summaryPotentialMaxValueLabel}</p>
+                        </div>
+                      </div>
+                      <div className="text-xs space-y-1">
+                        <p className="text-zinc-500">Modo</p>
+                        <p className="text-zinc-200">{summaryModeLabel}</p>
+                        {effectivePaymentMode === 'GLOBAL' ? (
+                          <p className="text-zinc-400">
+                            Gateways: {selectedGlobalGateways.length > 0 ? selectedGlobalGateways.join(' · ') : 'Pendente'}
+                          </p>
+                        ) : (
+                          <p className="text-zinc-400">Gateway: PIX Inter</p>
+                        )}
+                      </div>
+                      <div className="text-xs space-y-1">
+                        <p className="text-zinc-500">Vínculo de estoque</p>
+                        <p className="text-zinc-200 break-words">{summaryStockCode}</p>
+                        <p className="text-zinc-400 break-words">{summaryStockName}</p>
+                      </div>
+                      <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${
+                        canSubmitCreateStepThree
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                      }`}>
+                        {canSubmitCreateStepThree
+                          ? 'Pronto para criar o link com segurança.'
+                          : 'Complete os campos obrigatórios para habilitar a criação do link.'}
+                      </div>
+                    </aside>
+                  </div>
                 </section>
               ) : null}
 
