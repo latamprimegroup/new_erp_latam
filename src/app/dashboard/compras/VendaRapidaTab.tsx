@@ -709,6 +709,7 @@ export function VendaRapidaTab({
         whatsapp: finalWhatsapp,
         email: pixBuyerEmail.trim() || undefined,
         qty: finalQty,
+        acceptTerms: true,
       }
       if (pixDocType === 'cnpj') payload.cnpj = formatCnpj(pixDoc)
       else payload.cpf = formatCpf(pixDoc)
@@ -867,7 +868,7 @@ export function VendaRapidaTab({
                   setPixError(null)
                 }}
               >
-                {listings.map((l) => (
+                {filteredListings.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.title} · disp. {l.available} · R$ {l.pricePerUnit.toFixed(2)}
                   </option>

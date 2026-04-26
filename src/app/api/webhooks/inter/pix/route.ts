@@ -40,6 +40,7 @@ import {
   adspowerMoveProfile,
   evaluateQuickSaleRisk,
   getQuickSaleAdspowerProfileRef,
+  getQuickSaleUtmifyToken,
   resolveQuickSaleAdspowerGroupId,
   setQuickSaleKycMeta,
   sendFraudAlertToChatOps,
@@ -586,10 +587,12 @@ export async function POST(req: NextRequest) {
       // Regra GuardianGate: quando exigir KYC, só envia após aprovação manual.
       let quickUtmifySynced = Boolean(quickCheckout.utmifySent)
       if (!quickCheckout.utmifySent && !riskDecision.requiresKyc) {
+        const quickSaleUtmifyToken = await getQuickSaleUtmifyToken().catch(() => null)
         const utmifyResult = await sendUtmifyQuickSaleConversion({
-          checkoutId:   quickCheckout.id,
-          listingTitle: quickCheckout.listing.title,
-          listingSlug:  quickCheckout.listingId,
+          checkoutId:      quickCheckout.id,
+          listingTitle:    quickCheckout.listing.title,
+          listingSlug:     quickCheckout.listing.slug,
+          apiTokenOverride: quickSaleUtmifyToken,
           totalAmount:  Number(quickCheckout.totalAmount),
           netProfit:    quickIncentive.netProfit ?? undefined,
           qty:          quickCheckout.qty,

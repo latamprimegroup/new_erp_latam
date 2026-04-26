@@ -90,8 +90,10 @@ function sleep(ms: number) {
 /**
  * POST para a Utmify com retry automático (backoff exponencial).
  * Retorna `{ ok: boolean; utmifyOrderId?: string }`.
+ * @param apiTokenOverride — token configurado via painel (SystemSetting) que tem precedência sobre o env.
  */
-async function postToUtmify(order: UtmifyOrder): Promise<{ ok: boolean; utmifyOrderId?: string }> {
+async function postToUtmify(order: UtmifyOrder, apiTokenOverride?: string | null): Promise<{ ok: boolean; utmifyOrderId?: string }> {
+  const effectiveToken = apiTokenOverride?.trim() || UTMIFY_API_KEY
   let attempt = 0
 
   while (attempt < MAX_RETRIES) {
@@ -100,7 +102,7 @@ async function postToUtmify(order: UtmifyOrder): Promise<{ ok: boolean; utmifyOr
       const res = await fetch(UTMIFY_URL, {
         method:  'POST',
         headers: {
-          'x-api-token':  UTMIFY_API_KEY,
+          'x-api-token':  effectiveToken,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(order),
@@ -296,6 +298,8 @@ export type UtmifyQuickSaleParams = {
   paidAt:       Date
   createdAt:    Date
   profileType?: string | null
+  /** Token personalizado configurado via painel (SystemSetting). Tem precedência sobre o env. */
+  apiTokenOverride?: string | null
   buyer: {
     name:       string
     email:      string | null
@@ -356,5 +360,5 @@ export async function sendUtmifyQuickSaleConversion(
     },
   }
 
-  return postToUtmify(order)
+  return postToUtmify(order, params.apiTokenOverride)
 }

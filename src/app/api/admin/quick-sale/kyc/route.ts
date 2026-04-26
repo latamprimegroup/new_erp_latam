@@ -9,6 +9,7 @@ import {
   getQuickSaleAdspowerProfileRef,
   getQuickSaleKycFileMeta,
   getQuickSaleKycMeta,
+  getQuickSaleUtmifyToken,
   resolveQuickSaleAdspowerGroupId,
 } from '@/lib/smart-delivery-system'
 
@@ -238,6 +239,7 @@ export async function PATCH(req: NextRequest) {
   let utmifySynced = Boolean(checkout.utmifySent)
   if (!checkout.utmifySent) {
     const paidAt = checkout.paidAt ?? new Date()
+    const kycUtmifyToken = await getQuickSaleUtmifyToken().catch(() => null)
     const utmifyResult = await sendUtmifyQuickSaleConversion({
       checkoutId: checkout.id,
       listingTitle: checkout.listing.title,
@@ -247,6 +249,7 @@ export async function PATCH(req: NextRequest) {
       paidAt,
       createdAt: checkout.createdAt,
       profileType: checkout.listing.destinationProfile ?? null,
+      apiTokenOverride: kycUtmifyToken,
       buyer: {
         name: checkout.buyerName,
         email: checkout.buyerEmail,
