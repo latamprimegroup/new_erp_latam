@@ -1,4 +1,4 @@
-// build-fingerprint: 2026-04-26T15:31:00Z — cupom url-only + global USD + estoque inline
+// build-fingerprint: 2026-04-26T17:12:00Z — inter resiliente + carrinho + fix esgotado
 import type { Metadata, Viewport } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
