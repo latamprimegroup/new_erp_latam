@@ -70,6 +70,8 @@ type VendaRapidaTabProps = {
   defaultPaymentMode?: 'PIX' | 'GLOBAL'
   listingModeFilter?: 'PIX' | 'GLOBAL' | 'ALL'
   showSecurityPanel?: boolean
+  /** Quando true, exibe valores em USD e troca labels PIX por Mercury/Kast */
+  globalMode?: boolean
 }
 
 const ASSET_CATEGORIES = [
@@ -192,6 +194,7 @@ export function VendaRapidaTab({
   defaultPaymentMode = 'PIX',
   listingModeFilter = 'ALL',
   showSecurityPanel = true,
+  globalMode = false,
 }: VendaRapidaTabProps) {
   const [listings, setListings]     = useState<Listing[]>([])
   const [loading, setLoading]       = useState(true)
@@ -1099,13 +1102,33 @@ export function VendaRapidaTab({
   const totalPaid      = filteredListings.reduce((s, l) => s + l.paidCheckouts, 0)
   const totalCheckouts = filteredListings.reduce((s, l) => s + l.totalCheckouts, 0)
 
+  // Para modo GLOBAL: converte BRL → USD usando taxa fixa de exibição
+  // (o backend armazena em BRL; para exibir em USD usamos taxa aproximada)
+  const USD_DISPLAY_RATE = 5.2
+  const revenueLabel = globalMode
+    ? `$ ${(totalRevenue / USD_DISPLAY_RATE).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : `R$ ${totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+  const checkoutsLabel = globalMode ? 'Links Mercury/USDT' : 'PIX gerados'
+  const gatewaysLabel  = globalMode ? '🌐 Mercury · Kast (USDT)' : '🏦 Banco Inter (PIX)'
+
   return (
     <div className="space-y-6">
+      {/* Banner identificador modo GLOBAL */}
+      {globalMode && (
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 flex items-center gap-3">
+          <span className="text-2xl">🌐</span>
+          <div>
+            <p className="text-sm font-bold text-blue-300">Venda Rápida Global — Internacional</p>
+            <p className="text-xs text-zinc-500">Gateways ativos: {gatewaysLabel} · Faturamento exibido em USD (taxa ref. {USD_DISPLAY_RATE})</p>
+          </div>
+        </div>
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <KpiCard icon={<TrendingUp className="w-5 h-5 text-emerald-500" />} label="Faturamento" value={`R$ ${totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+        <KpiCard icon={<TrendingUp className="w-5 h-5 text-emerald-500" />} label={globalMode ? 'Faturamento (USD)' : 'Faturamento'} value={revenueLabel} />
         <KpiCard icon={<CheckCircle2 className="w-5 h-5 text-blue-500" />} label="Vendas aprovadas" value={String(totalPaid)} />
-        <KpiCard icon={<Clock className="w-5 h-5 text-amber-500" />} label="PIX gerados" value={String(totalCheckouts)} />
+        <KpiCard icon={<Clock className="w-5 h-5 text-amber-500" />} label={checkoutsLabel} value={String(totalCheckouts)} />
       </div>
 
       {/* Cabeçalho */}
@@ -2409,9 +2432,17 @@ export function VendaRapidaTab({
                     {l.fullDescription && (
                       <p className="text-zinc-400 text-xs mt-1 whitespace-pre-line">{l.fullDescription}</p>
                     )}
-                    <p className="text-zinc-600 text-xs mt-1">{l.assetCategory.replace('_', ' ')} · R$ {l.pricePerUnit.toFixed(2)}/un · máx {l.maxQty} un</p>
+                    <p className="text-zinc-600 text-xs mt-1">
+                      {l.assetCategory.replace('_', ' ')} · {
+                        l.paymentMode === 'GLOBAL'
+                          ? `$ ${(l.pricePerUnit / USD_DISPLAY_RATE).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+                          : `R$ ${l.pricePerUnit.toFixed(2)}`
+                      }/un · máx {l.maxQty} un
+                    </p>
                     <p className="text-zinc-500 text-[11px] mt-1">
-                      Tipo do link: {l.paymentMode === 'GLOBAL' ? 'Venda Rápida Global' : 'Venda Rápida PIX'}
+                      {l.paymentMode === 'GLOBAL'
+                        ? `🌐 Global — ${(l.globalGateways?.length ? l.globalGateways : ['KAST', 'MERCURY']).map((g) => g === 'MERCURY' ? 'Mercury (USD)' : 'Kast (USDT)').join(' · ')}`
+                        : '🏦 PIX Inter (BRL)'}
                     </p>
                     {l.paymentMode === 'GLOBAL' ? (
                       <p className="text-zinc-500 text-[11px]">
@@ -2476,9 +2507,16 @@ export function VendaRapidaTab({
                 {/* Stats + Adicionar ao carrinho */}
                 <div className="flex items-center gap-2">
                   <div className="grid grid-cols-3 gap-3 flex-1">
-                    <StatPill label="Disponível" value={`${l.available} un`} color="emerald" />
-                    <StatPill label="PIX gerados" value={String(l.totalCheckouts)} color="blue" />
-                    <StatPill label="Faturado" value={`R$ ${l.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`} color="amber" />
+                  <StatPill label="Disponível" value={`${l.available} un`} color="emerald" />
+                  <StatPill label={listingMode === 'GLOBAL' ? 'Links gerados' : 'PIX gerados'} value={String(l.totalCheckouts)} color="blue" />
+                  <StatPill
+                    label="Faturado"
+                    value={listingMode === 'GLOBAL'
+                      ? `$ ${(l.revenue / USD_DISPLAY_RATE).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                      : `R$ ${l.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`
+                    }
+                    color="amber"
+                  />
                   </div>
                   {l.available > 0 && listingMode === 'PIX' && (
                     <button

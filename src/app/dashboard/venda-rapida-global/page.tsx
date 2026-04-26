@@ -23,6 +23,7 @@ export default async function VendaRapidaGlobalPage() {
         defaultPaymentMode="GLOBAL"
         listingModeFilter="GLOBAL"
         showSecurityPanel={false}
+        globalMode={true}
       />
     </div>
   )
