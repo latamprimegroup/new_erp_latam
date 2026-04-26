@@ -330,6 +330,19 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const { secs, label: countdown } = useCountdown(pixData?.expiresAt ?? null)
   const utmsRef = useRef<UtmData | null>(null)
 
+  // ── Cronômetro de escassez (15 min desde que o cliente abriu a página) ──
+  const SCARCITY_SECS = 15 * 60
+  const [scarcitySecs, setScarcitySecs] = useState(SCARCITY_SECS)
+  const scarcityRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    scarcityRef.current = setInterval(() => setScarcitySecs((s) => Math.max(0, s - 1)), 1000)
+    return () => { if (scarcityRef.current) clearInterval(scarcityRef.current) }
+  }, [])
+  const scarcityMin  = String(Math.floor(scarcitySecs / 60)).padStart(2, '0')
+  const scarcitySec  = String(scarcitySecs % 60).padStart(2, '0')
+  const scarcityLabel = `${scarcityMin}:${scarcitySec}`
+  const scarcityUrgent = scarcitySecs < 180  // últimos 3 min = vermelho
+
   useEffect(() => {
     const captured = captureUtms()
     utmsRef.current = {
@@ -1001,6 +1014,42 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
           {product && product.available === 0 ? (
             <p className="text-red-400 text-sm font-medium mt-1">ESGOTADO</p>
           ) : null}
+
+          {/* ── Escassez: cronômetro + estoque ─────────────────────────── */}
+          {product && product.available > 0 && (
+            <div className="mt-3 space-y-2">
+              {/* Cronômetro de reserva */}
+              <div className={`flex items-center justify-between rounded-xl px-4 py-2.5 border ${
+                scarcityUrgent
+                  ? 'bg-red-500/10 border-red-500/30'
+                  : 'bg-amber-500/10 border-amber-500/30'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">⏱️</span>
+                  <div>
+                    <p className={`text-xs font-semibold ${scarcityUrgent ? 'text-red-300' : 'text-amber-300'}`}>
+                      {scarcityUrgent ? 'Últimos instantes!' : 'Oferta reservada por:'}
+                    </p>
+                    <p className="text-[11px] text-zinc-500">Após expirar, o preço pode mudar</p>
+                  </div>
+                </div>
+                <span className={`font-mono font-black text-2xl ${scarcityUrgent ? 'text-red-400' : 'text-amber-400'}`}>
+                  {scarcityLabel}
+                </span>
+              </div>
+
+              {/* Contador de estoque baixo */}
+              {product.available <= 5 && (
+                <div className="flex items-center gap-2 rounded-xl px-4 py-2 bg-red-500/5 border border-red-500/20">
+                  <span className="text-base">🔥</span>
+                  <p className="text-red-300 text-xs font-semibold">
+                    Apenas <span className="text-red-200 font-black text-sm">{product.available}</span> unidade{product.available > 1 ? 's' : ''} disponível{product.available > 1 ? 'eis' : ''} agora
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {product?.subtitle ? (
             <p className="text-zinc-500 text-xs mt-1 whitespace-pre-line">{product.subtitle}</p>
           ) : null}
