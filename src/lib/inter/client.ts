@@ -491,17 +491,25 @@ export async function checkInterHealth(): Promise<InterHealthReport> {
     loadCerts()
     certsFound = true
   } catch (e) {
-    lastError = (e as Error).message
+    lastError = `Certs: ${(e as Error).message}`
   }
 
   if (certsFound) {
     try {
+      // Invalida cache para forçar nova autenticação
+      _cachedToken = null
       await getInterToken()
       tokenOk    = true
-      const wh   = await getRegisteredWebhook()
+      const wh   = await getRegisteredWebhook().catch(() => null)
       webhookUrl = wh?.webhookUrl ?? null
     } catch (e) {
-      lastError = (e as Error).message
+      const msg = (e as Error).message
+      // Detecta erro de rede (fetch failed = conectividade)
+      if (msg.toLowerCase().includes('fetch failed') || msg.toLowerCase().includes('econnrefused') || msg.toLowerCase().includes('network')) {
+        lastError = `Erro de rede ao conectar no Inter (mTLS): ${msg}. Verifique se as variáveis INTER_CERT_CRT/INTER_CERT_KEY estão em formato PEM correto.`
+      } else {
+        lastError = msg
+      }
     }
   }
 
