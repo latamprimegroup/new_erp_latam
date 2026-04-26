@@ -346,23 +346,9 @@ export async function createImmediateCharge(params: {
   extra?:        { nome: string; valor: string }[]  // infoAdicionais
 }): Promise<CreatePixChargeResult> {
   const token      = await getInterToken()
-  const agent      = createMtlsAgent()
-  const chavePix = firstEnvValue(
-    'INTER_PIX_KEY',
-    'BANCO_INTER_PIX_KEY',
-    'BANCO_INTER_CHAVE_PIX',
-    'BANK_INTER_PIX_KEY',
-  )
-  const accountNumber = firstEnvValue(
-    'INTER_ACCOUNT_NUMBER',
-    'INTER_ACCOUNT_KEY',
-    'BANCO_INTER_ACCOUNT_NUMBER',
-    'BANCO_INTER_CONTA_CORRENTE',
-    'BANK_INTER_ACCOUNT_NUMBER',
-  )
-
-  if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'createImmediateCharge')
-  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'createImmediateCharge')
+  const { cert, key } = loadCerts()
+  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY', 'BANCO_INTER_CHAVE_PIX', 'BANK_INTER_PIX_KEY') || 'latamprimegroup@gmail.com'
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER', 'BANCO_INTER_CONTA_CORRENTE', 'BANK_INTER_ACCOUNT_NUMBER') || '39159320-0'
 
   const expiracao = params.expiracaoSec ?? 1800
   // txid: [a-zA-Z0-9]{26,35} — remove hífens, garante mínimo de 26 e máximo de 35 chars
@@ -390,39 +376,41 @@ export async function createImmediateCharge(params: {
   }
 
   // PUT /pix/v2/cob/{txid}
-  const cobRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
+  const cobRes = await httpsRequestMtls({
     method:  'PUT',
+    url:     `${BASE_URL}/pix/v2/cob/${txid}`,
     headers: {
-      Authorization:   `Bearer ${token}`,
-      'Content-Type':  'application/json',
+      Authorization:      `Bearer ${token}`,
+      'Content-Type':     'application/json',
       'x-conta-corrente': accountNumber,
     },
-    body:    JSON.stringify(payload),
-    // @ts-expect-error — undici dispatcher
-    dispatcher: agent,
+    body: JSON.stringify(payload),
+    cert,
+    key,
   })
 
-  if (!cobRes.ok) {
-    const txt = await cobRes.text()
-    throw new InterApiError(cobRes.status, txt, `PUT /pix/v2/cob/${txid}`)
+  if (cobRes.status < 200 || cobRes.status >= 300) {
+    throw new InterApiError(cobRes.status, cobRes.body, `PUT /pix/v2/cob/${txid}`)
   }
 
-  const cob = await cobRes.json() as PixChargeResponse
+  const cob = JSON.parse(cobRes.body) as PixChargeResponse
   console.log(`[Inter] Cobrança PIX criada — txid: ${txid} — valor: R$${params.amount.toFixed(2)}`)
 
   // GET /pix/v2/cob/{txid}/qrcode
   let qrCodeBase64 = ''
-  const qrRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
+  const qrRes = await httpsRequestMtls({
+    method:  'GET',
+    url:     `${BASE_URL}/pix/v2/cob/${txid}/qrcode`,
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': accountNumber,
     },
-    // @ts-expect-error — undici dispatcher
-    dispatcher: agent,
+    cert,
+    key,
   })
 
-  if (qrRes.ok) {
-    const qr     = await qrRes.json() as PixQrCodeResponse
+  if (qrRes.status >= 200 && qrRes.status < 300) {
+    const qr     = JSON.parse(qrRes.body) as PixQrCodeResponse
     qrCodeBase64 = qr.imagemQrcode
   } else {
     console.warn(`[Inter] QR Code não obtido (${qrRes.status}) — pixCopyPaste ainda válido`)
@@ -480,39 +468,26 @@ export async function getPixChargeStatus(txid: string): Promise<PixChargeRespons
  */
 export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: boolean; message: string }> {
   const token    = await getInterToken()
-  const agent    = createMtlsAgent()
-  const chavePix = firstEnvValue(
-    'INTER_PIX_KEY',
-    'BANCO_INTER_PIX_KEY',
-    'BANCO_INTER_CHAVE_PIX',
-    'BANK_INTER_PIX_KEY',
-  )
-  const accountNumber = firstEnvValue(
-    'INTER_ACCOUNT_NUMBER',
-    'INTER_ACCOUNT_KEY',
-    'BANCO_INTER_ACCOUNT_NUMBER',
-    'BANCO_INTER_CONTA_CORRENTE',
-    'BANK_INTER_ACCOUNT_NUMBER',
-  )
+  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY', 'BANCO_INTER_CHAVE_PIX', 'BANK_INTER_PIX_KEY') || 'latamprimegroup@gmail.com'
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER', 'BANCO_INTER_CONTA_CORRENTE', 'BANK_INTER_ACCOUNT_NUMBER') || '39159320-0'
+  const { cert, key } = loadCerts()
 
-  if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'registerWebhook')
-  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'registerWebhook')
-
-  const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+  const body = JSON.stringify({ webhookUrl: callbackUrl })
+  const res = await httpsRequestMtls({
     method:  'PUT',
+    url:     `${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`,
     headers: {
       Authorization:      `Bearer ${token}`,
       'Content-Type':     'application/json',
       'x-conta-corrente': accountNumber,
     },
-    body: JSON.stringify({ webhookUrl: callbackUrl }),
-    // @ts-expect-error
-    dispatcher: agent,
+    body,
+    cert,
+    key,
   })
 
-  if (!res.ok) {
-    const txt = await res.text()
-    throw new InterApiError(res.status, txt, 'PUT /pix/v2/webhook')
+  if (res.status < 200 || res.status >= 300) {
+    throw new InterApiError(res.status, res.body, 'PUT /pix/v2/webhook')
   }
 
   console.log(`[Inter] Webhook registrado em: ${callbackUrl}`)
@@ -524,30 +499,19 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
  */
 export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; criacao: string } | null> {
   const token    = await getInterToken()
-  const agent    = createMtlsAgent()
-  const chavePix = firstEnvValue(
-    'INTER_PIX_KEY',
-    'BANCO_INTER_PIX_KEY',
-    'BANCO_INTER_CHAVE_PIX',
-    'BANK_INTER_PIX_KEY',
-  )
-  const accountNumber = firstEnvValue(
-    'INTER_ACCOUNT_NUMBER',
-    'INTER_ACCOUNT_KEY',
-    'BANCO_INTER_ACCOUNT_NUMBER',
-    'BANCO_INTER_CONTA_CORRENTE',
-    'BANK_INTER_ACCOUNT_NUMBER',
-  )
-  if (!chavePix) throw new InterApiError(0, 'Chave PIX do Inter não configurada', 'GET /pix/v2/webhook')
-  if (!accountNumber) throw new InterApiError(0, 'Número da conta Inter não configurado', 'GET /pix/v2/webhook')
+  const chavePix = firstEnvValue('INTER_PIX_KEY', 'BANCO_INTER_PIX_KEY', 'BANCO_INTER_CHAVE_PIX', 'BANK_INTER_PIX_KEY') || 'latamprimegroup@gmail.com'
+  const accountNumber = firstEnvValue('INTER_ACCOUNT_NUMBER', 'INTER_ACCOUNT_KEY', 'BANCO_INTER_ACCOUNT_NUMBER', 'BANCO_INTER_CONTA_CORRENTE', 'BANK_INTER_ACCOUNT_NUMBER') || '39159320-0'
+  const { cert, key } = loadCerts()
 
-  const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+  const res = await httpsRequestMtls({
+    method:  'GET',
+    url:     `${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`,
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': accountNumber,
     },
-    // @ts-expect-error
-    dispatcher: agent,
+    cert,
+    key,
   })
 
   if (res.status === 404) return null
