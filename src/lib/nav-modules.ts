@@ -553,6 +553,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Sistema',
   },
   {
+    href: '/dashboard/admin/pix',
+    label: 'Tesouraria Multimoeda',
+    roles: ['ADMIN', 'CEO'],
+    icon: 'Landmark',
+    group: 'Financeiro',
+  },
+  {
     href: '/dashboard/admin/profit-engine',
     label: 'Profit Engine',
     roles: ['ADMIN'],
