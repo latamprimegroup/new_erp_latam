@@ -50,16 +50,30 @@ type Health = {
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export function InterHealthClient() {
+  const WEBHOOK_LS_KEY = 'inter_webhook_url_registered'
   const [data, setData]         = useState<Health | null>(null)
   const [loading, setLoading]   = useState(true)
-  const [newUrl, setNewUrl]     = useState('')
+  const [newUrl, setNewUrl]     = useState('https://www.adsativos.com/api/webhooks/inter/pix')
   const [regMsg, setRegMsg]     = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [regLoading, setRegLoad] = useState(false)
+  // URL do webhook salva no localStorage — persiste entre F5
+  const [localWebhookUrl, setLocalWebhookUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem(WEBHOOK_LS_KEY) : null
+    if (saved) setLocalWebhookUrl(saved)
+  }, [])
 
   const fetchHealth = useCallback(async () => {
     setLoading(true)
     const r = await fetch('/api/admin/inter')
-    setData(await r.json().catch(() => null))
+    const json = await r.json().catch(() => null) as Health | null
+    setData(json)
+    // Se a API retornou webhookUrl, salva no localStorage
+    if (json?.webhookUrl) {
+      localStorage.setItem(WEBHOOK_LS_KEY, json.webhookUrl)
+      setLocalWebhookUrl(json.webhookUrl)
+    }
     setLoading(false)
   }, [])
 
@@ -73,8 +87,16 @@ export function InterHealthClient() {
       body: JSON.stringify({ callbackUrl: newUrl }),
     })
     const json = await r.json()
-    if (r.ok) { setRegMsg({ type: 'ok', text: `Webhook registrado: ${json.registeredUrl}` }); fetchHealth() }
-    else       { setRegMsg({ type: 'err', text: json.error ?? 'Erro ao registrar' }) }
+    if (r.ok) {
+      const registeredUrl = json.registeredUrl ?? newUrl
+      // Persiste no localStorage para sobreviver ao F5
+      localStorage.setItem(WEBHOOK_LS_KEY, registeredUrl)
+      setLocalWebhookUrl(registeredUrl)
+      setRegMsg({ type: 'ok', text: `Webhook registrado: ${registeredUrl}` })
+      fetchHealth()
+    } else {
+      setRegMsg({ type: 'err', text: json.error ?? 'Erro ao registrar' })
+    }
     setRegLoad(false)
   }
 
@@ -126,8 +148,8 @@ export function InterHealthClient() {
           },
           {
             label:    'Webhook PIX',
-            ok:       Boolean(data?.webhookUrl),
-            detail:   data?.webhookUrl ?? 'Não registrado — configure abaixo',
+            ok:       Boolean(data?.webhookUrl ?? localWebhookUrl),
+            detail:   data?.webhookUrl ?? localWebhookUrl ?? 'Não registrado — configure abaixo',
             icon:     '📡',
           },
         ].map((c) => (
