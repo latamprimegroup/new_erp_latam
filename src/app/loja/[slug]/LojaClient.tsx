@@ -27,6 +27,7 @@ interface ReceitaResult {
 
 interface PixData {
   checkoutId:   string
+  orderNumber?: string
   txid:         string
   pixCopyPaste: string
   qrCodeBase64: string
@@ -413,6 +414,9 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
           <div>
             <p className="text-white/70 text-xs uppercase tracking-wider">Aguardando pagamento</p>
             <p className="text-white font-bold text-lg leading-tight">{pixData.title}</p>
+            {pixData.orderNumber && (
+              <p className="text-white/80 text-xs font-mono mt-0.5">Pedido #{pixData.orderNumber}</p>
+            )}
           </div>
           <div className="text-right">
             <p className="text-white/70 text-xs">Expira em</p>

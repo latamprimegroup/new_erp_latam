@@ -5435,6 +5435,8 @@ model QuickSaleCheckout {
   gclid          String?        @map("gclid")        @db.VarChar(512)
   /// Referrer HTTP da sessão de entrada (para tráfego sem UTMs)
   referrer       String?        @map("referrer")     @db.VarChar(500)
+  /// Número de pedido sequencial legível — formato AA-000001 (único, opcional em registros legados)
+  orderNumber    String?        @unique @map("order_number") @db.VarChar(20)
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt      @map("updated_at")
 
@@ -5446,6 +5448,7 @@ model QuickSaleCheckout {
   @@index([createdAt])
   @@index([fbclid])
   @@index([gclid])
+  @@index([orderNumber])
   @@map("quick_sale_checkouts")
 }
 

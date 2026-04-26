@@ -223,9 +223,14 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         throw new Error(`STOCK_RACE:${count}`)
       }
 
+      // Número de pedido sequencial — seguro dentro da transação Serializable
+      const totalOrders = await tx.quickSaleCheckout.count()
+      const orderNumber = `AA-${String(totalOrders + 1).padStart(6, '0')}`
+
       return tx.quickSaleCheckout.create({
         data: {
           listingId:        listing.id,
+          orderNumber,
           buyerName:        name,
           buyerCpf:         buyerDoc,   // CPF (11 dig) ou CNPJ (14 dig)
           buyerWhatsapp:    waE164,
@@ -311,6 +316,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
 
   return NextResponse.json({
     checkoutId:   checkout.id,
+    orderNumber:  checkout.orderNumber,
     txid:         pixData.txid,
     pixCopyPaste: pixData.pixCopyPaste,
     qrCodeBase64: pixData.qrCodeBase64,
