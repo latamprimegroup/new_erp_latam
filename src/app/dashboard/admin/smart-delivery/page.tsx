@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { QuickSaleSecurityPanel } from '@/app/dashboard/compras/QuickSaleSecurityPanel'
 
-const ALLOWED = ['ADMIN', 'COMMERCIAL']
+const ALLOWED = ['ADMIN', 'COMMERCIAL', 'CEO']
 
 export default async function SmartDeliverySystemPage() {
   const session = await getServerSession(authOptions)
