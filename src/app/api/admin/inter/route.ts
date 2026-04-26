@@ -45,7 +45,22 @@ export async function GET(req: NextRequest) {
       },
     }).catch(() => [] as typeof recentWebhooks)
 
-    return NextResponse.json({ ...health, recentWebhooks })
+    // Inclui preview mascarado das variáveis configuradas (sem expor valores reais)
+    const clientId = process.env.INTER_CLIENT_ID ?? process.env.BANCO_INTER_CLIENT_ID ?? ''
+    const pixKey   = process.env.INTER_PIX_KEY   ?? process.env.BANCO_INTER_PIX_KEY ?? ''
+    const account  = process.env.INTER_ACCOUNT_NUMBER ?? process.env.INTER_ACCOUNT_KEY ?? ''
+    const certCrt  = process.env.INTER_CERT_CRT  ?? process.env.INTER_CERT_BASE64 ?? ''
+    const certKey  = process.env.INTER_CERT_KEY  ?? process.env.INTER_KEY_BASE64  ?? ''
+
+    return NextResponse.json({
+      ...health,
+      recentWebhooks,
+      clientIdPreview:    clientId ? `${clientId.slice(0, 8)}...` : '❌ não configurado',
+      pixKeyConfigured:   Boolean(pixKey),
+      accountConfigured:  Boolean(account),
+      certCrtConfigured:  Boolean(certCrt),
+      certKeyConfigured:  Boolean(certKey),
+    })
   } catch (e) {
     const err = e as Error
     return NextResponse.json({

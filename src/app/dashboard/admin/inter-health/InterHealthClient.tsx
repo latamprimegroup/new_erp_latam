@@ -146,10 +146,10 @@ export function InterHealthClient() {
         <h2 className="text-base font-bold text-white">⚙️ Credenciais Inter (configuradas via .env)</h2>
         <div className="grid sm:grid-cols-2 gap-2 text-xs font-mono">
           {[
-            ['INTER_CLIENT_ID',     '503c4506-0838-4b6e-95a5-6aaa95493719'],
-            ['INTER_CLIENT_SECRET', '251f7799-be77-4b00-a2f0-3717274c17b6 ••••'],
-            ['INTER_PIX_KEY',       process.env.NEXT_PUBLIC_INTER_PIX_HINT ?? '(configurada no servidor)'],
-            ['INTER_ACCOUNT_NUMBER','(configurado no servidor)'],
+            ['INTER_CLIENT_ID',     data?.clientIdPreview ?? '(verificando...)'],
+            ['INTER_CLIENT_SECRET', data?.tokenOk ? '✅ configurado' : '❌ não configurado ou inválido'],
+            ['INTER_PIX_KEY',       data?.pixKeyConfigured ? '✅ configurada' : '❌ não configurada'],
+            ['INTER_ACCOUNT_NUMBER', data?.accountConfigured ? '✅ configurado' : '❌ não configurado'],
           ].map(([k, v]) => (
             <div key={k} className="flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-2">
               <span className="text-violet-400">{k}</span>
