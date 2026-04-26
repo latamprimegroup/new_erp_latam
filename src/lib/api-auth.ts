@@ -7,11 +7,12 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from './auth'
 import { isGlobalKillSwitchActive } from './kill-switch'
 
-export type Role = 'ADMIN' | 'PRODUCER' | 'DELIVERER' | 'FINANCE' | 'COMMERCIAL' | 'CLIENT' | 'MANAGER' | 'PRODUCTION_MANAGER' | 'PLUG_PLAY' | 'PURCHASING'
+export type Role = 'ADMIN' | 'CEO' | 'PRODUCER' | 'DELIVERER' | 'FINANCE' | 'COMMERCIAL' | 'CLIENT' | 'MANAGER' | 'PRODUCTION_MANAGER' | 'PLUG_PLAY' | 'PURCHASING'
 
 /** Níveis de acesso para governança granular */
 export const ROLE_LEVELS: Record<Role, number> = {
   ADMIN: 100,
+  CEO: 95,
   FINANCE: 80,
   COMMERCIAL: 70,
   DELIVERER: 60,
