@@ -142,7 +142,7 @@ function loadCerts(): { cert: string; key: string } {
   if (!certRaw || !keyRaw) {
     throw new InterApiError(
       0,
-      'Certificado mTLS não encontrado. Use inter.crt/inter.key em /certs/ ou variáveis INTER_CERT_* / BANCO_INTER_*',
+      'Certificado mTLS não encontrado. Configure INTER_CERT_CRT e INTER_CERT_KEY no Vercel.',
       'loadCerts',
     )
   }
@@ -206,7 +206,7 @@ export async function getInterToken(): Promise<string> {
   if (!clientId || !clientSecret) {
     throw new InterApiError(
       0,
-      'Client ID/Secret do Inter não configurados (INTER_* ou BANCO_INTER_*)',
+      'Client ID/Secret do Inter não configurados',
       '/oauth/v2/token',
     )
   }
