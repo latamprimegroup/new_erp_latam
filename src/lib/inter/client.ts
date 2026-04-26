@@ -17,9 +17,9 @@
  *   INTER_PIX_WEBHOOK_SECRET — Segredo compartilhado (header x-inter-webhook-secret)
  */
 
-import fs   from 'fs'
-import path from 'path'
-import { Agent, fetch as undiciFetch } from 'undici'
+import fs    from 'fs'
+import path  from 'path'
+import https from 'https'
 
 const BASE_URL  = 'https://cdpj.partners.bancointer.com.br'
 const TOKEN_URL = 'https://cdpj.partners.bancointer.com.br/oauth/v2/token'
@@ -98,17 +98,62 @@ function loadCerts(): { cert: string; key: string } {
 }
 
 /**
- * Cria um Undici Agent com mTLS para comunicação segura com o Banco Inter.
- * Cada chamada re-usa o agent por enquanto (sem cache global para evitar reuso de socket expirado).
+ * Cria um https.Agent Node.js nativo com mTLS.
+ * Mais confiável que undici em ambientes serverless (Vercel, Lambda, etc).
  */
-function createMtlsAgent(): Agent {
+function createMtlsAgent(): https.Agent {
   const { cert, key } = loadCerts()
-  return new Agent({
-    connect: {
-      cert,
-      key,
-      rejectUnauthorized: true,
-    },
+  return new https.Agent({ cert, key, rejectUnauthorized: true })
+}
+
+/**
+ * Fetch mTLS usando https.request nativo.
+ * Suporta métodos, headers, body e retorna { ok, status, text(), json() }.
+ */
+async function mtlsFetch(
+  url: string,
+  options: {
+    method?:  string
+    headers?: Record<string, string>
+    body?:    string
+    agent:    https.Agent
+  },
+): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> }> {
+  return new Promise((resolve, reject) => {
+    const parsed  = new URL(url)
+    const method  = options.method ?? 'GET'
+    const bodyBuf = options.body ? Buffer.from(options.body, 'utf8') : undefined
+
+    const reqOptions: https.RequestOptions = {
+      hostname: parsed.hostname,
+      port:     parsed.port || 443,
+      path:     parsed.pathname + parsed.search,
+      method,
+      headers:  {
+        ...options.headers,
+        ...(bodyBuf ? { 'Content-Length': String(bodyBuf.length) } : {}),
+      },
+      agent:    options.agent,
+    }
+
+    const req = https.request(reqOptions, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (chunk: Buffer) => chunks.push(chunk))
+      res.on('end', () => {
+        const raw    = Buffer.concat(chunks).toString('utf8')
+        const status = res.statusCode ?? 0
+        resolve({
+          ok:     status >= 200 && status < 300,
+          status,
+          text:   async () => raw,
+          json:   async () => JSON.parse(raw),
+        })
+      })
+    })
+
+    req.on('error', reject)
+    if (bodyBuf) req.write(bodyBuf)
+    req.end()
   })
 }
 
@@ -140,11 +185,11 @@ export async function getInterToken(): Promise<string> {
 
   const agent = createMtlsAgent()
 
-  const res = await undiciFetch(TOKEN_URL, {
+  const res = await mtlsFetch(TOKEN_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body:    body.toString(),
-    dispatcher: agent,
+    agent,
   })
 
   if (!res.ok) {
@@ -244,15 +289,15 @@ export async function createImmediateCharge(params: {
   }
 
   // PUT /pix/v2/cob/{txid}
-  const cobRes = await undiciFetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
+  const cobRes = await mtlsFetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
     method:  'PUT',
     headers: {
-      Authorization:   `Bearer ${token}`,
-      'Content-Type':  'application/json',
+      Authorization:      `Bearer ${token}`,
+      'Content-Type':     'application/json',
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
     body:    JSON.stringify(payload),
-    dispatcher: agent,
+    agent,
   })
 
   if (!cobRes.ok) {
@@ -265,12 +310,12 @@ export async function createImmediateCharge(params: {
 
   // GET /pix/v2/cob/{txid}/qrcode
   let qrCodeBase64 = ''
-  const qrRes = await undiciFetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
+  const qrRes = await mtlsFetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
-    dispatcher: agent,
+    agent,
   })
 
   if (qrRes.ok) {
@@ -299,12 +344,12 @@ export async function getPixChargeStatus(txid: string): Promise<PixChargeRespons
   const token = await getInterToken()
   const agent = createMtlsAgent()
 
-  const res = await undiciFetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
+  const res = await mtlsFetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
-    dispatcher: agent,
+    agent,
   })
 
   if (!res.ok) {
@@ -328,7 +373,7 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
 
   if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'registerWebhook')
 
-  const res = await undiciFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+  const res = await mtlsFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     method:  'PUT',
     headers: {
       Authorization:      `Bearer ${token}`,
@@ -336,7 +381,7 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
     body: JSON.stringify({ webhookUrl: callbackUrl }),
-    dispatcher: agent,
+    agent,
   })
 
   if (!res.ok) {
@@ -356,12 +401,12 @@ export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; cria
   const agent    = createMtlsAgent()
   const chavePix = process.env.INTER_PIX_KEY ?? ''
 
-  const res = await undiciFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+  const res = await mtlsFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
-    dispatcher: agent,
+    agent,
   })
 
   if (res.status === 404) return null
