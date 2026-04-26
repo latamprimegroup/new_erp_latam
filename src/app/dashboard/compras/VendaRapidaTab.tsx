@@ -99,6 +99,17 @@ function buildInvisibleCheckoutUrl(slug: string, mode?: 'PIX' | 'GLOBAL') {
   return `${base}/pay/one/new?${search.toString()}`
 }
 
+function buildPreviewSlug(raw: string) {
+  return raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+}
+
 async function issueInvisibleCheckoutUrl(input: { slug: string; mode?: 'PIX' | 'GLOBAL' }) {
   const mode = input.mode === 'GLOBAL' ? 'GLOBAL' : 'PIX'
   const params = new URLSearchParams({
@@ -187,6 +198,7 @@ export function VendaRapidaTab({
   const [generatedLinkTitle, setGeneratedLinkTitle] = useState('')
   const [generatedLinkCopied, setGeneratedLinkCopied] = useState(false)
   const [syncingStockListingId, setSyncingStockListingId] = useState<string | null>(null)
+  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
 
   // Formulário
   const [title, setTitle]           = useState('')
@@ -222,6 +234,19 @@ export function VendaRapidaTab({
     return methods
   }, [globalGatewayKast, globalGatewayMercury])
   const effectivePaymentMode: 'PIX' | 'GLOBAL' = fixedMode ?? paymentMode
+  const createPreviewSlug = useMemo(
+    () => buildPreviewSlug(title.trim() || selectedStockInfo?.displayName || ''),
+    [title, selectedStockInfo],
+  )
+  const createPreviewUrl = createPreviewSlug
+    ? buildInvisibleCheckoutUrl(createPreviewSlug, effectivePaymentMode)
+    : ''
+  const canSubmitCreateStepThree =
+    Number.isFinite(Number.parseFloat(price)) &&
+    Number.parseFloat(price) > 0 &&
+    Number.parseInt(maxQty, 10) >= 1 &&
+    Number.parseInt(stockQty, 10) >= 1 &&
+    (effectivePaymentMode !== 'GLOBAL' || selectedGlobalGateways.length > 0)
 
   // Teste rápido PIX integrado
   const [pixBuyerName, setPixBuyerName] = useState('')
@@ -374,9 +399,48 @@ export function VendaRapidaTab({
     load()
   }
 
+  const openCreateModal = (mode?: 'PIX' | 'GLOBAL') => {
+    if (!fixedMode && mode) {
+      setPaymentMode(mode)
+    }
+    if (fixedMode) {
+      setPaymentMode(fixedMode)
+    }
+    setCreateStep(1)
+    setShowForm(true)
+  }
+
+  const advanceCreateStep = () => {
+    if (createStep === 1) {
+      if (!selectedStockInfo) {
+        alert('Selecione um produto da base no autocomplete para continuar.')
+        return
+      }
+      setCreateStep(2)
+      return
+    }
+
+    if (createStep === 2) {
+      if (title.trim().length < 3) {
+        alert('Informe um título comercial com pelo menos 3 caracteres para continuar.')
+        return
+      }
+      setCreateStep(3)
+    }
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (paymentMode === 'GLOBAL' && selectedGlobalGateways.length === 0) {
+    if (createStep < 3) {
+      advanceCreateStep()
+      return
+    }
+    if (!selectedStockInfo) {
+      alert('Vínculo obrigatório: selecione um produto da base via autocomplete.')
+      setCreateStep(1)
+      return
+    }
+    if (effectivePaymentMode === 'GLOBAL' && selectedGlobalGateways.length === 0) {
       alert('Selecione pelo menos um gateway global para gerar o link.')
       return
     }
@@ -388,9 +452,9 @@ export function VendaRapidaTab({
       stockProductCode: stockProductCode.trim() || undefined,
       stockProductName: stockProductName.trim() || undefined,
       pricePerUnit:  parseFloat(price),
-      maxQty:        parseInt(maxQty),
-      stockQty:      parseInt(stockQty),
-      paymentMode,
+      maxQty:        parseInt(maxQty, 10),
+      stockQty:      parseInt(stockQty, 10),
+      paymentMode: effectivePaymentMode,
       globalGateways: selectedGlobalGateways,
       badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
       active:        true,
@@ -412,7 +476,7 @@ export function VendaRapidaTab({
 
       if (!res.ok && data.code === 'STOCK_QTY_ABOVE_SUGGESTED' && data.canForce) {
         const shouldForce = window.confirm(
-          `O estoque solicitado (${data.requestedStockQty ?? parseInt(stockQty)}) está acima do sugerido (${data.suggestedStockQty ?? 1}).\n\nDeseja forçar mesmo assim?`,
+          `O estoque solicitado (${data.requestedStockQty ?? parseInt(stockQty, 10)}) está acima do sugerido (${data.suggestedStockQty ?? 1}).\n\nDeseja forçar mesmo assim?`,
         )
         if (shouldForce) {
           res = await submitCreate(true)
@@ -422,7 +486,7 @@ export function VendaRapidaTab({
 
       if (res.ok) {
         if (data.slug) {
-          const generatedMode = data.paymentMode ?? paymentMode
+          const generatedMode = data.paymentMode ?? effectivePaymentMode
           const link = await issueInvisibleCheckoutUrl({
             slug: data.slug,
             mode: generatedMode,
@@ -445,11 +509,12 @@ export function VendaRapidaTab({
         setPrice('')
         setMaxQty('10')
         setStockQty('1')
-        setPaymentMode(defaultPaymentMode)
+        setPaymentMode(fixedMode ?? defaultPaymentMode)
         setGlobalGatewayKast(true)
         setGlobalGatewayMercury(true)
         setCopyAutoFilledFromStock(false)
         setBadge('ENTREGA AUTOMÁTICA')
+        setCreateStep(1)
         load()
         return
       }
@@ -661,7 +726,7 @@ export function VendaRapidaTab({
           <p className="text-zinc-500 text-sm">Gere links públicos de checkout e acompanhe as vendas</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => openCreateModal()}
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition"
         >
           <Plus className="w-4 h-4" />
@@ -669,7 +734,7 @@ export function VendaRapidaTab({
         </button>
       </div>
 
-      <QuickSaleSecurityPanel />
+      {showSecurityPanel ? <QuickSaleSecurityPanel /> : null}
 
       {generatedLink ? (
         <section className="border border-emerald-500/30 rounded-2xl p-4 bg-emerald-500/5 space-y-3">
@@ -931,15 +996,39 @@ export function VendaRapidaTab({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-zinc-500">
-              Formulário compacto: campos avançados ficam recolhidos para agilizar o lançamento.
-            </p>
+            <p className="text-xs text-zinc-500">Fluxo guiado em 3 etapas para acelerar o lançamento sem perder qualidade.</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { step: 1 as const, title: 'Estoque' },
+                { step: 2 as const, title: 'Copy' },
+                { step: 3 as const, title: 'Checkout' },
+              ].map((item) => (
+                <button
+                  key={item.step}
+                  type="button"
+                  onClick={() => {
+                    if (item.step < createStep) setCreateStep(item.step)
+                  }}
+                  className={`rounded-lg border px-2 py-2 text-left transition ${
+                    createStep === item.step
+                      ? 'border-emerald-500/50 bg-emerald-500/10'
+                      : createStep > item.step
+                        ? 'border-zinc-700 bg-zinc-800/60'
+                        : 'border-zinc-800 bg-zinc-950/40'
+                  }`}
+                >
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wide">Etapa {item.step}</p>
+                  <p className="text-xs font-semibold text-white">{item.title}</p>
+                </button>
+              ))}
+            </div>
 
             <form onSubmit={handleCreate} className="space-y-4 overflow-y-auto pr-1 max-h-[68vh]">
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+              {createStep === 1 ? (
+                <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                 <h4 className="text-sm font-semibold text-white">1) Produto da base de dados / estoque</h4>
                 <p className="text-xs text-zinc-500">
-                  Primeiro selecione o produto da base. O sistema puxa código, nome e categoria automaticamente.
+                  Etapa obrigatória: selecione no autocomplete para vincular estoque real no checkout.
                 </p>
                 <Field label="Buscar no estoque por código ou nome">
                   <div ref={stockSearchWrapRef} className="relative">
@@ -1051,9 +1140,11 @@ export function VendaRapidaTab({
                     </a>
                   </div>
                 )}
-              </section>
+                </section>
+              ) : null}
 
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+              {createStep === 2 ? (
+                <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                 <h4 className="text-sm font-semibold text-white">2) Copy comercial (copiar e colar)</h4>
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
                   <p className="text-xs text-emerald-200">
@@ -1088,9 +1179,11 @@ export function VendaRapidaTab({
                     className="input-dark"
                   />
                 </Field>
-              </section>
+                </section>
+              ) : null}
 
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+              {createStep === 3 ? (
+                <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                 <h4 className="text-sm font-semibold text-white">3) Configuração da venda e geração do link</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Código do produto no estoque (manual)">
@@ -1149,40 +1242,51 @@ export function VendaRapidaTab({
                 </div>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                   <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">Modo de pagamento do link</h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
-                      paymentMode === 'PIX'
-                        ? 'border-emerald-500/50 bg-emerald-500/10'
-                        : 'border-zinc-700 bg-zinc-900/60'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="paymentMode"
-                        checked={paymentMode === 'PIX'}
-                        onChange={() => setPaymentMode('PIX')}
-                        className="sr-only"
-                      />
-                      <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
-                      <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
-                    </label>
-                    <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
-                      paymentMode === 'GLOBAL'
-                        ? 'border-emerald-500/50 bg-emerald-500/10'
-                        : 'border-zinc-700 bg-zinc-900/60'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="paymentMode"
-                        checked={paymentMode === 'GLOBAL'}
-                        onChange={() => setPaymentMode('GLOBAL')}
-                        className="sr-only"
-                      />
-                      <p className="text-sm font-medium text-white">Venda rápida Global</p>
-                      <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
-                    </label>
-                  </div>
+                  {fixedMode ? (
+                    <div className="rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2">
+                      <p className="text-sm font-medium text-white">
+                        {effectivePaymentMode === 'GLOBAL' ? 'Venda rápida Global' : 'Venda rápida PIX (Brasil)'}
+                      </p>
+                      <p className="text-xs text-zinc-400">
+                        Este menu está fixado para o modo {effectivePaymentMode}.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                        paymentMode === 'PIX'
+                          ? 'border-emerald-500/50 bg-emerald-500/10'
+                          : 'border-zinc-700 bg-zinc-900/60'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="paymentMode"
+                          checked={paymentMode === 'PIX'}
+                          onChange={() => setPaymentMode('PIX')}
+                          className="sr-only"
+                        />
+                        <p className="text-sm font-medium text-white">Venda rápida PIX (Brasil)</p>
+                        <p className="text-xs text-zinc-400">Mantém o checkout padrão com PIX Inter.</p>
+                      </label>
+                      <label className={`rounded-lg border px-3 py-2 cursor-pointer transition ${
+                        paymentMode === 'GLOBAL'
+                          ? 'border-emerald-500/50 bg-emerald-500/10'
+                          : 'border-zinc-700 bg-zinc-900/60'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="paymentMode"
+                          checked={paymentMode === 'GLOBAL'}
+                          onChange={() => setPaymentMode('GLOBAL')}
+                          className="sr-only"
+                        />
+                        <p className="text-sm font-medium text-white">Venda rápida Global</p>
+                        <p className="text-xs text-zinc-400">Checkout separado com Kast e/ou Mercury.</p>
+                      </label>
+                    </div>
+                  )}
 
-                  {paymentMode === 'GLOBAL' ? (
+                  {effectivePaymentMode === 'GLOBAL' ? (
                     <div className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
                       <p className="text-xs text-zinc-300">Gateways habilitados para o link global:</p>
                       <label className="flex items-center gap-2 text-sm text-zinc-200">
@@ -1220,20 +1324,50 @@ export function VendaRapidaTab({
                     />
                   </Field>
                 </div>
-              </section>
+                </section>
+              ) : null}
+
+              {createStep === 3 ? (
+                <section className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Prévia do link antes de salvar</p>
+                  <p className="text-xs text-zinc-300">
+                    Produto: <span className="font-medium text-white">{title.trim() || 'Seu produto'}</span>
+                  </p>
+                  <p className="text-xs text-zinc-400 break-all">
+                    {createPreviewUrl || 'Preencha um título para visualizar a prévia.'}
+                  </p>
+                  <p className="text-[11px] text-zinc-500">
+                    Observação: após salvar, o sistema gera o checkout efêmero final com token seguro.
+                  </p>
+                </section>
+              ) : null}
 
               <div className="flex gap-3 pt-2 sticky bottom-0 bg-zinc-900/95 backdrop-blur-sm pb-1">
                 <button
-                  type="button" onClick={() => setShowForm(false)}
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false)
+                    setCreateStep(1)
+                  }}
                   className="flex-1 py-3 rounded-xl border border-zinc-700 text-zinc-400 text-sm hover:text-white transition"
                 >
                   Cancelar
                 </button>
+                {createStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep((prev) => (prev === 3 ? 2 : 1))}
+                    className="flex-1 py-3 rounded-xl border border-zinc-700 text-zinc-200 text-sm hover:text-white transition"
+                  >
+                    Voltar
+                  </button>
+                ) : null}
                 <button
-                  type="submit" disabled={saving}
+                  type="submit"
+                  disabled={saving || (createStep === 3 && !canSubmitCreateStepThree)}
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition disabled:opacity-50"
                 >
-                  {saving ? 'Criando...' : 'Criar Link'}
+                  {createStep < 3 ? 'Continuar' : saving ? 'Criando...' : 'Criar Link'}
                 </button>
               </div>
             </form>
@@ -1247,10 +1381,39 @@ export function VendaRapidaTab({
           <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : listings.length === 0 ? (
-        <div className="text-center py-16 text-zinc-500">
-          <p className="text-4xl mb-3">🛍️</p>
-          <p className="font-medium">Nenhum link criado ainda</p>
-          <p className="text-sm mt-1">Crie seu primeiro link de venda rápida para começar</p>
+        <div className="border border-zinc-800 rounded-2xl p-8 bg-zinc-900/40">
+          <div className="max-w-2xl mx-auto text-center space-y-4">
+            <p className="text-4xl">🚀</p>
+            <p className="text-xl font-semibold text-white">Comece sua operação de Venda Rápida agora</p>
+            <p className="text-sm text-zinc-400">
+              Crie o primeiro link em menos de 1 minuto com estoque vinculado, copy automática e checkout pronto para WhatsApp.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
+              {(fixedMode === null || fixedMode === 'PIX') ? (
+                <button
+                  type="button"
+                  onClick={() => openCreateModal('PIX')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar link PIX
+                </button>
+              ) : null}
+              {(fixedMode === null || fixedMode === 'GLOBAL') ? (
+                <button
+                  type="button"
+                  onClick={() => openCreateModal('GLOBAL')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-200 text-sm font-semibold transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar link Global
+                </button>
+              ) : null}
+            </div>
+            <p className="text-xs text-zinc-500">
+              Dica: selecione o produto da base para preencher copy, preço e estoque automaticamente.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="grid gap-4">
