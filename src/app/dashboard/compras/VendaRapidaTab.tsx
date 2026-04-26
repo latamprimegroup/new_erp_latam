@@ -379,8 +379,7 @@ export function VendaRapidaTab({
     })
   }
 
-  const handleColarVender = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleColarVender = async () => {
     if (!colarParsed) return
     setColarSaving(true)
     setColarMsg(null)
@@ -438,8 +437,7 @@ export function VendaRapidaTab({
   const [estoqueRapidoSaving, setEstoqueRapidoSaving] = useState(false)
   const [estoqueRapidoMsg, setEstoqueRapidoMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
-  const handleEstoqueRapido = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleEstoqueRapido = async () => {
     setEstoqueRapidoSaving(true)
     setEstoqueRapidoMsg(null)
     try {
@@ -1781,7 +1779,7 @@ export function VendaRapidaTab({
                       </button>
 
                       {colarParsed && (
-                        <form onSubmit={handleColarVender} className="space-y-2 border-t border-zinc-700 pt-2">
+                        <div className="space-y-2 border-t border-zinc-700 pt-2">
                           <p className="text-[11px] text-emerald-400 font-semibold">✅ Dados extraídos — revise e confirme:</p>
                           <div className="grid grid-cols-2 gap-2">
                             <div className="col-span-2">
@@ -1860,14 +1858,15 @@ export function VendaRapidaTab({
                             </p>
                           )}
                           <button
-                            type="submit"
+                            type="button"
+                            onClick={() => void handleColarVender()}
                             disabled={colarSaving || !colarParsed.salePrice}
                             className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
                           >
                             <Zap className="w-3.5 h-3.5" />
                             {colarSaving ? 'Salvando no banco...' : `Adicionar ${colarParsed.qty || 1} unidade(s) e continuar →`}
                           </button>
-                        </form>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1885,7 +1884,7 @@ export function VendaRapidaTab({
                   </button>
 
                   {showEstoqueRapido && (
-                    <form onSubmit={handleEstoqueRapido} className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2">
+                    <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2">
                       <p className="text-[11px] text-zinc-400">
                         Adiciona unidades direto ao banco · Categoria selecionada: <strong className="text-white">{category.replace('_', ' ')}</strong>
                       </p>
@@ -1955,7 +1954,8 @@ export function VendaRapidaTab({
                         </p>
                       )}
                       <button
-                        type="submit"
+                        type="button"
+                        onClick={() => void handleEstoqueRapido()}}
                         disabled={estoqueRapidoSaving}
                         className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition disabled:opacity-50"
                       >
@@ -1964,7 +1964,7 @@ export function VendaRapidaTab({
                           : `Adicionar ${Number(estoqueRapidoForm.qty) || 1} unidade(s) ao estoque`
                         }
                       </button>
-                    </form>
+                    </div>
                   )}
                 </div>
                 </section>
@@ -2658,8 +2658,7 @@ function QuickAddStock({
   const [saving, setSaving] = useState(false)
   const [msg, setMsg]       = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleAdd = async () => {
     if (!name.trim()) { setMsg({ type: 'err', text: 'Informe o nome do produto.' }); return }
     if (!price || Number(price) <= 0) { setMsg({ type: 'err', text: 'Informe um preço válido.' }); return }
 
@@ -2712,15 +2711,13 @@ function QuickAddStock({
     }
   }
 
+  // Usa div em vez de form para evitar submit aninhado no wizard
   return (
-    <form
-      onSubmit={handleAdd}
-      className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3"
-    >
+    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
       <div>
         <p className="text-xs font-semibold text-emerald-300">⚡ Adicionar produto ao estoque agora</p>
         <p className="text-[11px] text-zinc-500 mt-0.5">
-          Preencha abaixo e clique em adicionar — o produto será gravado no banco e selecionado automaticamente.
+          Preencha e clique em adicionar — o produto será gravado no banco e selecionado automaticamente.
         </p>
       </div>
 
@@ -2728,18 +2725,17 @@ function QuickAddStock({
         <div>
           <label className="block text-[11px] text-zinc-400 mb-1">Nome do produto *</label>
           <input
-            required
             className="input-dark w-full text-xs"
             placeholder="Ex: Google Ads Verificada Premium"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation() } }}
           />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-[11px] text-zinc-400 mb-1">Preço de venda (R$) *</label>
             <input
-              required
               type="number"
               min="1"
               step="0.01"
@@ -2747,12 +2743,12 @@ function QuickAddStock({
               placeholder="150.00"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation() } }}
             />
           </div>
           <div>
             <label className="block text-[11px] text-zinc-400 mb-1">Quantidade *</label>
             <input
-              required
               type="number"
               min="1"
               max="500"
@@ -2760,6 +2756,7 @@ function QuickAddStock({
               placeholder="1"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation() } }}
             />
           </div>
         </div>
@@ -2776,7 +2773,8 @@ function QuickAddStock({
       )}
 
       <button
-        type="submit"
+        type="button"
+        onClick={handleAdd}
         disabled={saving}
         className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
       >
@@ -2789,7 +2787,7 @@ function QuickAddStock({
           `➕ Adicionar ${Number(qty) || 1} unidade(s) ao estoque`
         )}
       </button>
-    </form>
+    </div>
   )
 }
 
