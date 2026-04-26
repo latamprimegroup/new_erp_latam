@@ -923,8 +923,9 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         error: `Estoque insuficiente. Disponível: ${avail} unidade(s). Reduza a quantidade ou tente novamente.`,
       }, { status: 409 })
     }
-    console.error('[Loja reserva]', err)
-    return NextResponse.json({ error: 'Erro interno ao reservar estoque.' }, { status: 500 })
+    const errMsg = err instanceof Error ? err.message : String(err)
+    console.error('[Loja reserva]', errMsg)
+    return NextResponse.json({ error: `Erro interno ao reservar estoque. [${errMsg.slice(0, 150)}]` }, { status: 500 })
   }
 
   const baseUrl = getPublicAppBaseUrl() || new URL(req.url).origin
