@@ -564,39 +564,21 @@ export async function checkInterHealth(): Promise<InterHealthReport> {
   }
 
   if (certsFound) {
+    // Lê webhook do banco ANTES de qualquer chamada de rede (persistente entre cold starts)
     try {
-      // Invalida cache para forçar nova autenticação
-      _cachedToken = null
+      const { prisma } = await import('@/lib/prisma')
+      const wh = await prisma.systemSetting.findUnique({ where: { key: 'inter_webhook_url' } })
+      if (wh?.value) webhookUrl = wh.value
+    } catch { /* silencioso */ }
+
+    try {
+      // Usa token em cache se válido, sem forçar renovação no health check
       await getInterToken()
-      tokenOk    = true
-
-      // Tenta buscar webhook do banco primeiro (mais rápido e confiável)
-      try {
-        const { prisma } = await import('@/lib/prisma')
-        const wh = await prisma.systemSetting.findUnique({ where: { key: 'inter_webhook_url' } })
-        if (wh?.value) webhookUrl = wh.value
-      } catch { /* silencioso */ }
-
-      // Se não tiver no banco, tenta buscar do Inter
-      if (!webhookUrl) {
-        const wh = await getRegisteredWebhook().catch(() => null)
-        webhookUrl = wh?.webhookUrl ?? null
-        // Persiste no banco para próximas consultas
-        if (webhookUrl) {
-          try {
-            const { prisma } = await import('@/lib/prisma')
-            await prisma.systemSetting.upsert({
-              where: { key: 'inter_webhook_url' },
-              create: { key: 'inter_webhook_url', value: webhookUrl },
-              update: { value: webhookUrl },
-            })
-          } catch { /* silencioso */ }
-        }
-      }
+      tokenOk = true
     } catch (e) {
       const msg = (e as Error).message
       if (msg.toLowerCase().includes('fetch failed') || msg.toLowerCase().includes('econnrefused') || msg.toLowerCase().includes('network')) {
-        lastError = `Erro de rede ao conectar no Inter (mTLS): ${msg}. Verifique se as variáveis INTER_CERT_CRT/INTER_CERT_KEY estão em formato PEM correto.`
+        lastError = `Erro de rede ao conectar no Inter (mTLS): ${msg}.`
       } else {
         lastError = msg
       }
