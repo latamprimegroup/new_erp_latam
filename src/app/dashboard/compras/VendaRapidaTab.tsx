@@ -469,7 +469,135 @@ export function VendaRapidaTab({
     }
   }
 
-  // Teste rápido PIX integrado
+  // ─── Carrinho multi-produto ───────────────────────────────────────────────
+
+  type CartItem = { listingId: string; title: string; unitPrice: number; qty: number; available: number }
+  type CartPixResult = {
+    orderNumber: string | null
+    checkoutId: string
+    txid: string
+    pixCopyPaste: string
+    qrCodeBase64: string
+    expiresAt: string
+    subtotal: number
+    desconto: number
+    totalAmount: number
+    resumeUrl: string
+    lineItems: Array<{ title: string; qty: number; unitPrice: number; lineTotal: number }>
+  }
+
+  const [cartItems, setCartItems]       = useState<CartItem[]>([])
+  const [cartBuyerName, setCartBuyerName]   = useState('')
+  const [cartBuyerWhatsapp, setCartBuyerWhatsapp] = useState('')
+  const [cartBuyerEmail, setCartBuyerEmail] = useState('')
+  const [cartDocType, setCartDocType]   = useState<'cpf' | 'cnpj'>('cpf')
+  const [cartDoc, setCartDoc]           = useState('')
+  const [cartDesconto, setCartDesconto] = useState('')
+  const [cartNote, setCartNote]         = useState('')
+  const [cartLoading, setCartLoading]   = useState(false)
+  const [cartError, setCartError]       = useState<string | null>(null)
+  const [cartResult, setCartResult]     = useState<CartPixResult | null>(null)
+  const [cartCopied, setCartCopied]     = useState(false)
+  const [cartAddingId, setCartAddingId] = useState('')
+
+  const cartSubtotal = cartItems.reduce((s, i) => s + i.unitPrice * i.qty, 0)
+  const cartDescontoNum = Math.min(cartSubtotal, Number(cartDesconto) || 0)
+  const cartTotal = Math.max(0.01, cartSubtotal - cartDescontoNum)
+
+  const addToCart = (listing: Listing) => {
+    setCartItems((prev) => {
+      const existing = prev.find((i) => i.listingId === listing.id)
+      if (existing) {
+        return prev.map((i) =>
+          i.listingId === listing.id
+            ? { ...i, qty: Math.min(i.qty + 1, listing.maxQty, listing.available) }
+            : i
+        )
+      }
+      return [...prev, {
+        listingId: listing.id,
+        title:     listing.title,
+        unitPrice: listing.pricePerUnit,
+        qty:       1,
+        available: listing.available,
+      }]
+    })
+  }
+
+  const removeFromCart = (listingId: string) => {
+    setCartItems((prev) => prev.filter((i) => i.listingId !== listingId))
+  }
+
+  const updateCartQty = (listingId: string, qty: number) => {
+    setCartItems((prev) => prev.map((i) =>
+      i.listingId === listingId
+        ? { ...i, qty: Math.max(1, Math.min(qty, i.available)) }
+        : i
+    ))
+  }
+
+  const handleCartCheckout = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (cartItems.length === 0) { setCartError('Adicione pelo menos 1 produto ao carrinho.'); return }
+
+    const docDigits = cartDoc.replace(/\D/g, '')
+    if (cartDocType === 'cpf'  && docDigits.length !== 11) { setCartError('CPF inválido.'); return }
+    if (cartDocType === 'cnpj' && docDigits.length !== 14) { setCartError('CNPJ inválido.'); return }
+    const wa = normalizeWhatsapp(cartBuyerWhatsapp)
+    if (!wa) { setCartError('WhatsApp inválido.'); return }
+
+    setCartLoading(true)
+    setCartError(null)
+    setCartResult(null)
+    setCartCopied(false)
+
+    try {
+      const payload: Record<string, unknown> = {
+        items:         cartItems.map((i) => ({ listingId: i.listingId, qty: i.qty })),
+        buyerName:     cartBuyerName.trim(),
+        buyerWhatsapp: wa,
+        buyerEmail:    cartBuyerEmail.trim() || undefined,
+        descontoTotal: cartDescontoNum,
+        note:          cartNote.trim() || undefined,
+      }
+      if (cartDocType === 'cnpj') payload.buyerCnpj = formatCnpj(cartDoc)
+      else payload.buyerCpf = formatCpf(cartDoc)
+
+      const res  = await fetch('/api/admin/carrinho', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({})) as CartPixResult & { error?: string }
+      if (!res.ok) { setCartError(data.error ?? 'Erro ao gerar PIX.'); return }
+      setCartResult(data)
+      await load()
+    } finally {
+      setCartLoading(false)
+    }
+  }
+
+  const copyCartPix = async () => {
+    if (!cartResult?.pixCopyPaste) return
+    await navigator.clipboard.writeText(cartResult.pixCopyPaste)
+    setCartCopied(true)
+    setTimeout(() => setCartCopied(false), 2500)
+  }
+
+  const sendCartWhatsapp = () => {
+    if (!cartResult) return
+    const phone = cartBuyerWhatsapp.replace(/\D/g, '')
+    const lines: string[] = [
+      '🛒 Carrinho — Ads Ativos',
+      '',
+      ...cartResult.lineItems.map((li) => `• ${li.qty}x ${li.title} — R$ ${li.lineTotal.toFixed(2)}`),
+    ]
+    if (cartResult.desconto > 0) lines.push(`Desconto: -R$ ${cartResult.desconto.toFixed(2)}`)
+    lines.push(`Total: R$ ${cartResult.totalAmount.toFixed(2)}`, '', 'PIX copia e cola:', cartResult.pixCopyPaste, '', `Pedido: ${cartResult.resumeUrl}`)
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer')
+  }
+
+  // Teste rápido PIX integrado (single product — mantido para compatibilidade)
   const [pixBuyerName, setPixBuyerName] = useState('')
   const [pixBuyerWhatsapp, setPixBuyerWhatsapp] = useState('')
   const [pixBuyerEmail, setPixBuyerEmail] = useState('')
@@ -1048,10 +1176,187 @@ export function VendaRapidaTab({
         </section>
       ) : null}
 
-      {/* Teste rápido de PIX integrado */}
+      {/* ── CARRINHO MULTI-PRODUTO ──────────────────────────────────────────── */}
+      <section className="border border-blue-500/20 rounded-2xl p-5 space-y-4 bg-blue-500/5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-white flex items-center gap-2">
+              🛒 Carrinho de Compras
+              {cartItems.length > 0 && (
+                <span className="text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">
+                  {cartItems.length} produto{cartItems.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </h3>
+            <p className="text-zinc-500 text-sm">Adicione múltiplos produtos e gere 1 PIX único com o valor total.</p>
+          </div>
+          {cartItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setCartItems([]); setCartResult(null); setCartError(null) }}
+              className="text-xs text-zinc-500 hover:text-red-400 transition"
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+
+        {cartItems.length === 0 ? (
+          <p className="text-sm text-zinc-600 text-center py-4">
+            Clique em <strong className="text-zinc-400">+ Carrinho</strong> em qualquer produto abaixo para adicionar.
+          </p>
+        ) : (
+          <>
+            {/* Itens do carrinho */}
+            <div className="space-y-2">
+              {cartItems.map((item) => (
+                <div key={item.listingId} className="flex items-center gap-3 rounded-xl bg-zinc-800/50 border border-zinc-700 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white font-medium truncate">{item.title}</p>
+                    <p className="text-xs text-zinc-500">R$ {item.unitPrice.toFixed(2)}/un · {item.available} disponível</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button type="button" onClick={() => updateCartQty(item.listingId, item.qty - 1)} className="w-6 h-6 rounded-md bg-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-600 transition flex items-center justify-center">−</button>
+                    <span className="text-white text-sm font-bold w-5 text-center">{item.qty}</span>
+                    <button type="button" onClick={() => updateCartQty(item.listingId, item.qty + 1)} disabled={item.qty >= item.available} className="w-6 h-6 rounded-md bg-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-600 transition flex items-center justify-center disabled:opacity-40">+</button>
+                    <span className="text-emerald-400 font-semibold text-sm w-20 text-right">
+                      R$ {(item.unitPrice * item.qty).toFixed(2)}
+                    </span>
+                    <button type="button" onClick={() => removeFromCart(item.listingId)} className="text-zinc-600 hover:text-red-400 transition">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desconto e total */}
+            <div className="rounded-xl bg-zinc-900/60 border border-zinc-700 p-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-400">Subtotal</span>
+                <span className="text-white font-semibold">R$ {cartSubtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-zinc-400 shrink-0">Desconto (R$)</label>
+                <input
+                  type="number" min="0" step="0.01"
+                  className="input-dark text-xs h-7 flex-1"
+                  placeholder="0.00"
+                  value={cartDesconto}
+                  onChange={(e) => setCartDesconto(e.target.value)}
+                />
+              </div>
+              {cartDescontoNum > 0 && (
+                <div className="flex items-center justify-between text-xs text-zinc-500">
+                  <span>Desconto aplicado</span>
+                  <span className="text-red-400">− R$ {cartDescontoNum.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-zinc-700 pt-2">
+                <span className="font-bold text-white">Total a pagar</span>
+                <span className="font-black text-emerald-400 text-lg">R$ {cartTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Formulário do comprador */}
+            <form onSubmit={handleCartCheckout} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Field label="Nome do cliente">
+                  <input required className="input-dark" placeholder="Nome completo" value={cartBuyerName} onChange={(e) => setCartBuyerName(e.target.value)} />
+                </Field>
+                <Field label="WhatsApp">
+                  <input required className="input-dark" placeholder="(11) 99999-9999" value={cartBuyerWhatsapp} onChange={(e) => setCartBuyerWhatsapp(formatPhone(e.target.value))} />
+                </Field>
+                <Field label="E-mail (opcional)">
+                  <input className="input-dark" placeholder="cliente@email.com" value={cartBuyerEmail} onChange={(e) => setCartBuyerEmail(e.target.value)} />
+                </Field>
+                <Field label="Tipo de documento">
+                  <div className="flex gap-2">
+                    {(['cpf', 'cnpj'] as const).map((t) => (
+                      <button key={t} type="button"
+                        onClick={() => { setCartDocType(t); setCartDoc('') }}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition ${cartDocType === t ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}
+                      >
+                        {t.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label={cartDocType === 'cnpj' ? 'CNPJ' : 'CPF'}>
+                  <input required className="input-dark" placeholder={cartDocType === 'cnpj' ? '00.000.000/0001-00' : '000.000.000-00'}
+                    value={cartDoc}
+                    onChange={(e) => setCartDoc(cartDocType === 'cnpj' ? formatCnpj(e.target.value) : formatCpf(e.target.value))}
+                  />
+                </Field>
+                <Field label="Obs. interna (opcional)">
+                  <input className="input-dark" placeholder="Ex: negociado via WhatsApp..." value={cartNote} onChange={(e) => setCartNote(e.target.value)} />
+                </Field>
+              </div>
+
+              {cartError && (
+                <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg">{cartError}</p>
+              )}
+
+              <button type="submit" disabled={cartLoading || cartItems.length === 0}
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition disabled:opacity-50"
+              >
+                {cartLoading ? 'Gerando PIX...' : `🛒 Gerar PIX — R$ ${cartTotal.toFixed(2)}`}
+              </button>
+            </form>
+          </>
+        )}
+
+        {/* Resultado do carrinho */}
+        {cartResult && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-emerald-300">PIX gerado com sucesso!</p>
+                {cartResult.orderNumber && <p className="text-xs text-zinc-400">Pedido {cartResult.orderNumber}</p>}
+              </div>
+              <p className="text-xl font-black text-white">R$ {cartResult.totalAmount.toFixed(2)}</p>
+            </div>
+            <div className="space-y-1 text-xs text-zinc-400">
+              {cartResult.lineItems.map((li, i) => (
+                <div key={i} className="flex justify-between">
+                  <span>{li.qty}x {li.title}</span>
+                  <span className="text-zinc-300">R$ {li.lineTotal.toFixed(2)}</span>
+                </div>
+              ))}
+              {cartResult.desconto > 0 && (
+                <div className="flex justify-between text-red-400"><span>Desconto</span><span>− R$ {cartResult.desconto.toFixed(2)}</span></div>
+              )}
+            </div>
+            <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-2">
+              <p className="text-[10px] text-zinc-500 mb-1">PIX Copia e Cola</p>
+              <p className="text-xs font-mono text-zinc-200 break-all">{cartResult.pixCopyPaste}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={copyCartPix}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-medium"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                {cartCopied ? 'Copiado!' : 'Copiar PIX'}
+              </button>
+              <a href={cartResult.resumeUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+              >
+                <QrCode className="w-3.5 h-3.5" /> Ver checkout
+              </a>
+              <button type="button" onClick={sendCartWhatsapp}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Teste rápido de PIX integrado (produto único) */}
       <section className="border border-zinc-800 rounded-2xl p-5 space-y-4 bg-zinc-900/40">
         <div>
-          <h3 className="font-bold text-white">Teste rápido — Gerar PIX integrado</h3>
+          <h3 className="font-bold text-white">Gerar PIX — Produto único</h3>
           <p className="text-zinc-500 text-sm">
             Gera o PIX na hora usando o listing selecionado, sem sair do menu de venda rápida.
           </p>
@@ -2173,11 +2478,28 @@ export function VendaRapidaTab({
                   </div>
                 </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-3">
-                  <StatPill label="Disponível" value={`${l.available} un`} color="emerald" />
-                  <StatPill label="PIX gerados" value={String(l.totalCheckouts)} color="blue" />
-                  <StatPill label="Faturado" value={`R$ ${l.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`} color="amber" />
+                {/* Stats + Adicionar ao carrinho */}
+                <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-3 gap-3 flex-1">
+                    <StatPill label="Disponível" value={`${l.available} un`} color="emerald" />
+                    <StatPill label="PIX gerados" value={String(l.totalCheckouts)} color="blue" />
+                    <StatPill label="Faturado" value={`R$ ${l.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`} color="amber" />
+                  </div>
+                  {l.available > 0 && listingMode === 'PIX' && (
+                    <button
+                      type="button"
+                      onClick={() => { addToCart(l); setCartAddingId(l.id); setTimeout(() => setCartAddingId(''), 1200) }}
+                      className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition border ${
+                        cartAddingId === l.id
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                          : cartItems.some((i) => i.listingId === l.id)
+                          ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-300'
+                      }`}
+                    >
+                      {cartAddingId === l.id ? '✓ Adicionado!' : cartItems.some((i) => i.listingId === l.id) ? '🛒 No carrinho' : '+ Carrinho'}
+                    </button>
+                  )}
                 </div>
 
                 {/* Edição inline */}
