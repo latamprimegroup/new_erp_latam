@@ -263,7 +263,6 @@ function buildAssetWhere(listing: {
   const code = normalizeStockCode(listing.stockProductCode)
   const name = normalizeStockName(listing.stockProductName)
   const base = {
-    category: listing.assetCategory as never,
     status: listing.status ?? 'AVAILABLE' as const,
   }
   const orClauses: Array<Record<string, unknown>> = []
@@ -282,7 +281,12 @@ function buildAssetWhere(listing: {
       { specs: { path: '$.nomeProduto', equals: name } },
     )
   }
-  if (orClauses.length === 0) return base
+  if (orClauses.length === 0) {
+    return {
+      ...base,
+      category: listing.assetCategory as never,
+    }
+  }
   return {
     ...base,
     OR: orClauses,

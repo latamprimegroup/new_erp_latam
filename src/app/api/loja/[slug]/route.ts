@@ -250,6 +250,40 @@ function buildAssetWhere(listing: {
   }
 }
 
+function buildAssetReserveWhere(listing: {
+  assetCategory: string
+  stockProductCode: string | null
+  stockProductName: string | null
+}) {
+  const code = normalizeStockCode(listing.stockProductCode)
+  const name = normalizeStockName(listing.stockProductName)
+  const base = {
+    status: 'AVAILABLE' as const,
+    category: listing.assetCategory as never,
+  }
+  const orClauses: Array<Record<string, unknown>> = []
+  if (code) {
+    orClauses.push(
+      { adsId: code },
+      { specs: { path: '$.productCode', equals: code } },
+      { specs: { path: '$.codigoProduto', equals: code } },
+    )
+  }
+  if (name) {
+    orClauses.push(
+      { displayName: { equals: name, mode: 'insensitive' as const } },
+      { subCategory: { equals: name, mode: 'insensitive' as const } },
+      { specs: { path: '$.productName', equals: name } },
+      { specs: { path: '$.nomeProduto', equals: name } },
+    )
+  }
+  if (orClauses.length === 0) return base
+  return {
+    ...base,
+    OR: orClauses,
+  }
+}
+
 async function countAvailableAssetsWithFallback(listing: {
   assetCategory: string
 }) {
@@ -732,7 +766,7 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
         txResult = await prisma.$transaction(async (tx) => {
       // Seleciona IDs dentro da transação para evitar leitura suja
           const candidates = await tx.asset.findMany({
-            where:   buildAssetWhere(listing),
+            where:   buildAssetReserveWhere(listing),
             select:  { id: true },
             take:    qty,
             orderBy: { createdAt: 'asc' },
