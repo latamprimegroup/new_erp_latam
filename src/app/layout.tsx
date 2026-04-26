@@ -1,4 +1,4 @@
-// build-fingerprint: 2026-04-26T13:15:00Z — atualizado para forçar cache bust no Vercel
+// build-fingerprint: 2026-04-26T13:38:00Z — redeploy produção forçado
 import type { Metadata, Viewport } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
