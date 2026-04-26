@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { VendaRapidaTab } from '@/app/dashboard/compras/VendaRapidaTab'
 
-const ALLOWED = ['ADMIN', 'COMMERCIAL']
+const ALLOWED = ['ADMIN', 'CEO', 'COMMERCIAL']
 
 export default async function VendaRapidaPage() {
   const session = await getServerSession(authOptions)
