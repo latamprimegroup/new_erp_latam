@@ -1694,28 +1694,23 @@ export function VendaRapidaTab({
                       >
                         Usar estoque sugerido da base
                       </button>
-                      <a
-                        href={`/dashboard/estoque?search=${encodeURIComponent(selectedStockInfo.adsId)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => setShowEstoqueRapido(true)}
                         className="px-2 py-1 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 transition"
                       >
-                        Adicionar produto no estoque
-                      </a>
+                        + Adicionar mais estoque
+                      </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-2 space-y-2">
-                    <p>Selecione um produto da base para garantir vínculo correto na venda.</p>
-                    <a
-                      href="/dashboard/estoque"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex px-2 py-1 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 transition"
-                    >
-                      Adicionar produto no estoque
-                    </a>
-                  </div>
+                  <QuickAddStock
+                    category={category}
+                    onAdded={(sug) => {
+                      applyStockSuggestion(sug)
+                      setStockSearchOpen(false)
+                    }}
+                  />
                 )}
                 {!isStep1Valid ? (
                   <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-2">
@@ -2607,6 +2602,156 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="text-zinc-400 text-xs font-medium uppercase tracking-wider">{label}</label>
       {children}
     </div>
+  )
+}
+
+// ─── Componente inline de adição rápida de estoque ────────────────────────────
+
+function QuickAddStock({
+  category,
+  onAdded,
+}: {
+  category: string
+  onAdded: (sug: StockProductSuggestion) => void
+}) {
+  const [name, setName]     = useState('')
+  const [qty, setQty]       = useState('1')
+  const [price, setPrice]   = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg]       = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { setMsg({ type: 'err', text: 'Informe o nome do produto.' }); return }
+    if (!price || Number(price) <= 0) { setMsg({ type: 'err', text: 'Informe um preço válido.' }); return }
+
+    setSaving(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/admin/estoque-rapido', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category,
+          displayName: name.trim(),
+          salePrice:   Number(price),
+          qty:         Math.max(1, Number(qty) || 1),
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as {
+        ok?: boolean; qty?: number; message?: string; error?: string
+        assets?: Array<{ adsId: string; displayName: string }>
+      }
+
+      if (!res.ok || !data.ok) {
+        setMsg({ type: 'err', text: data.error ?? 'Erro ao adicionar.' })
+        return
+      }
+
+      const qtdAdded = data.qty ?? 1
+      const first = data.assets?.[0]
+      setMsg({ type: 'ok', text: `✅ ${qtdAdded} unidade(s) de "${name.trim()}" adicionada(s) ao estoque! Produto selecionado automaticamente.` })
+
+      if (first) {
+        onAdded({
+          assetId:             first.adsId,
+          adsId:               first.adsId,
+          displayName:         first.displayName,
+          category,
+          salePrice:           Number(price),
+          isAvailable:         true,
+          availableInCategory: qtdAdded,
+          availableForName:    qtdAdded,
+          totalInBaseForName:  qtdAdded,
+        })
+      }
+
+      setName('')
+      setQty('1')
+      setPrice('')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleAdd}
+      className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3"
+    >
+      <div>
+        <p className="text-xs font-semibold text-emerald-300">⚡ Adicionar produto ao estoque agora</p>
+        <p className="text-[11px] text-zinc-500 mt-0.5">
+          Preencha abaixo e clique em adicionar — o produto será gravado no banco e selecionado automaticamente.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <label className="block text-[11px] text-zinc-400 mb-1">Nome do produto *</label>
+          <input
+            required
+            className="input-dark w-full text-xs"
+            placeholder="Ex: Google Ads Verificada Premium"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[11px] text-zinc-400 mb-1">Preço de venda (R$) *</label>
+            <input
+              required
+              type="number"
+              min="1"
+              step="0.01"
+              className="input-dark w-full text-xs"
+              placeholder="150.00"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-zinc-400 mb-1">Quantidade *</label>
+            <input
+              required
+              type="number"
+              min="1"
+              max="500"
+              className="input-dark w-full text-xs"
+              placeholder="1"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {msg && (
+        <p className={`text-[11px] rounded-lg px-2 py-1.5 ${
+          msg.type === 'ok'
+            ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+            : 'bg-red-500/10 text-red-300 border border-red-500/20'
+        }`}>
+          {msg.text}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
+      >
+        {saving ? (
+          <>
+            <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            Gravando no banco...
+          </>
+        ) : (
+          `➕ Adicionar ${Number(qty) || 1} unidade(s) ao estoque`
+        )}
+      </button>
+    </form>
   )
 }
 
