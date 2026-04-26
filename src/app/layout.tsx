@@ -1,4 +1,4 @@
-// build-fingerprint: 2026-04-26T14:49:00Z — deploy producao sessao completa
+// build-fingerprint: 2026-04-26T15:31:00Z — cupom url-only + global USD + estoque inline
 import type { Metadata, Viewport } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
