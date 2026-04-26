@@ -184,7 +184,7 @@ export const MODULES_ERP: NavItem[] = [
   // ── Comercial ─────────────────────────────────────────────────────────────
   {
     href: '/dashboard/admin/pix',
-    label: 'Gestão PIX',
+    label: 'PIX Global — Checkouts',
     roles: ['ADMIN', 'COMMERCIAL', 'FINANCE'],
     icon: 'QrCode',
     group: 'Comercial',
@@ -205,9 +205,9 @@ export const MODULES_ERP: NavItem[] = [
   },
   {
     href: '/dashboard/commercial/seller',
-    label: 'Mesa do Vendedor',
+    label: 'Venda Rápida — PIX',
     roles: ['ADMIN', 'COMMERCIAL'],
-    icon: 'ShoppingCart',
+    icon: 'Zap',
     group: 'Comercial',
   },
   {
