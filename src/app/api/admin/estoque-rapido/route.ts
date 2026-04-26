@@ -62,6 +62,8 @@ const CATEGORY_TO_VENDOR_NAME: Record<string, string> = {
 
 async function getOrCreateInternalVendor(assetCategory: string) {
   const vendorName = CATEGORY_TO_VENDOR_NAME[assetCategory] ?? 'Interno'
+  const vendorCategory = assetCategory  // category no Vendor = CONTAS, PERFIS etc.
+
   const existing = await prisma.vendor.findFirst({
     where: { name: vendorName },
     select: { id: true },
@@ -70,9 +72,11 @@ async function getOrCreateInternalVendor(assetCategory: string) {
 
   const created = await prisma.vendor.create({
     data: {
-      name:       vendorName,
-      origin:     'INTERNAL',
-      suspended:  false,
+      name:      vendorName,
+      category:  vendorCategory,
+      suspended: false,
+      active:    true,
+      rating:    10,
     },
     select: { id: true },
   })
