@@ -22,13 +22,28 @@ export async function POST() {
 
   // Tenta autenticar com as credenciais atuais das variáveis de ambiente
   try {
-    const { getInterToken } = await import('@/lib/inter/client')
+    const { getInterToken, registerInterWebhook } = await import('@/lib/inter/client')
     // Força nova autenticação
     const token = await getInterToken()
+
+    // Registra o webhook automaticamente após obter token válido
+    const appBase = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const webhookUrl = `${appBase}/api/webhooks/inter/pix`
+    let webhookMsg = 'Webhook não registrado (URL base não configurada)'
+    if (appBase) {
+      try {
+        const wh = await registerInterWebhook(webhookUrl)
+        webhookMsg = wh.message
+      } catch (we) {
+        webhookMsg = `Webhook falhou: ${String((we as Error).message).slice(0, 100)}`
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       message: 'Token renovado com sucesso usando as credenciais atuais.',
       tokenPreview: token.slice(0, 20) + '...',
+      webhook: webhookMsg,
     })
   } catch (e) {
     return NextResponse.json({
