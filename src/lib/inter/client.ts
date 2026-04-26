@@ -17,8 +17,9 @@
  *   INTER_PIX_WEBHOOK_SECRET — Segredo compartilhado (header x-inter-webhook-secret)
  */
 
-import fs   from 'fs'
-import path from 'path'
+import fs    from 'fs'
+import path  from 'path'
+import https from 'https'
 import { Agent } from 'undici'
 
 const BASE_URL  = 'https://cdpj.partners.bancointer.com.br'
@@ -155,7 +156,6 @@ function loadCerts(): { cert: string; key: string } {
 
 /**
  * Cria um Undici Agent com mTLS para comunicação segura com o Banco Inter.
- * Cada chamada re-usa o agent por enquanto (sem cache global para evitar reuso de socket expirado).
  */
 function createMtlsAgent(): Agent {
   const { cert, key } = loadCerts()
@@ -165,6 +165,41 @@ function createMtlsAgent(): Agent {
       key,
       rejectUnauthorized: true,
     },
+  })
+}
+
+/**
+ * Faz uma requisição HTTPS com mTLS usando o módulo nativo do Node.js.
+ * Alternativa ao undici para maior compatibilidade em ambientes serverless.
+ */
+function httpsRequestMtls(options: {
+  method: string
+  url: string
+  headers: Record<string, string>
+  body?: string
+  cert: string
+  key: string
+}): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(options.url)
+    const reqOptions: https.RequestOptions = {
+      hostname: u.hostname,
+      port:     u.port || 443,
+      path:     u.pathname + u.search,
+      method:   options.method,
+      headers:  options.headers,
+      cert:     options.cert,
+      key:      options.key,
+      rejectUnauthorized: true,
+    }
+    const req = https.request(reqOptions, (res) => {
+      let data = ''
+      res.on('data', (chunk) => { data += chunk })
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }))
+    })
+    req.on('error', reject)
+    if (options.body) req.write(options.body)
+    req.end()
   })
 }
 
@@ -218,26 +253,27 @@ export async function getInterToken(): Promise<string> {
     grant_type:    'client_credentials',
   })
 
-  // Retry automático (3 tentativas com backoff) para robustez em produção
+  const { cert, key } = loadCerts()
+
+  // Retry automático (3 tentativas com backoff) usando https nativo (mais compatível com Vercel)
   let lastErr: unknown
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const agent = createMtlsAgent()
-      const res = await fetch(TOKEN_URL, {
+      const res = await httpsRequestMtls({
         method:  'POST',
+        url:     TOKEN_URL,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body:    body.toString(),
-        // @ts-expect-error — undici dispatcher não está no tipo fetch global do TS
-        dispatcher: agent,
+        cert,
+        key,
       })
 
-      if (!res.ok) {
-        const txt = await res.text()
+      if (res.status < 200 || res.status >= 300) {
         _cachedToken = null
-        throw new InterApiError(res.status, txt, '/oauth/v2/token')
+        throw new InterApiError(res.status, res.body, '/oauth/v2/token')
       }
 
-      const data = await res.json() as { access_token: string; expires_in: number }
+      const data = JSON.parse(res.body) as { access_token: string; expires_in: number }
       const expiresAt = now + data.expires_in * 1000
       _cachedToken = { token: data.access_token, expiresAt }
 
