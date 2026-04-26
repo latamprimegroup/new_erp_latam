@@ -19,6 +19,7 @@ import { runCommercialOrderPaidBridge } from '@/lib/commercial-order-bridge'
 import { handleSaleToFinancialBridge } from '@/lib/commercial-financial-bridge'
 import { computeWarrantyEndsAt } from '@/lib/order-warranty'
 import { syncClientLTV } from '@/lib/client-ltv'
+import { createDeliveryMagicLink } from '@/lib/delivery-magic-link'
 import {
   notifyAdminsQuickSaleApproved,
   notifyAdminsSaleCompleted,
@@ -664,11 +665,17 @@ export async function POST(req: NextRequest) {
 
       await logPixEvent({ txid, e2eid, amount: Number(quickCheckout.totalAmount), status: 'PROCESSED', flowType: 'QUICK_CHECKOUT', relatedId: quickCheckout.id, rawPayload })
 
+      // 3c.2 Magic Link de entrega — gerado automaticamente para rastrear acesso do cliente
+      const magicLinkData = await createDeliveryMagicLink({
+        checkoutId:  quickCheckout.id,
+        expiryHours: (quickCheckout.listing.warrantyDays ?? 7) * 24,
+      }).catch((e) => { console.error('[QuickCheckout] Magic link creation failed:', e); return null })
+
       // 3d. Pós-pagamento: decisão híbrida (autoentrega ou KYC) + direcionamento
       const appBase = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? ''
-      const deliveryUrl = appBase
+      const deliveryUrl = magicLinkData?.url ?? (appBase
         ? `${appBase}/loja/${quickCheckout.listing.slug}?checkoutId=${encodeURIComponent(quickCheckout.id)}`
-        : null
+        : null)
       if (riskDecision.requiresKyc && deliveryUrl) {
         const riskReasons = riskDecision.reasons.map(riskReasonLabel).join(' · ')
         const kycGuidanceMessage = [
