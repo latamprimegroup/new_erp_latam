@@ -208,6 +208,13 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
+    href: '/dashboard/pos-venda',
+    label: 'Central de Pós-Venda',
+    roles: ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER'],
+    icon: 'PackageCheck',
+    group: 'Comercial',
+  },
+  {
     href: '/dashboard/admin/smart-delivery',
     label: 'SmartDeliverySystem (Visao CEO)',
     roles: ['ADMIN', 'COMMERCIAL', 'CEO'],
@@ -544,6 +551,13 @@ export const MODULES_ERP: NavItem[] = [
     roles: ['ADMIN'],
     icon: 'Shield',
     group: 'Sistema',
+  },
+  {
+    href: '/dashboard/admin/pix',
+    label: 'Tesouraria Multimoeda',
+    roles: ['ADMIN', 'CEO'],
+    icon: 'Landmark',
+    group: 'Financeiro',
   },
   {
     href: '/dashboard/admin/profit-engine',

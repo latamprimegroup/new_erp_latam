@@ -1,8 +1,12 @@
+// build-fingerprint: 2026-04-26T13:15:00Z — atualizado para forçar cache bust no Vercel
 import type { Metadata, Viewport } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
 import { Analytics } from '@vercel/analytics/react'
+
+// Versão do build — gerada em tempo de build pelo CI
+const BUILD_VERSION = process.env.NEXT_PUBLIC_BUILD_VERSION ?? new Date().toISOString()
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -62,6 +66,8 @@ const themeScript = `
 })();
 `
 
+const versionScript = `console.log('%c War Room OS %c Build: ${BUILD_VERSION} ', 'background:#10b981;color:#fff;font-weight:bold;padding:2px 6px;border-radius:3px 0 0 3px', 'background:#1e293b;color:#10b981;padding:2px 6px;border-radius:0 3px 3px 0');`
+
 export default function RootLayout({
   children,
 }: {
@@ -71,6 +77,8 @@ export default function RootLayout({
     <html lang="pt-BR" className={plusJakarta.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: versionScript }} />
+        <meta name="x-build-version" content={BUILD_VERSION} />
       </head>
       <body className="font-sans antialiased">
         <Providers>{children}</Providers>

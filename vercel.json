@@ -14,5 +14,16 @@
     {"path": "/api/cron/health-monitor", "schedule": "*/5 * * * *"},
     {"path": "/api/cron/cleanup-expired-pix", "schedule": "*/5 * * * *"},
     {"path": "/api/cron/quick-sale-delivery-sla", "schedule": "*/10 * * * *"}
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-War-Room-Version",
+          "value": "war-room-os"
+        }
+      ]
+    }
   ]
 }

@@ -53,15 +53,54 @@ const nextConfig = {
       "frame-src 'self' https: blob:",
       "frame-ancestors 'none'",
     ].join('; ')
+
+    const securityHeaders = [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'X-DNS-Prefetch-Control', value: 'on' },
+      { key: 'Content-Security-Policy', value: csp },
+    ]
+
     return [
+      // Regras globais de segurança
       {
         source: '/:path*',
+        headers: securityHeaders,
+      },
+      // Dashboard: s-maxage=1 → CDN revalida em 1s, serve stale por até 59s enquanto busca novo
+      // Isso garante que após um deploy, o CDN da Vercel não trave em versão antiga por > 1s
+      {
+        source: '/dashboard/:path*',
         headers: [
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'X-DNS-Prefetch-Control', value: 'on' },
-          { key: 'Content-Security-Policy', value: csp },
+          ...securityHeaders,
+          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
+          { key: 'Surrogate-Control', value: 'no-store' },
+        ],
+      },
+      // APIs: sempre fresh, nunca cache em CDN
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+          { key: 'Surrogate-Control', value: 'no-store' },
+        ],
+      },
+      // Loja pública e entrega: fresh com revalidação rápida
+      {
+        source: '/(loja|entrega|pay)/:path*',
+        headers: [
+          ...securityHeaders,
+          { key: 'Cache-Control', value: 's-maxage=1, stale-while-revalidate=59' },
+        ],
+      },
+      // Assets estáticos (_next/static): imutáveis por 1 ano (Next.js já faz hash)
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
     ]
