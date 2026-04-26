@@ -14,6 +14,15 @@ interface ProductInfo {
   pricePerUnit: number
   maxQty:       number
   available:    number
+  quarantine:   number
+}
+
+interface ReceitaResult {
+  valid:    boolean
+  type:     'CPF' | 'CNPJ'
+  name?:    string   // razão social (CNPJ) ou nome (CPF se vier da API)
+  status?:  string   // 'ATIVA' | 'BAIXADA' | etc.
+  message?: string   // erro ou aviso
 }
 
 interface PixData {
@@ -134,6 +143,29 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
   const [email, setEmail]         = useState('')
   const [qty, setQty]             = useState(1)
   const [submitting, setSubmitting] = useState(false)
+
+  // Receita Federal
+  const [receitaResult, setReceitaResult]     = useState<ReceitaResult | null>(null)
+  const [checkingReceita, setCheckingReceita] = useState(false)
+
+  const checkReceita = async (value: string, type: DocType) => {
+    const clean = value.replace(/\D/g, '')
+    const minLen = type === 'cpf' ? 11 : 14
+    if (clean.length < minLen) { setReceitaResult(null); return }
+    setCheckingReceita(true)
+    setReceitaResult(null)
+    try {
+      const r = await fetch(`/api/receita/consulta?doc=${clean}&type=${type}`)
+      const d = await r.json()
+      setReceitaResult(d)
+      // Auto-preenche o nome se vier da Receita e campo estiver vazio
+      if (d.name && !name) setName(d.name)
+    } catch {
+      setReceitaResult({ valid: false, type: type === 'cpf' ? 'CPF' : 'CNPJ', message: 'Não foi possível consultar a Receita Federal.' })
+    } finally {
+      setCheckingReceita(false)
+    }
+  }
 
   // PIX
   const [pixData, setPixData]   = useState<PixData | null>(null)
@@ -524,7 +556,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { setDocType('cpf'); setDoc('') }}
+                onClick={() => { setDocType('cpf'); setDoc(''); setReceitaResult(null) }}
                 className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
                   docType === 'cpf'
                     ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
@@ -535,7 +567,7 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => { setDocType('cnpj'); setDoc('') }}
+                onClick={() => { setDocType('cnpj'); setDoc(''); setReceitaResult(null) }}
                 className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition ${
                   docType === 'cnpj'
                     ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400'
@@ -552,7 +584,8 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
                 type="text"
                 required
                 value={doc}
-                onChange={(e) => setDoc(formatCpf(e.target.value))}
+                onChange={(e) => { setDoc(formatCpf(e.target.value)); setReceitaResult(null) }}
+                onBlur={(e) => checkReceita(e.target.value, 'cpf')}
                 placeholder="000.000.000-00"
                 inputMode="numeric"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 transition text-sm"
@@ -563,11 +596,38 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
                 type="text"
                 required
                 value={doc}
-                onChange={(e) => setDoc(formatCnpj(e.target.value))}
+                onChange={(e) => { setDoc(formatCnpj(e.target.value)); setReceitaResult(null) }}
+                onBlur={(e) => checkReceita(e.target.value, 'cnpj')}
                 placeholder="00.000.000/0001-00"
                 inputMode="numeric"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-emerald-500 transition text-sm"
               />
+            )}
+
+            {/* Status Receita Federal */}
+            {checkingReceita && (
+              <div className="flex items-center gap-2 text-zinc-400 text-xs pt-1">
+                <span className="w-3 h-3 border border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
+                Consultando Receita Federal...
+              </div>
+            )}
+            {!checkingReceita && receitaResult && (
+              <div className={`rounded-lg px-3 py-2 text-xs mt-1 flex items-start gap-2 ${
+                receitaResult.valid
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              }`}>
+                <span className="mt-0.5">{receitaResult.valid ? '✅' : '⚠️'}</span>
+                <div>
+                  {receitaResult.name && (
+                    <p className="font-semibold text-white text-[13px]">{receitaResult.name}</p>
+                  )}
+                  {receitaResult.status && (
+                    <p>Situação: <span className="font-medium">{receitaResult.status}</span></p>
+                  )}
+                  {receitaResult.message && <p>{receitaResult.message}</p>}
+                </div>
+              </div>
             )}
           </div>
 
@@ -611,23 +671,37 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef }: Props) {
           </div>
 
           {/* Botão principal */}
-          <button
-            type="submit"
-            disabled={submitting || !product || product.available === 0}
-            className="w-full py-4 rounded-xl font-bold text-white text-base tracking-wide transition disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(135deg, #10b981, #0ea5e9)' }}
-          >
-            {submitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Gerando PIX...
-              </span>
-            ) : product?.available === 0 ? (
-              'ESGOTADO'
-            ) : (
-              '⚡ PAGAR COM PIX'
-            )}
-          </button>
+          {(() => {
+            const totalStock = (product?.available ?? 0) + (product?.quarantine ?? 0)
+            const trulySoldOut = !product || totalStock === 0
+            const pendingOnly  = !trulySoldOut && (product?.available ?? 0) === 0
+            return (
+              <>
+                {pendingOnly && (
+                  <div className="rounded-lg px-3 py-2 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-400 text-center">
+                    ⏳ Há pagamentos pendentes neste produto. Tente gerar seu pedido — se aprovado, você entra na fila.
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={submitting || trulySoldOut}
+                  className="w-full py-4 rounded-xl font-bold text-white text-base tracking-wide transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #10b981, #0ea5e9)' }}
+                >
+                  {submitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Gerando PIX...
+                    </span>
+                  ) : trulySoldOut ? (
+                    'ESGOTADO'
+                  ) : (
+                    '⚡ PAGAR COM PIX'
+                  )}
+                </button>
+              </>
+            )
+          })()}
 
           {/* Segurança */}
           <div className="flex items-center justify-center gap-4 pt-1">

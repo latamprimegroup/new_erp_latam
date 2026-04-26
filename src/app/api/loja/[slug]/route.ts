@@ -56,13 +56,25 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
   if (!listing) return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 })
 
   // Conta estoque disponível — exclui ativos de fornecedores suspensos (stop-loss)
-  const available = await prisma.asset.count({
-    where: {
-      category: listing.assetCategory as never,
-      status:   'AVAILABLE',
-      vendor:   { suspended: false },
-    },
-  })
+  const [available, quarantine] = await Promise.all([
+    prisma.asset.count({
+      where: {
+        category: listing.assetCategory as never,
+        status:   'AVAILABLE',
+        vendor:   { suspended: false },
+      },
+    }),
+    prisma.asset.count({
+      where: {
+        category: listing.assetCategory as never,
+        status:   'QUARANTINE',
+        vendor:   { suspended: false },
+      },
+    }),
+  ])
+
+  // maxQty considera AVAILABLE + QUARANTINE (quarentena = aguardando pagamento pendente)
+  const effectiveStock = available + quarantine
 
   return NextResponse.json({
     id:           listing.id,
@@ -71,8 +83,9 @@ export async function GET(req: globalThis.Request, { params }: { params: { slug:
     subtitle:     listing.subtitle,
     badge:        listing.badge,
     pricePerUnit: Number(listing.pricePerUnit),
-    maxQty:       Math.min(listing.maxQty, available),
+    maxQty:       Math.min(listing.maxQty, effectiveStock),
     available,
+    quarantine,
   })
 }
 
