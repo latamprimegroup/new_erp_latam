@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Clipboard, Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode, Zap } from 'lucide-react'
+import { Clipboard, Copy, ExternalLink, MessageCircle, Pencil, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode, Zap } from 'lucide-react'
 import { QuickSaleSecurityPanel } from './QuickSaleSecurityPanel'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -203,6 +203,10 @@ export function VendaRapidaTab({
   const [generatedLinkCopied, setGeneratedLinkCopied] = useState(false)
   const [syncingStockListingId, setSyncingStockListingId] = useState<string | null>(null)
   const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
+  const [editingListingId, setEditingListingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ title: '', price: '', maxQty: '', stockQty: '', badge: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   // Formulário
   const [title, setTitle]           = useState('')
@@ -614,6 +618,43 @@ export function VendaRapidaTab({
     if (!confirm(`Excluir listing "${title}"? Esta ação não pode ser desfeita.`)) return
     await fetch(`/api/admin/listings/${id}`, { method: 'DELETE' })
     load()
+  }
+
+  const openEdit = (l: Listing) => {
+    setEditForm({
+      title:    l.title,
+      price:    l.pricePerUnit.toFixed(2),
+      maxQty:   String(l.maxQty),
+      stockQty: String(l.stockQtyConfigured ?? l.available ?? 1),
+      badge:    l.badge ?? '',
+    })
+    setEditError(null)
+    setEditingListingId(l.id)
+  }
+
+  const saveEdit = async (id: string) => {
+    setEditSaving(true)
+    setEditError(null)
+    try {
+      const res = await fetch(`/api/admin/listings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title:        editForm.title.trim(),
+          pricePerUnit: Number(editForm.price),
+          maxQty:       Number(editForm.maxQty) || 10,
+          stockQty:     Number(editForm.stockQty) || 1,
+          badge:        editForm.badge.trim() || null,
+          forceStockQty: true,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string }
+      if (!res.ok) { setEditError(data.error ?? 'Erro ao salvar.'); return }
+      setEditingListingId(null)
+      load()
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   const openCreateModal = (mode?: 'PIX' | 'GLOBAL') => {
@@ -2030,11 +2071,13 @@ export function VendaRapidaTab({
         </div>
       ) : (
         <div className="grid gap-4">
-          {listings.map((l) => {
+          {listings.map((l, idx) => {
             const listingMode = l.paymentMode ?? 'PIX'
             const url = listingMode === 'GLOBAL'
               ? buildPublicGlobalCheckoutUrl(l.slug)
               : buildPublicCheckoutUrl(l.slug)
+            const seqNumber = String(idx + 1).padStart(3, '0')
+            const isEditing = editingListingId === l.id
             return (
               <div
                 key={l.id}
@@ -2047,6 +2090,9 @@ export function VendaRapidaTab({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-mono text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded">
+                        #{seqNumber}
+                      </span>
                       <span className="font-bold text-white text-base">{l.title}</span>
                       {l.badge && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
@@ -2097,6 +2143,13 @@ export function VendaRapidaTab({
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
+                      onClick={() => isEditing ? setEditingListingId(null) : openEdit(l)}
+                      title="Editar"
+                      className={`p-2 rounded-lg transition ${isEditing ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => toggleActive(l.id, l.active)}
                       title={l.active ? 'Pausar' : 'Ativar'}
                       className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
@@ -2126,6 +2179,79 @@ export function VendaRapidaTab({
                   <StatPill label="PIX gerados" value={String(l.totalCheckouts)} color="blue" />
                   <StatPill label="Faturado" value={`R$ ${l.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`} color="amber" />
                 </div>
+
+                {/* Edição inline */}
+                {isEditing && (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+                    <p className="text-xs font-semibold text-emerald-300">Editar link #{seqNumber} — {l.title}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <label className="block text-[11px] text-zinc-400 mb-1">Título do produto</label>
+                        <input
+                          className="input-dark text-xs w-full"
+                          value={editForm.title}
+                          onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-zinc-400 mb-1">Preço por unidade (R$)</label>
+                        <input
+                          type="number" min="1" step="0.01"
+                          className="input-dark text-xs w-full"
+                          value={editForm.price}
+                          onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-zinc-400 mb-1">Máx. por pedido</label>
+                        <input
+                          type="number" min="1" max="100"
+                          className="input-dark text-xs w-full"
+                          value={editForm.maxQty}
+                          onChange={(e) => setEditForm({ ...editForm, maxQty: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-zinc-400 mb-1">Estoque do link (qtd)</label>
+                        <input
+                          type="number" min="1"
+                          className="input-dark text-xs w-full"
+                          value={editForm.stockQty}
+                          onChange={(e) => setEditForm({ ...editForm, stockQty: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-zinc-400 mb-1">Badge</label>
+                        <input
+                          className="input-dark text-xs w-full"
+                          placeholder="ENTREGA AUTOMÁTICA"
+                          value={editForm.badge}
+                          onChange={(e) => setEditForm({ ...editForm, badge: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    {editError && (
+                      <p className="text-[11px] text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-1">{editError}</p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingListingId(null)}
+                        className="flex-1 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-xs hover:text-white transition"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={editSaving}
+                        onClick={() => saveEdit(l.id)}
+                        className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition disabled:opacity-50"
+                      >
+                        {editSaving ? 'Salvando...' : 'Salvar alterações'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Link */}
                 <div className="flex items-center gap-2 bg-zinc-800/50 border border-zinc-700 rounded-xl px-3 py-2">
