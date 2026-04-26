@@ -490,6 +490,16 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
     throw new InterApiError(res.status, res.body, 'PUT /pix/v2/webhook')
   }
 
+  // Persiste no banco para o health check exibir mesmo sem consultar o Inter
+  try {
+    const { prisma } = await import('@/lib/prisma')
+    await prisma.systemSetting.upsert({
+      where: { key: 'inter_webhook_url' },
+      create: { key: 'inter_webhook_url', value: callbackUrl },
+      update: { value: callbackUrl },
+    })
+  } catch { /* silencioso */ }
+
   console.log(`[Inter] Webhook registrado em: ${callbackUrl}`)
   return { ok: true, message: `Webhook registrado em: ${callbackUrl}` }
 }
@@ -559,11 +569,32 @@ export async function checkInterHealth(): Promise<InterHealthReport> {
       _cachedToken = null
       await getInterToken()
       tokenOk    = true
-      const wh   = await getRegisteredWebhook().catch(() => null)
-      webhookUrl = wh?.webhookUrl ?? null
+
+      // Tenta buscar webhook do banco primeiro (mais rápido e confiável)
+      try {
+        const { prisma } = await import('@/lib/prisma')
+        const wh = await prisma.systemSetting.findUnique({ where: { key: 'inter_webhook_url' } })
+        if (wh?.value) webhookUrl = wh.value
+      } catch { /* silencioso */ }
+
+      // Se não tiver no banco, tenta buscar do Inter
+      if (!webhookUrl) {
+        const wh = await getRegisteredWebhook().catch(() => null)
+        webhookUrl = wh?.webhookUrl ?? null
+        // Persiste no banco para próximas consultas
+        if (webhookUrl) {
+          try {
+            const { prisma } = await import('@/lib/prisma')
+            await prisma.systemSetting.upsert({
+              where: { key: 'inter_webhook_url' },
+              create: { key: 'inter_webhook_url', value: webhookUrl },
+              update: { value: webhookUrl },
+            })
+          } catch { /* silencioso */ }
+        }
+      }
     } catch (e) {
       const msg = (e as Error).message
-      // Detecta erro de rede (fetch failed = conectividade)
       if (msg.toLowerCase().includes('fetch failed') || msg.toLowerCase().includes('econnrefused') || msg.toLowerCase().includes('network')) {
         lastError = `Erro de rede ao conectar no Inter (mTLS): ${msg}. Verifique se as variáveis INTER_CERT_CRT/INTER_CERT_KEY estão em formato PEM correto.`
       } else {
