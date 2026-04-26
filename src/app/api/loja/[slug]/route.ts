@@ -581,7 +581,7 @@ const schema = z.object({
   // Aceita CPF (PF) ou CNPJ (PJ) — validação por regex básico
   cpf:          z.string().regex(CPF_REGEX, 'CPF inválido').optional(),
   cnpj:         z.string().regex(CNPJ_REGEX, 'CNPJ inválido').optional(),
-  whatsapp:     z.string().regex(/^\+?55\d{10,11}$/, 'WhatsApp inválido (+5511999999999)'),
+  whatsapp:     z.string().regex(/^\+?55\d{8,11}$/, 'WhatsApp inválido (+5511999999999)'),
   email:        z.string().email().optional().or(z.literal('')),
   qty:          z.number().int().min(1).max(50),
   sellerRef:    z.string().max(100).optional(), // sellerId codificado pelo vendedor
@@ -620,8 +620,16 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
   }
 
   const parsed = schema.safeParse(body)
-  if (!parsed.success)
-    return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 422 })
+  if (!parsed.success) {
+    const flat = parsed.error.flatten()
+    // Monta mensagem legível com o primeiro campo com erro
+    const firstFieldError = Object.entries(flat.fieldErrors)
+      .find(([, msgs]) => msgs && msgs.length > 0)
+    const errorMsg = firstFieldError
+      ? `Dado inválido: ${firstFieldError[0]} — ${firstFieldError[1]?.[0]}`
+      : (flat.formErrors[0] ?? 'Dados inválidos')
+    return NextResponse.json({ error: errorMsg, details: flat }, { status: 422 })
+  }
 
   const {
     name,
