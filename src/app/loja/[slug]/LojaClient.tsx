@@ -507,7 +507,10 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: P
     else setSubmitting(false)
 
     if (!res.ok) {
-      setErrorMsg(data.error ?? 'Erro ao gerar PIX.')
+      const d = data as { error?: string; code?: string }
+      // Mostra código de erro técnico para diagnóstico em produção
+      const codeMsg = d.code ? ` [${d.code}]` : ''
+      setErrorMsg((d.error ?? 'Falha ao gerar PIX.') + codeMsg)
       setStep('error')
       return
     }
