@@ -14,6 +14,7 @@
     {"path": "/api/cron/health-monitor", "schedule": "*/5 * * * *"},
     {"path": "/api/cron/cleanup-expired-pix", "schedule": "*/5 * * * *"},
     {"path": "/api/cron/quick-sale-delivery-sla", "schedule": "*/10 * * * *"},
+    {"path": "/api/cron/inter-token-warmup", "schedule": "*/30 * * * *"},
     {"path": "/api/cron/pix-recovery", "schedule": "*/5 * * * *"},
     {"path": "/api/cron/repurchase-trigger", "schedule": "0 * * * *"},
     {"path": "/api/cron/warranty-alert", "schedule": "0 8,20 * * *"},

@@ -37,9 +37,37 @@ export class InterApiError extends Error {
   }
 }
 
-// ─── Cache de token em memória ────────────────────────────────────────────────
+// ─── Cache de token em memória + persistência em banco ────────────────────────
+// Em serverless (Vercel), cada cold start perde o cache em memória.
+// Persistimos o token no banco como fallback para zero downtime.
 
 let _cachedToken: { token: string; expiresAt: number } | null = null
+
+const INTER_TOKEN_DB_KEY = 'inter_oauth_token_cache'
+
+async function saveTokenToDb(token: string, expiresAt: number) {
+  try {
+    const { prisma } = await import('@/lib/prisma')
+    await prisma.systemSetting.upsert({
+      where:  { key: INTER_TOKEN_DB_KEY },
+      create: { key: INTER_TOKEN_DB_KEY, value: JSON.stringify({ token, expiresAt }) },
+      update: { value: JSON.stringify({ token, expiresAt }) },
+    })
+  } catch { /* silencioso — banco pode estar indisponível */ }
+}
+
+async function loadTokenFromDb(): Promise<{ token: string; expiresAt: number } | null> {
+  try {
+    const { prisma } = await import('@/lib/prisma')
+    const row = await prisma.systemSetting.findUnique({ where: { key: INTER_TOKEN_DB_KEY } })
+    if (!row?.value) return null
+    const parsed = JSON.parse(row.value) as { token: string; expiresAt: number }
+    if (parsed.expiresAt > Date.now() + 60_000) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
 
 // ─── Leitura de certificados ──────────────────────────────────────────────────
 
@@ -142,8 +170,18 @@ function createMtlsAgent(): Agent {
  */
 export async function getInterToken(): Promise<string> {
   const now = Date.now()
+
+  // 1. Cache em memória (warm instance)
   if (_cachedToken && _cachedToken.expiresAt > now + 60_000) {
     return _cachedToken.token
+  }
+
+  // 2. Cache no banco (cold start — fallback de zero downtime)
+  const dbToken = await loadTokenFromDb()
+  if (dbToken) {
+    _cachedToken = dbToken
+    console.log('[Inter] Token recuperado do banco (cold start fallback)')
+    return dbToken.token
   }
 
   const clientId = firstEnvValue(
@@ -174,29 +212,44 @@ export async function getInterToken(): Promise<string> {
     grant_type:    'client_credentials',
   })
 
-  const agent = createMtlsAgent()
+  // Retry automático (3 tentativas com backoff) para robustez em produção
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const agent = createMtlsAgent()
+      const res = await fetch(TOKEN_URL, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:    body.toString(),
+        // @ts-expect-error — undici dispatcher não está no tipo fetch global do TS
+        dispatcher: agent,
+      })
 
-  const res = await fetch(TOKEN_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    body.toString(),
-    // undici dispatcher (mTLS)
-    // @ts-expect-error — undici dispatcher não está no tipo fetch global do TS
-    dispatcher: agent,
-  })
+      if (!res.ok) {
+        const txt = await res.text()
+        _cachedToken = null
+        throw new InterApiError(res.status, txt, '/oauth/v2/token')
+      }
 
-  if (!res.ok) {
-    const txt = await res.text()
-    // Invalida cache corrompido
-    _cachedToken = null
-    throw new InterApiError(res.status, txt, '/oauth/v2/token')
+      const data = await res.json() as { access_token: string; expires_in: number }
+      const expiresAt = now + data.expires_in * 1000
+      _cachedToken = { token: data.access_token, expiresAt }
+
+      // Persiste no banco para cold starts futuros
+      void saveTokenToDb(data.access_token, expiresAt)
+
+      console.log(`[Inter] Token OAuth2 obtido (tentativa ${attempt}) — expira em ${data.expires_in}s`)
+      return _cachedToken.token
+    } catch (err) {
+      lastErr = err
+      if (attempt < 3) {
+        console.warn(`[Inter] Tentativa ${attempt}/3 falhou, aguardando ${attempt * 2}s...`)
+        await new Promise((r) => setTimeout(r, attempt * 2000))
+      }
+    }
   }
 
-  const data = await res.json() as { access_token: string; expires_in: number }
-  _cachedToken = { token: data.access_token, expiresAt: now + data.expires_in * 1000 }
-
-  console.log(`[Inter] Token OAuth2 obtido — expira em ${data.expires_in}s`)
-  return _cachedToken.token
+  throw lastErr
 }
 
 // ─── Tipos PIX ────────────────────────────────────────────────────────────────
