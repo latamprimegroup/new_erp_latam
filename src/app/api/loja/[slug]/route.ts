@@ -236,6 +236,7 @@ function buildAssetWhere(listing: {
       { subCategory: { equals: name, mode: 'insensitive' as const } },
       { specs: { path: '$.productName', equals: name } },
       { specs: { path: '$.nomeProduto', equals: name } },
+      { specs: { path: '$.listingCategory', equals: listing.assetCategory } },
     )
   }
   if (orClauses.length === 0) {
@@ -257,10 +258,7 @@ function buildAssetReserveWhere(listing: {
 }) {
   const code = normalizeStockCode(listing.stockProductCode)
   const name = normalizeStockName(listing.stockProductName)
-  const base = {
-    status: 'AVAILABLE' as const,
-    category: listing.assetCategory as never,
-  }
+
   const orClauses: Array<Record<string, unknown>> = []
   if (code) {
     orClauses.push(
@@ -275,12 +273,24 @@ function buildAssetReserveWhere(listing: {
       { subCategory: { equals: name, mode: 'insensitive' as const } },
       { specs: { path: '$.productName', equals: name } },
       { specs: { path: '$.nomeProduto', equals: name } },
+      // Estoque rápido salva a categoria original do listing em specs.listingCategory
+      { specs: { path: '$.listingCategory', equals: listing.assetCategory } },
     )
   }
-  if (orClauses.length === 0) return base
+
+  // Com código ou nome: busca por match sem filtro de categoria
+  // (estoque rápido converte GOOGLE_ADS → CONTAS, mas vincula pelo nome/código)
+  if (orClauses.length > 0) {
+    return {
+      status: 'AVAILABLE' as const,
+      OR: orClauses,
+    }
+  }
+
+  // Sem vínculo: filtra só por categoria
   return {
-    ...base,
-    OR: orClauses,
+    status: 'AVAILABLE' as const,
+    category: listing.assetCategory as never,
   }
 }
 
