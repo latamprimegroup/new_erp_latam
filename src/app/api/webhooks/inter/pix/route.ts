@@ -475,8 +475,9 @@ export async function POST(req: NextRequest) {
       }
 
       // 3c. Utmify — S2S com retry, profileType tag e persistência de utmifyOrderId
+      let utmifyResult: { ok: boolean; utmifyOrderId?: string } = { ok: quickCheckout.utmifySent }
       if (!quickCheckout.utmifySent) {
-        const utmifyResult = await sendUtmifyQuickSaleConversion({
+        utmifyResult = await sendUtmifyQuickSaleConversion({
           checkoutId:   quickCheckout.id,
           listingTitle: quickCheckout.listing.title,
           listingSlug:  quickCheckout.listingId,
@@ -532,7 +533,7 @@ export async function POST(req: NextRequest) {
           supplierCost: quickIncentive.supplierCost,
           netProfit: quickIncentive.netProfit,
           remainingToUnlock: quickIncentive.sellerRemainingToUnlock ?? 0,
-          utmifySynced: quickUtmifySynced,
+          utmifySynced: utmifyResult.ok,
         }).catch((e) => console.error('[QuickCheckout] Incentive notify', e))
       }
 

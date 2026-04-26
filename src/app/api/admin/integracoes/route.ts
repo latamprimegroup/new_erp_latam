@@ -78,9 +78,20 @@ export async function GET() {
     {
       id: 'banco-inter',
       nome: 'Banco Inter',
-      descricao: 'PIX e pagamentos',
-      conectado: !!(process.env.BANCO_INTER_CLIENT_ID && process.env.BANCO_INTER_CLIENT_SECRET),
-      envVars: ['BANCO_INTER_CLIENT_ID', 'BANCO_INTER_CLIENT_SECRET'],
+      descricao: 'PIX e pagamentos (OAuth2 + mTLS)',
+      conectado: !!(
+        (process.env.INTER_CLIENT_ID || process.env.BANCO_INTER_CLIENT_ID) &&
+        (process.env.INTER_PIX_KEY)
+      ),
+      envVars: ['INTER_CLIENT_ID', 'INTER_CLIENT_SECRET', 'INTER_ACCOUNT_NUMBER', 'INTER_PIX_KEY', 'INTER_CERT_CRT', 'INTER_CERT_KEY'],
+      dashboardHref: '/dashboard/admin/inter-health',
+    },
+    {
+      id: 'utmify',
+      nome: 'Utmify',
+      descricao: 'Rastreamento S2S de conversões PIX',
+      conectado: !!(process.env.UTMIFY_API_TOKEN || process.env.UTMIFY_API_KEY_ALT),
+      envVars: ['UTMIFY_API_TOKEN'],
     },
     {
       id: 'gtm',
