@@ -234,6 +234,17 @@ export function VendaRapidaTab({
     return methods
   }, [globalGatewayKast, globalGatewayMercury])
   const effectivePaymentMode: 'PIX' | 'GLOBAL' = fixedMode ?? paymentMode
+  const normalizedTitle = title.trim()
+  const parsedPrice = Number.parseFloat(price)
+  const parsedMaxQty = Number.parseInt(maxQty, 10)
+  const parsedStockQty = Number.parseInt(stockQty, 10)
+  const isStep1Valid = Boolean(selectedStockInfo)
+  const isStep2Valid = normalizedTitle.length >= 3
+  const isPriceValid = Number.isFinite(parsedPrice) && parsedPrice > 0
+  const isMaxQtyValid = Number.isFinite(parsedMaxQty) && parsedMaxQty >= 1
+  const isStockQtyValid = Number.isFinite(parsedStockQty) && parsedStockQty >= 1
+  const isGlobalGatewayValid = effectivePaymentMode !== 'GLOBAL' || selectedGlobalGateways.length > 0
+  const wizardProgressPct = createStep === 1 ? 33 : createStep === 2 ? 66 : 100
   const createPreviewSlug = useMemo(
     () => buildPreviewSlug(title.trim() || selectedStockInfo?.displayName || ''),
     [title, selectedStockInfo],
@@ -242,11 +253,10 @@ export function VendaRapidaTab({
     ? buildInvisibleCheckoutUrl(createPreviewSlug, effectivePaymentMode)
     : ''
   const canSubmitCreateStepThree =
-    Number.isFinite(Number.parseFloat(price)) &&
-    Number.parseFloat(price) > 0 &&
-    Number.parseInt(maxQty, 10) >= 1 &&
-    Number.parseInt(stockQty, 10) >= 1 &&
-    (effectivePaymentMode !== 'GLOBAL' || selectedGlobalGateways.length > 0)
+    isPriceValid &&
+    isMaxQtyValid &&
+    isStockQtyValid &&
+    isGlobalGatewayValid
 
   // Teste rápido PIX integrado
   const [pixBuyerName, setPixBuyerName] = useState('')
@@ -412,7 +422,7 @@ export function VendaRapidaTab({
 
   const advanceCreateStep = () => {
     if (createStep === 1) {
-      if (!selectedStockInfo) {
+      if (!isStep1Valid) {
         alert('Selecione um produto da base no autocomplete para continuar.')
         return
       }
@@ -421,7 +431,7 @@ export function VendaRapidaTab({
     }
 
     if (createStep === 2) {
-      if (title.trim().length < 3) {
+      if (!isStep2Valid) {
         alert('Informe um título comercial com pelo menos 3 caracteres para continuar.')
         return
       }
@@ -445,15 +455,15 @@ export function VendaRapidaTab({
       return
     }
     const payloadBase = {
-      title:         title.trim(),
+      title:         normalizedTitle,
       subtitle:      subtitle.trim() || undefined,
       fullDescription: fullDescription.trim() || undefined,
       assetCategory: category,
       stockProductCode: stockProductCode.trim() || undefined,
       stockProductName: stockProductName.trim() || undefined,
-      pricePerUnit:  parseFloat(price),
-      maxQty:        parseInt(maxQty, 10),
-      stockQty:      parseInt(stockQty, 10),
+      pricePerUnit:  parsedPrice,
+      maxQty:        parsedMaxQty,
+      stockQty:      parsedStockQty,
       paymentMode: effectivePaymentMode,
       globalGateways: selectedGlobalGateways,
       badge:         badge.trim() || 'ENTREGA AUTOMÁTICA',
@@ -1022,6 +1032,15 @@ export function VendaRapidaTab({
                 </button>
               ))}
             </div>
+            <div className="space-y-1">
+              <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${wizardProgressPct}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-zinc-400 text-right">Progresso do lançamento: {wizardProgressPct}%</p>
+            </div>
 
             <form onSubmit={handleCreate} className="space-y-4 overflow-y-auto pr-1 max-h-[68vh]">
               {createStep === 1 ? (
@@ -1140,6 +1159,11 @@ export function VendaRapidaTab({
                     </a>
                   </div>
                 )}
+                {!isStep1Valid ? (
+                  <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-2">
+                    Campo obrigatório: escolha um produto no autocomplete para continuar.
+                  </p>
+                ) : null}
                 </section>
               ) : null}
 
@@ -1158,6 +1182,11 @@ export function VendaRapidaTab({
                     className="input-dark"
                   />
                 </Field>
+                {!isStep2Valid ? (
+                  <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-2 py-2">
+                    Título comercial obrigatório com pelo menos 3 caracteres.
+                  </p>
+                ) : null}
                 {copyAutoFilledFromStock ? (
                   <p className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2 py-1">
                     Copy preenchida automaticamente com base no produto do estoque selecionado.
@@ -1222,6 +1251,9 @@ export function VendaRapidaTab({
                       placeholder="150.00"
                       className="input-dark"
                     />
+                    {!isPriceValid ? (
+                      <p className="mt-1 text-[11px] text-red-300">Informe um preço válido maior que zero.</p>
+                    ) : null}
                   </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1231,6 +1263,9 @@ export function VendaRapidaTab({
                       value={maxQty} onChange={(e) => setMaxQty(e.target.value)}
                       className="input-dark"
                     />
+                    {!isMaxQtyValid ? (
+                      <p className="mt-1 text-[11px] text-red-300">Máximo por pedido deve ser 1 ou mais.</p>
+                    ) : null}
                   </Field>
                   <Field label="Estoque inicial para o link (quantidade)">
                     <input
@@ -1238,6 +1273,9 @@ export function VendaRapidaTab({
                       value={stockQty} onChange={(e) => setStockQty(e.target.value)}
                       className="input-dark"
                     />
+                    {!isStockQtyValid ? (
+                      <p className="mt-1 text-[11px] text-red-300">Estoque inicial do link deve ser 1 ou mais.</p>
+                    ) : null}
                   </Field>
                 </div>
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
@@ -1364,10 +1402,15 @@ export function VendaRapidaTab({
                 ) : null}
                 <button
                   type="submit"
-                  disabled={saving || (createStep === 3 && !canSubmitCreateStepThree)}
+                  disabled={
+                    saving ||
+                    (createStep === 1 && !isStep1Valid) ||
+                    (createStep === 2 && !isStep2Valid) ||
+                    (createStep === 3 && !canSubmitCreateStepThree)
+                  }
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition disabled:opacity-50"
                 >
-                  {createStep < 3 ? 'Continuar' : saving ? 'Criando...' : 'Criar Link'}
+                  {createStep < 3 ? `Continuar (${wizardProgressPct}%)` : saving ? 'Criando...' : 'Criar Link'}
                 </button>
               </div>
             </form>
