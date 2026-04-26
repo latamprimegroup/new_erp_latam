@@ -5457,6 +5457,10 @@ model QuickSaleCheckout {
   gclid          String?        @map("gclid")        @db.VarChar(512)
   /// Referrer HTTP da sessão de entrada (para tráfego sem UTMs)
   referrer       String?        @map("referrer")     @db.VarChar(500)
+  /// Timestamp do WhatsApp de recuperação de abandono (PIX não pago)
+  recoveryMsgSentAt DateTime?   @map("recovery_msg_sent_at")
+  /// Timestamp do WhatsApp de recompra inteligente (pós-ativação da conta)
+  repurchaseMsgSentAt DateTime? @map("repurchase_msg_sent_at")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt      @map("updated_at")
 

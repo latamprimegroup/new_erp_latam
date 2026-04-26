@@ -236,6 +236,20 @@ export const MODULES_ERP: NavItem[] = [
     group: 'Comercial',
   },
   {
+    href: '/dashboard/commercial/comissao',
+    label: 'Comissão em Tempo Real',
+    roles: ['ADMIN', 'CEO', 'COMMERCIAL'],
+    icon: 'BadgeDollarSign',
+    group: 'Comercial',
+  },
+  {
+    href: '/dashboard/admin/sell-through',
+    label: 'Velocidade de Venda',
+    roles: ['ADMIN', 'CEO', 'PRODUCTION_MANAGER', 'COMMERCIAL'],
+    icon: 'Gauge',
+    group: 'Operações',
+  },
+  {
     href: '/dashboard/commercial/manager',
     label: 'Head of Sales',
     roles: ['ADMIN', 'COMMERCIAL'],
