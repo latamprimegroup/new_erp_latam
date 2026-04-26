@@ -3032,15 +3032,51 @@ export function ProducaoClient() {
           >
             <div className="flex justify-between items-center p-3 border-b border-gray-200 dark:border-white/10">
               <span className="text-sm font-medium">Cartão CNPJ (preview)</span>
-              <button type="button" onClick={() => setPdfPreviewId(null)} className="btn-secondary text-xs">
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/producao/${pdfPreviewId}/arquivo/cnpj-pdf?download=1`}
+                  className="btn-secondary text-xs"
+                >
+                  Baixar PDF
+                </a>
+                <button type="button" onClick={() => setPdfPreviewId(null)} className="btn-secondary text-xs">
+                  Fechar
+                </button>
+              </div>
             </div>
-            <iframe
-              title="Cartão CNPJ"
-              src={`/api/producao/${pdfPreviewId}/arquivo/cnpj-pdf`}
-              className="w-full min-h-[70vh] rounded-b-lg border-0 bg-gray-100 dark:bg-gray-900"
-            />
+            <div className="flex-1 min-h-[70vh] relative bg-gray-100 dark:bg-gray-900 rounded-b-lg overflow-hidden">
+              <object
+                data={`/api/producao/${pdfPreviewId}/arquivo/cnpj-pdf`}
+                type="application/pdf"
+                className="w-full h-full min-h-[70vh]"
+              >
+                {/* Fallback: o PDF não está disponível no servidor (ex: arquivo salvo localmente) */}
+                <div className="flex flex-col items-center justify-center h-full min-h-[70vh] gap-4 p-8 text-center">
+                  <span className="text-5xl">📄</span>
+                  <p className="text-gray-600 dark:text-gray-400 font-medium">
+                    Pré-visualização não disponível
+                  </p>
+                  <p className="text-gray-500 dark:text-gray-500 text-sm max-w-sm">
+                    O PDF pode ter sido enviado em um ambiente diferente (arquivo local) ou ainda não foi enviado para esta conta.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <a
+                      href={`/api/producao/${pdfPreviewId}/arquivo/cnpj-pdf?download=1`}
+                      className="btn-secondary text-xs"
+                    >
+                      Tentar baixar direto
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setPdfPreviewId(null)}
+                      className="btn-secondary text-xs"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </object>
+            </div>
           </div>
         </div>
       )}
