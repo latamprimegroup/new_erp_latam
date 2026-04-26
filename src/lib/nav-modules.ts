@@ -183,6 +183,13 @@ export const MODULES_ERP: NavItem[] = [
 
   // ── Comercial ─────────────────────────────────────────────────────────────
   {
+    href: '/dashboard/admin/pix',
+    label: 'Gestão PIX',
+    roles: ['ADMIN', 'COMMERCIAL', 'FINANCE'],
+    icon: 'QrCode',
+    group: 'Comercial',
+  },
+  {
     href: '/dashboard/vendas',
     label: 'Vendas',
     roles: ['ADMIN', 'COMMERCIAL'],
