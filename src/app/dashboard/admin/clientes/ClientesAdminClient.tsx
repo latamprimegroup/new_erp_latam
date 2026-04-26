@@ -231,13 +231,18 @@ export function ClientesAdminClient() {
       if (statusFilter) params.set('status', statusFilter)
       if (tagFilter) params.set('tag', tagFilter)
       const res = await fetch(`/api/clientes?${params}`)
-      if (!res.ok) throw new Error('Erro ao carregar')
+      if (!res.ok) {
+        if (res.status === 401) throw new Error('Sessão expirada. Faça login novamente.')
+        if (res.status === 403) throw new Error('Seu perfil não tem permissão para visualizar clientes.')
+        throw new Error('Erro ao carregar')
+      }
       const data = await res.json()
       setClients(data.clients ?? [])
       setTotal(data.total)
       setPages(data.pages)
-    } catch {
-      showToast('error', 'Erro ao carregar clientes')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao carregar clientes'
+      showToast('error', message)
     } finally {
       setLoading(false)
     }

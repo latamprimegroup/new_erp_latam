@@ -259,7 +259,7 @@ export const MODULES_ERP: NavItem[] = [
   {
     href: '/dashboard/admin/clientes',
     label: 'Cadastro de Clientes (CRM)',
-    roles: ['ADMIN', 'COMMERCIAL', 'DELIVERER', 'FINANCE', 'PRODUCER', 'PRODUCTION_MANAGER'],
+    roles: ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER', 'FINANCE', 'PRODUCER', 'PRODUCTION_MANAGER'],
     icon: 'BookUser',
     group: 'Comercial',
   },

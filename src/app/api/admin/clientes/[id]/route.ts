@@ -59,7 +59,7 @@ export async function GET(
 ) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (!['ADMIN', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER'].includes(session.user?.role || '')) {
+  if (!['ADMIN', 'CEO', 'COMMERCIAL', 'FINANCE', 'DELIVERER', 'PRODUCER', 'PRODUCTION_MANAGER'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
@@ -105,7 +105,7 @@ export async function PATCH(
 ) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (!['ADMIN', 'COMMERCIAL'].includes(session.user?.role || '')) {
+  if (!['ADMIN', 'CEO', 'COMMERCIAL'].includes(session.user?.role || '')) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
@@ -126,8 +126,8 @@ export async function PATCH(
 
     // Validação de clientCode: somente ADMIN, sem duplicata
     if (data.clientCode !== undefined) {
-      if (session.user?.role !== 'ADMIN') {
-        return NextResponse.json({ error: 'Só ADMIN pode alterar o código do cliente' }, { status: 403 })
+      if (!['ADMIN', 'CEO'].includes(session.user?.role || '')) {
+        return NextResponse.json({ error: 'Só ADMIN/CEO pode alterar o código do cliente' }, { status: 403 })
       }
       if (data.clientCode) {
         const normalized = data.clientCode.toUpperCase()
