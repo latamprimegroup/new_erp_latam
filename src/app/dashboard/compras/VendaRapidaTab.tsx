@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode } from 'lucide-react'
+import { Clipboard, Copy, ExternalLink, MessageCircle, Plus, ToggleLeft, ToggleRight, Trash2, X, CheckCircle2, Clock, TrendingUp, QrCode, Zap } from 'lucide-react'
 import { QuickSaleSecurityPanel } from './QuickSaleSecurityPanel'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -302,6 +302,126 @@ export function VendaRapidaTab({
     isMaxQtyValid &&
     isStockQtyValid &&
     isGlobalGatewayValid
+
+  // Colar e Vender — parse de texto bruto do fornecedor
+  const [showColarVender, setShowColarVender] = useState(false)
+  const [colarTexto, setColarTexto] = useState('')
+  const [colarParsed, setColarParsed] = useState<{
+    displayName: string
+    productCode: string
+    salePrice: string
+    qty: string
+    category: string
+    notes: string
+  } | null>(null)
+  const [colarSaving, setColarSaving] = useState(false)
+  const [colarMsg, setColarMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  const parseColarTexto = (raw: string) => {
+    const text = raw.trim()
+    if (!text) return
+
+    // Extrai campos com regex permissivos
+    const idMatch      = text.match(/(?:ID|Código|Cod|Conta)[:\s]+([A-Z0-9\-]+)/i)
+    const gastoMatch   = text.match(/(?:Gasto|Spend|Gastos)[:\s]+([\d.,]+\s*[kKmM]?)/i)
+    const nichoMatch   = text.match(/(?:Nicho|Niche|Segmento)[:\s]+([^\n,|]+)/i)
+    const anoMatch     = text.match(/(?:Ano|Safra|Year)[:\s]+(\d{4})/i)
+    const pagMatch     = text.match(/(?:Pag(?:amento)?|Pay)[:\s]+(Manual|Auto|Automático)/i)
+    const precoMatch   = text.match(/(?:Preço|Preco|Price|Valor)[:\s]+R?\$?\s*([\d.,]+)/i)
+    const qtyMatch     = text.match(/(?:Qtd|Quantidade|Qty|Unidades?)[:\s]+(\d+)/i)
+
+    // Detecta plataforma pelo texto
+    let detectedCategory = category
+    if (/tiktok/i.test(text))    detectedCategory = 'TIKTOK_ADS'
+    else if (/meta|facebook|fb/i.test(text)) detectedCategory = 'META_ADS'
+    else if (/google/i.test(text)) detectedCategory = 'GOOGLE_ADS'
+    else if (/linkedin/i.test(text)) detectedCategory = 'LINKEDIN_ADS'
+    else if (/amazon/i.test(text)) detectedCategory = 'AMAZON_ADS'
+
+    // Formata gasto para nome
+    const gastoRaw = gastoMatch?.[1]?.trim() ?? ''
+    const nichoRaw = nichoMatch?.[1]?.trim() ?? ''
+    const anoRaw   = anoMatch?.[1]?.trim() ?? ''
+    const pagRaw   = pagMatch?.[1]?.trim() ?? ''
+    const idRaw    = idMatch?.[1]?.trim() ?? ''
+
+    const nameParts: string[] = []
+    const platform = detectedCategory.replace('_ADS', '')
+    nameParts.push(platform)
+    if (nichoRaw) nameParts.push(nichoRaw)
+    if (gastoRaw) nameParts.push(`Gasto ${gastoRaw}`)
+    if (anoRaw)   nameParts.push(`Safra ${anoRaw}`)
+    if (pagRaw)   nameParts.push(pagRaw)
+
+    const noteParts: string[] = []
+    if (idRaw)   noteParts.push(`ID original: ${idRaw}`)
+    if (anoRaw)  noteParts.push(`Safra: ${anoRaw}`)
+    if (pagRaw)  noteParts.push(`Pag: ${pagRaw}`)
+
+    const precoNum = precoMatch
+      ? Number(precoMatch[1].replace(',', '.'))
+      : 0
+
+    setColarParsed({
+      displayName:  nameParts.join(' · ') || text.slice(0, 80),
+      productCode:  idRaw || '',
+      salePrice:    precoNum > 0 ? String(precoNum) : '',
+      qty:          qtyMatch?.[1] ?? '1',
+      category:     detectedCategory,
+      notes:        noteParts.join(' | '),
+    })
+  }
+
+  const handleColarVender = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!colarParsed) return
+    setColarSaving(true)
+    setColarMsg(null)
+    try {
+      const res = await fetch('/api/admin/estoque-rapido', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category:    colarParsed.category,
+          displayName: colarParsed.displayName,
+          productCode: colarParsed.productCode || undefined,
+          salePrice:   Number(colarParsed.salePrice) || 150,
+          qty:         Number(colarParsed.qty) || 1,
+          notes:       colarParsed.notes || undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as {
+        ok?: boolean; qty?: number; message?: string; error?: string
+        assets?: Array<{ adsId: string; displayName: string }>
+      }
+      if (res.ok && data.ok) {
+        // Seleciona automaticamente o produto criado no autocomplete
+        const firstAsset = data.assets?.[0]
+        if (firstAsset) {
+          const sug: StockProductSuggestion = {
+            assetId: firstAsset.adsId,
+            adsId: firstAsset.adsId,
+            displayName: firstAsset.displayName,
+            category: colarParsed.category,
+            salePrice: Number(colarParsed.salePrice) || 150,
+            isAvailable: true,
+            availableInCategory: Number(colarParsed.qty) || 1,
+            availableForName: Number(colarParsed.qty) || 1,
+            totalInBaseForName: Number(colarParsed.qty) || 1,
+          }
+          applyStockSuggestion(sug)
+        }
+        setColarMsg({ type: 'ok', text: `✅ ${data.qty} unidade(s) adicionada(s) e produto selecionado! Continue para a próxima etapa.` })
+        setColarTexto('')
+        setColarParsed(null)
+        setShowColarVender(false)
+      } else {
+        setColarMsg({ type: 'err', text: data.error ?? 'Erro ao adicionar.' })
+      }
+    } finally {
+      setColarSaving(false)
+    }
+  }
 
   // Estoque Rápido
   const [showEstoqueRapido, setShowEstoqueRapido] = useState(false)
@@ -1256,6 +1376,138 @@ export function VendaRapidaTab({
                     Campo obrigatório: escolha um produto no autocomplete para continuar.
                   </p>
                 ) : null}
+
+                {/* ── Colar e Vender ─────────────────────────────────────────── */}
+                <div className="border-t border-zinc-800 pt-3 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShowColarVender(!showColarVender); setColarMsg(null); setColarParsed(null) }}
+                    className="flex items-center gap-2 text-xs font-semibold text-blue-400 hover:text-blue-300 transition"
+                  >
+                    <Clipboard className="w-3.5 h-3.5" />
+                    📋 Colar dados do fornecedor e vender na hora
+                  </button>
+
+                  {showColarVender && (
+                    <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 space-y-3">
+                      <p className="text-[11px] text-zinc-400">
+                        Cole qualquer texto do fornecedor — o sistema extrai nome, gasto, safra, ID e preço automaticamente.
+                      </p>
+                      <p className="text-[10px] text-zinc-600">
+                        Exemplo: <span className="text-zinc-400">ID: 863-498-6283 Gasto: 238k Nicho: Imobiliaria Ano: 2012 Pag: Manual Preço: 350</span>
+                      </p>
+                      <textarea
+                        className="input-dark text-xs w-full resize-none h-20 font-mono"
+                        placeholder="Cole aqui o texto do fornecedor ou as infos do produto..."
+                        value={colarTexto}
+                        onChange={(e) => {
+                          setColarTexto(e.target.value)
+                          setColarParsed(null)
+                          setColarMsg(null)
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!colarTexto.trim()}
+                        onClick={() => parseColarTexto(colarTexto)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-300 text-xs font-semibold hover:bg-blue-600/30 transition disabled:opacity-40"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        Analisar texto
+                      </button>
+
+                      {colarParsed && (
+                        <form onSubmit={handleColarVender} className="space-y-2 border-t border-zinc-700 pt-2">
+                          <p className="text-[11px] text-emerald-400 font-semibold">✅ Dados extraídos — revise e confirme:</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="col-span-2">
+                              <label className="block text-[11px] text-zinc-400 mb-1">Nome do produto</label>
+                              <input
+                                required
+                                className="input-dark text-xs w-full"
+                                value={colarParsed.displayName}
+                                onChange={(e) => setColarParsed({ ...colarParsed, displayName: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-zinc-400 mb-1">Preço de venda (R$)</label>
+                              <input
+                                required
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                className="input-dark text-xs w-full"
+                                placeholder="150.00"
+                                value={colarParsed.salePrice}
+                                onChange={(e) => setColarParsed({ ...colarParsed, salePrice: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-zinc-400 mb-1">Quantidade</label>
+                              <input
+                                required
+                                type="number"
+                                min="1"
+                                max="500"
+                                className="input-dark text-xs w-full"
+                                value={colarParsed.qty}
+                                onChange={(e) => setColarParsed({ ...colarParsed, qty: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-zinc-400 mb-1">Plataforma</label>
+                              <select
+                                className="input-dark text-xs w-full"
+                                value={colarParsed.category}
+                                onChange={(e) => setColarParsed({ ...colarParsed, category: e.target.value })}
+                              >
+                                {ASSET_CATEGORIES.map((c) => (
+                                  <option key={c} value={c}>{c.replace('_', ' ')}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-zinc-400 mb-1">Código/ID</label>
+                              <input
+                                className="input-dark text-xs w-full"
+                                placeholder="ID original"
+                                value={colarParsed.productCode}
+                                onChange={(e) => setColarParsed({ ...colarParsed, productCode: e.target.value })}
+                              />
+                            </div>
+                            {colarParsed.notes && (
+                              <div className="col-span-2">
+                                <label className="block text-[11px] text-zinc-400 mb-1">Notas extraídas</label>
+                                <input
+                                  className="input-dark text-xs w-full"
+                                  value={colarParsed.notes}
+                                  onChange={(e) => setColarParsed({ ...colarParsed, notes: e.target.value })}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          {colarMsg && (
+                            <p className={`text-[11px] rounded-lg px-2 py-1.5 ${
+                              colarMsg.type === 'ok'
+                                ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                                : 'bg-red-500/10 text-red-300 border border-red-500/20'
+                            }`}>
+                              {colarMsg.text}
+                            </p>
+                          )}
+                          <button
+                            type="submit"
+                            disabled={colarSaving || !colarParsed.salePrice}
+                            className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                            {colarSaving ? 'Salvando no banco...' : `Adicionar ${colarParsed.qty || 1} unidade(s) e continuar →`}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* ── Estoque Rápido ─────────────────────────────────────────── */}
                 <div className="border-t border-zinc-800 pt-3">
