@@ -1955,7 +1955,7 @@ export function VendaRapidaTab({
                       )}
                       <button
                         type="button"
-                        onClick={() => void handleEstoqueRapido()}}
+                        onClick={() => void handleEstoqueRapido()}
                         disabled={estoqueRapidoSaving}
                         className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition disabled:opacity-50"
                       >
