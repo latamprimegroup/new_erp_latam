@@ -26,20 +26,42 @@ const schema = z.object({
   notes:         z.string().max(500).optional(),
 })
 
-// Mapa categoria → ID do vendor padrão "interno"
-const CATEGORY_TO_VENDOR_NAME: Record<string, string> = {
-  GOOGLE_ADS:    'Google Ads',
-  META_ADS:      'Meta Ads',
-  TIKTOK_ADS:    'TikTok Ads',
-  AMAZON_ADS:    'Amazon Ads',
-  LINKEDIN_ADS:  'LinkedIn Ads',
-  PINTEREST_ADS: 'Pinterest Ads',
-  SNAPCHAT_ADS:  'Snapchat Ads',
-  OTHER:         'Genérico',
+// Mapa das categorias do listing (ProductListing.assetCategory) para AssetCategory do banco
+// ProductListing usa strings livres; Asset usa enum AssetCategory
+const LISTING_CATEGORY_TO_ASSET_CATEGORY: Record<string, string> = {
+  GOOGLE_ADS:    'CONTAS',
+  META_ADS:      'CONTAS',
+  TIKTOK_ADS:    'CONTAS',
+  AMAZON_ADS:    'CONTAS',
+  LINKEDIN_ADS:  'CONTAS',
+  PINTEREST_ADS: 'CONTAS',
+  SNAPCHAT_ADS:  'CONTAS',
+  // Categorias do enum Asset (passadas diretamente)
+  CONTAS:        'CONTAS',
+  PERFIS:        'PERFIS',
+  BM:            'BM',
+  PROXIES:       'PROXIES',
+  SOFTWARE:      'SOFTWARE',
+  INFRA:         'INFRA',
+  HARDWARE:      'HARDWARE',
+  OTHER:         'OUTROS',
+  OUTROS:        'OUTROS',
 }
 
-async function getOrCreateInternalVendor(category: string) {
-  const vendorName = CATEGORY_TO_VENDOR_NAME[category] ?? 'Interno'
+// Mapa categoria → nome do vendor interno
+const CATEGORY_TO_VENDOR_NAME: Record<string, string> = {
+  CONTAS:   'Contas Internas',
+  PERFIS:   'Perfis Internos',
+  BM:       'Business Managers',
+  PROXIES:  'Proxies',
+  SOFTWARE: 'Software',
+  INFRA:    'Infraestrutura',
+  HARDWARE: 'Hardware',
+  OUTROS:   'Genérico',
+}
+
+async function getOrCreateInternalVendor(assetCategory: string) {
+  const vendorName = CATEGORY_TO_VENDOR_NAME[assetCategory] ?? 'Interno'
   const existing = await prisma.vendor.findFirst({
     where: { name: vendorName },
     select: { id: true },
@@ -57,9 +79,12 @@ async function getOrCreateInternalVendor(category: string) {
   return created.id
 }
 
-function buildAdsId(category: string, seq: number) {
-  const catCode = category.replace('_ADS', '').slice(0, 4).toUpperCase()
-  return `AA-${catCode}-${String(seq).padStart(6, '0')}`
+function buildAdsId(assetCategory: string, rawCategory: string, seq: number) {
+  // Usa a categoria original do listing para um código mais legível (ex: GOOG, META, PERF)
+  const label = rawCategory !== assetCategory
+    ? rawCategory.replace('_ADS', '').slice(0, 4)
+    : assetCategory.slice(0, 4)
+  return `AA-${label.toUpperCase()}-${String(seq).padStart(6, '0')}`
 }
 
 export async function POST(req: NextRequest) {
@@ -76,35 +101,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Dados inválidos.', details: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { category, displayName, productCode, salePrice, qty, notes } = parsed.data
+  const { category: rawCategory, displayName, productCode, salePrice, qty, notes } = parsed.data
 
-  const vendorId = await getOrCreateInternalVendor(category)
+  // Converte categoria do listing para AssetCategory do banco
+  const assetCategory = LISTING_CATEGORY_TO_ASSET_CATEGORY[rawCategory] ?? 'CONTAS'
+
+  const vendorId = await getOrCreateInternalVendor(assetCategory)
 
   // Conta quantos já existem para sequenciar IDs
   const existingCount = await prisma.asset.count({
-    where: { category: category as never },
+    where: { category: assetCategory as never },
   })
 
   const assets: Array<{ adsId: string; displayName: string }> = []
 
   for (let i = 0; i < qty; i++) {
     const seq    = existingCount + i + 1
-    const adsId  = productCode && qty === 1 ? productCode : buildAdsId(category, seq)
+    const adsId  = productCode && qty === 1 ? productCode : buildAdsId(assetCategory, rawCategory, seq)
 
     const created = await prisma.asset.create({
       data: {
         adsId,
-        category:    category as never,
+        category:    assetCategory as never,
         displayName,
         status:      'AVAILABLE',
         vendorId,
-        costPrice:   salePrice * 0.6,  // custo estimado 60% do preço de venda
+        costPrice:   salePrice * 0.6,
         salePrice,
         specs: {
           productCode:  productCode ?? adsId,
           productName:  displayName,
           notes:        notes ?? null,
           addedVia:     'estoque-rapido',
+          listingCategory: rawCategory,
           addedBy:      auth.session.user.name ?? auth.session.user.id,
         },
         tags: 'estoque-rapido',
@@ -122,7 +151,8 @@ export async function POST(req: NextRequest) {
       entityId: assets[0]?.adsId ?? '',
       userId: auth.session.user.id,
       details: {
-        category,
+        listingCategory: rawCategory,
+        assetCategory,
         displayName,
         qty,
         salePrice,
