@@ -19,7 +19,7 @@
 
 import fs   from 'fs'
 import path from 'path'
-import { Agent } from 'undici'
+import { Agent, fetch as undiciFetch } from 'undici'
 
 const BASE_URL  = 'https://cdpj.partners.bancointer.com.br'
 const TOKEN_URL = 'https://cdpj.partners.bancointer.com.br/oauth/v2/token'
@@ -140,12 +140,10 @@ export async function getInterToken(): Promise<string> {
 
   const agent = createMtlsAgent()
 
-  const res = await fetch(TOKEN_URL, {
+  const res = await undiciFetch(TOKEN_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body:    body.toString(),
-    // undici dispatcher (mTLS)
-    // @ts-expect-error — undici dispatcher não está no tipo fetch global do TS
     dispatcher: agent,
   })
 
@@ -246,7 +244,7 @@ export async function createImmediateCharge(params: {
   }
 
   // PUT /pix/v2/cob/{txid}
-  const cobRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
+  const cobRes = await undiciFetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
     method:  'PUT',
     headers: {
       Authorization:   `Bearer ${token}`,
@@ -254,7 +252,6 @@ export async function createImmediateCharge(params: {
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
     body:    JSON.stringify(payload),
-    // @ts-expect-error — undici dispatcher
     dispatcher: agent,
   })
 
@@ -268,12 +265,11 @@ export async function createImmediateCharge(params: {
 
   // GET /pix/v2/cob/{txid}/qrcode
   let qrCodeBase64 = ''
-  const qrRes = await fetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
+  const qrRes = await undiciFetch(`${BASE_URL}/pix/v2/cob/${txid}/qrcode`, {
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
-    // @ts-expect-error — undici dispatcher
     dispatcher: agent,
   })
 
@@ -303,12 +299,11 @@ export async function getPixChargeStatus(txid: string): Promise<PixChargeRespons
   const token = await getInterToken()
   const agent = createMtlsAgent()
 
-  const res = await fetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
+  const res = await undiciFetch(`${BASE_URL}/pix/v2/cob/${txid}`, {
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
-    // @ts-expect-error
     dispatcher: agent,
   })
 
@@ -333,7 +328,7 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
 
   if (!chavePix) throw new InterApiError(0, 'INTER_PIX_KEY não configurada', 'registerWebhook')
 
-  const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+  const res = await undiciFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     method:  'PUT',
     headers: {
       Authorization:      `Bearer ${token}`,
@@ -341,7 +336,6 @@ export async function registerInterWebhook(callbackUrl: string): Promise<{ ok: b
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
     body: JSON.stringify({ webhookUrl: callbackUrl }),
-    // @ts-expect-error
     dispatcher: agent,
   })
 
@@ -362,12 +356,11 @@ export async function getRegisteredWebhook(): Promise<{ webhookUrl: string; cria
   const agent    = createMtlsAgent()
   const chavePix = process.env.INTER_PIX_KEY ?? ''
 
-  const res = await fetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
+  const res = await undiciFetch(`${BASE_URL}/pix/v2/webhook/${encodeURIComponent(chavePix)}`, {
     headers: {
       Authorization:      `Bearer ${token}`,
       'x-conta-corrente': process.env.INTER_ACCOUNT_NUMBER ?? '',
     },
-    // @ts-expect-error
     dispatcher: agent,
   })
 
