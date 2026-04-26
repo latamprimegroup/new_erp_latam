@@ -81,10 +81,16 @@ function firstEnvValue(...keys: string[]) {
 
 function normalizePem(raw: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
   const trimmed = raw.trim()
-  // Já é PEM completo (com ou sem \n escapados)
-  if (trimmed.startsWith('-----')) return trimmed.replace(/\\n/g, '\n')
-  // Assume base64 puro — reconstrói PEM
-  const body  = trimmed.replace(/\s/g, '')
+
+  // Caso 1: PEM completo com \n literais (Vercel escapa ao salvar)
+  if (trimmed.startsWith('-----')) {
+    return trimmed
+      .replace(/\\n/g, '\n')   // \n literal → quebra real
+      .replace(/\\r/g, '')     // \r literal → remove
+  }
+
+  // Caso 2: Base64 puro (sem headers) — reconstrói PEM com quebras a cada 64 chars
+  const body  = trimmed.replace(/[\s\r\n]/g, '')
   const lines = body.match(/.{1,64}/g)?.join('\n') ?? body
   return `-----BEGIN ${type}-----\n${lines}\n-----END ${type}-----`
 }
