@@ -240,9 +240,15 @@ function buildAssetWhere(listing: {
     )
   }
   if (orClauses.length === 0) {
+    const CATEGORY_MAP: Record<string, string> = {
+      GOOGLE_ADS: 'CONTAS', META_ADS: 'CONTAS', TIKTOK_ADS: 'CONTAS',
+      AMAZON_ADS: 'CONTAS', LINKEDIN_ADS: 'CONTAS', PINTEREST_ADS: 'CONTAS',
+      SNAPCHAT_ADS: 'CONTAS', OTHER: 'OUTROS',
+    }
+    const assetCategory = CATEGORY_MAP[listing.assetCategory] ?? listing.assetCategory
     return {
       ...base,
-      category: listing.assetCategory as never,
+      category: assetCategory as never,
     }
   }
   return {
@@ -287,18 +293,32 @@ function buildAssetReserveWhere(listing: {
     }
   }
 
-  // Sem vínculo: filtra só por categoria
+  // Sem vínculo: filtra por categoria — com mapeamento para enum correto
+  // ProductListing usa GOOGLE_ADS, META_ADS etc; Asset usa CONTAS, PERFIS etc
+  const CATEGORY_MAP: Record<string, string> = {
+    GOOGLE_ADS: 'CONTAS', META_ADS: 'CONTAS', TIKTOK_ADS: 'CONTAS',
+    AMAZON_ADS: 'CONTAS', LINKEDIN_ADS: 'CONTAS', PINTEREST_ADS: 'CONTAS',
+    SNAPCHAT_ADS: 'CONTAS', OTHER: 'OUTROS',
+  }
+  const assetCategory = CATEGORY_MAP[listing.assetCategory] ?? listing.assetCategory
   return {
     status: 'AVAILABLE' as const,
-    category: listing.assetCategory as never,
+    category: assetCategory as never,
   }
+}
+
+const LISTING_TO_ASSET_CATEGORY: Record<string, string> = {
+  GOOGLE_ADS: 'CONTAS', META_ADS: 'CONTAS', TIKTOK_ADS: 'CONTAS',
+  AMAZON_ADS: 'CONTAS', LINKEDIN_ADS: 'CONTAS', PINTEREST_ADS: 'CONTAS',
+  SNAPCHAT_ADS: 'CONTAS', OTHER: 'OUTROS',
 }
 
 async function countAvailableAssetsWithFallback(listing: {
   assetCategory: string
 }) {
+  const mappedCategory = LISTING_TO_ASSET_CATEGORY[listing.assetCategory] ?? listing.assetCategory
   const byCategory = {
-    category: listing.assetCategory as never,
+    category: mappedCategory as never,
     status: 'AVAILABLE' as const,
   }
 
