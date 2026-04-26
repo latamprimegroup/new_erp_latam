@@ -1,0 +1,70 @@
+# Deploy forçado para produção — ignora build cache da Vercel
+#
+# Use quando:
+#   - Código novo não está refletindo no domínio www
+#   - Suspeita de cache fantasma no CDN da Vercel
+#   - Após migrações de banco ou mudanças de variáveis de ambiente
+#
+# Como disparar manualmente:
+#   GitHub → Actions → "Force Deploy to Production" → Run workflow
+#
+# Ou via CLI:
+#   gh workflow run deploy-force.yml --ref main
+
+name: Force Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Motivo do deploy forçado'
+        required: false
+        default: 'Cache bust / sincronização forçada'
+
+jobs:
+  force-deploy:
+    name: Hard Reset Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gerar cliente Prisma
+        run: npx prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'mysql://ci:ci@localhost:3306/ci' }}
+
+      - name: Instalar Vercel CLI
+        run: npm install -g vercel@latest
+
+      # --force: reconstrói completamente ignorando build cache remoto
+      # Equivalente ao botão "Redeploy without cache" no dashboard da Vercel
+      - name: Deploy com --force (sem cache)
+        run: |
+          echo "🚀 Iniciando deploy forçado para produção..."
+          echo "Motivo: ${{ github.event.inputs.reason }}"
+          vercel --prod --force --yes \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+
+      - name: Verificar versão em produção
+        run: |
+          echo "⏳ Aguardando propagação (30s)..."
+          sleep 30
+          echo "🔍 Verificando versão em produção..."
+          curl -sf https://www.adsativos.com/api/version | jq . || echo "Versão ainda propagando..."
