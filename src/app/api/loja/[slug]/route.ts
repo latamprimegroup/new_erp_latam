@@ -889,8 +889,6 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
             fbclid:           fbclid       ?? null,
             gclid:            gclid        ?? null,
             referrer:         referrer     ?? null,
-            couponCode:       appliedCouponCode,
-            couponDiscount:   couponDiscount > 0 ? couponDiscount : null,
           })
           await attachQuickSaleOrderNumber(tx, createdCheckout.id, reservedOrder.orderNumber)
 
