@@ -107,11 +107,14 @@ export function ShellEnterprise({
             const activeHref = getActiveNavHref(pathname, modules)
             return modules.map((m) => {
               const isActive = m.href === activeHref
+              const badge = navBadgeForHref(m.href)
+              const label = m.labelKey ? t(m.labelKey) : m.label
               return (
               <Link
                 key={m.href}
                 href={m.href}
                 onClick={() => setMobileOpen(false)}
+                title={sidebarCollapsed && badge ? `${label} · ${badge.text}` : undefined}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-primary-100 dark:bg-primary-500 text-primary-700 dark:text-white shadow-lg dark:shadow-lg'
@@ -122,20 +125,20 @@ export function ShellEnterprise({
                   const Icon = getNavIcon(m.icon)
                   return <Icon className="w-4 h-4 shrink-0" />
                 })()}
-                {!sidebarCollapsed && (
+                {!sidebarCollapsed ? (
                   <span className="truncate flex items-center gap-2">
-                    <span className="truncate">{m.labelKey ? t(m.labelKey) : m.label}</span>
-                    {(() => {
-                      const badge = navBadgeForHref(m.href)
-                      if (!badge) return null
-                      return (
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.className}`}>
-                          {badge.text}
-                        </span>
-                      )
-                    })()}
+                    <span className="truncate">{label}</span>
+                    {badge ? (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.className}`}>
+                        {badge.text}
+                      </span>
+                    ) : null}
                   </span>
-                )}
+                ) : badge ? (
+                  <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.className}`}>
+                    {badge.text}
+                  </span>
+                ) : null}
               </Link>
             )
             })
