@@ -833,25 +833,56 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       update: {},
     })
 
+    // PRÉ-SELEÇÃO fora da transaction: usa query complexa (JSON path + OR)
+    // antes de entrar no lock de Serializable para evitar erros de MySQL
+    let preCandidateIds: string[] = []
+    try {
+      const reserveWhere = buildAssetReserveWhere(listing)
+      const preCandidates = await prisma.asset.findMany({
+        where:   reserveWhere,
+        select:  { id: true },
+        take:    qty * 3, // busca 3x para compensar possível race condition
+        orderBy: { createdAt: 'asc' },
+      })
+      preCandidateIds = preCandidates.map((a) => a.id)
+    } catch (queryErr) {
+      const qMsg = String((queryErr as Error).message ?? queryErr)
+      console.error('[Loja pré-seleção] findMany falhou:', qMsg)
+      // Fallback: busca simples por categoria
+      try {
+        const assetCat = mapToAssetCategory(listing.assetCategory)
+        const fallback = await prisma.asset.findMany({
+          where:   { status: 'AVAILABLE', category: assetCat as never },
+          select:  { id: true },
+          take:    qty * 3,
+          orderBy: { createdAt: 'asc' },
+        })
+        preCandidateIds = fallback.map((a) => a.id)
+      } catch (fallbackErr) {
+        console.error('[Loja pré-seleção fallback] falhou:', fallbackErr)
+      }
+    }
+
+    if (preCandidateIds.length < qty) {
+      return NextResponse.json({
+        error: `Estoque insuficiente. Disponível: ${preCandidateIds.length} unidade(s).`,
+        code: 'STOCK_INSUFFICIENT',
+        available: preCandidateIds.length,
+      }, { status: 409 })
+    }
+
     let txResult: { checkout: Awaited<ReturnType<typeof prisma.quickSaleCheckout.create>>; orderNumber: string } | null = null
     for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt += 1) {
       try {
         txResult = await prisma.$transaction(async (tx) => {
-          // Sanitiza o where e executa com tratamento de erro explícito
-          const reserveWhere = buildAssetReserveWhere(listing)
-          let candidates: { id: string }[] = []
-          try {
-            candidates = await tx.asset.findMany({
-              where:   reserveWhere,
-              select:  { id: true },
-              take:    qty,
-              orderBy: { createdAt: 'asc' },
-            })
-          } catch (queryErr) {
-            const qMsg = String((queryErr as Error).message ?? queryErr)
-            console.error('[Loja $tx] findMany falhou:', qMsg, '| where:', JSON.stringify(reserveWhere))
-            throw new Error(`QUERY_ERROR:${qMsg.slice(0, 100)}`)
-          }
+          // Dentro da transaction: query SIMPLES usando apenas IDs pré-selecionados
+          // Evita JSON path e OR complexo dentro de locking reads (Serializable)
+          const candidates = await tx.asset.findMany({
+            where:   { id: { in: preCandidateIds }, status: 'AVAILABLE' },
+            select:  { id: true },
+            take:    qty,
+            orderBy: { createdAt: 'asc' },
+          })
 
           if (candidates.length < qty) {
             throw new Error(`STOCK_INSUFFICIENT:${candidates.length}`)
