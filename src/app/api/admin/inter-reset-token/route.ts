@@ -27,16 +27,13 @@ export async function POST() {
     const token = await getInterToken()
 
     // Força domínio de produção — nunca usa .vercel.app
-    const PRODUCTION_URL = 'https://www.adsativos.com'
-    const webhookUrl = `${PRODUCTION_URL}/api/webhooks/inter/pix`
-    let webhookMsg = 'Webhook não registrado (URL base não configurada)'
-    if (appBase) {
-      try {
-        const wh = await registerInterWebhook(webhookUrl)
-        webhookMsg = wh.message
-      } catch (we) {
-        webhookMsg = `Webhook falhou: ${String((we as Error).message).slice(0, 100)}`
-      }
+    const webhookUrl = 'https://www.adsativos.com/api/webhooks/inter/pix'
+    let webhookMsg = 'Webhook não registrado'
+    try {
+      const wh = await registerInterWebhook(webhookUrl)
+      webhookMsg = wh.message
+    } catch (we) {
+      webhookMsg = `Webhook falhou: ${String((we as Error).message).slice(0, 100)}`
     }
 
     return NextResponse.json({
