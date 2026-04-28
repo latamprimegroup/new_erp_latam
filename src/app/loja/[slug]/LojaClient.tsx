@@ -479,6 +479,10 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: P
     setErrorMsg('')
     setPaymentCheckHint('')
 
+    // Timeout de 35s no frontend — se o Inter não responder, exibe erro amigável
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), 35_000)
+
     const waClean = input.phone.replace(/\D/g, '')
     const waE164 = `+55${waClean}`
     const docClean = input.doc.replace(/\D/g, '')
@@ -497,18 +501,34 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: P
     if (input.docType === 'cnpj') body.cnpj = docClean
     else body.cpf = docClean
 
-    const res = await fetch(`/api/loja/${slug}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json()
+    let res: Response
+    let data: unknown
+    try {
+      res = await fetch(`/api/loja/${slug}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: abortController.signal,
+      })
+      data = await res.json()
+    } catch (fetchErr) {
+      clearTimeout(timeoutId)
+      if (fromRetry) setRetryingCheckout(false)
+      else setSubmitting(false)
+      const isTimeout = String(fetchErr).includes('abort') || String(fetchErr).includes('AbortError')
+      setErrorMsg(isTimeout
+        ? 'Tempo esgotado ao conectar no banco. Tente novamente.'
+        : 'Falha de conexão. Verifique sua internet e tente novamente.'
+      )
+      setStep('error')
+      return
+    }
+    clearTimeout(timeoutId)
     if (fromRetry) setRetryingCheckout(false)
     else setSubmitting(false)
 
     if (!res.ok) {
       const d = data as { error?: string; code?: string }
-      // Mostra código de erro técnico para diagnóstico em produção
       const codeMsg = d.code ? ` [${d.code}]` : ''
       setErrorMsg((d.error ?? 'Falha ao gerar PIX.') + codeMsg)
       setStep('error')
