@@ -78,9 +78,15 @@ export async function GET() {
     {
       id: 'banco-inter',
       nome: 'Banco Inter',
-      descricao: 'PIX e pagamentos',
-      conectado: !!(process.env.BANCO_INTER_CLIENT_ID && process.env.BANCO_INTER_CLIENT_SECRET),
-      envVars: ['BANCO_INTER_CLIENT_ID', 'BANCO_INTER_CLIENT_SECRET'],
+      descricao: 'PIX e pagamentos (mTLS + OAuth2)',
+      conectado: !!(
+        (process.env.INTER_CLIENT_ID || process.env.BANCO_INTER_CLIENT_ID) &&
+        (process.env.INTER_CLIENT_SECRET || process.env.BANCO_INTER_CLIENT_SECRET) &&
+        (process.env.INTER_CERT_CRT || process.env.INTER_CERT_BASE64 || process.env.BANCO_INTER_CERT_BASE64) &&
+        (process.env.INTER_CERT_KEY || process.env.INTER_KEY_BASE64 || process.env.BANCO_INTER_KEY_BASE64)
+      ),
+      envVars: ['INTER_CLIENT_ID', 'INTER_CLIENT_SECRET', 'INTER_CERT_CRT', 'INTER_CERT_KEY', 'INTER_PIX_KEY', 'INTER_ACCOUNT_NUMBER'],
+      dashboardHref: '/dashboard/admin/inter-health',
     },
     {
       id: 'gtm',

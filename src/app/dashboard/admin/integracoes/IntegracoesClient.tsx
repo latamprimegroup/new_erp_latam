@@ -79,7 +79,11 @@ export function IntegracoesClient() {
                   href={i.dashboardHref}
                   className="inline-block mt-3 text-sm text-primary-600 hover:underline font-medium"
                 >
-                  → Abrir {i.dashboardHref === '/dashboard/roi-crm' ? 'Dashboard ROI & CRM' : 'módulo'}
+                  → {
+                    i.dashboardHref === '/dashboard/roi-crm' ? 'Dashboard ROI & CRM' :
+                    i.dashboardHref === '/dashboard/admin/inter-health' ? 'Saúde da API Inter' :
+                    'Abrir módulo'
+                  }
                 </Link>
               )}
             </div>
