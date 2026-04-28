@@ -64,6 +64,7 @@ interface GeneratedPix {
   qty:          number
   title:        string
   resumeUrl:    string
+  orderNumber:  string | null  // ID do pedido gerado atomicamente (VR-000001)
 }
 
 type VendaRapidaTabProps = {
@@ -1079,19 +1080,21 @@ export function VendaRapidaTab({
       setPixError('WhatsApp do comprador indisponível para envio.')
       return
     }
+    const orderId = pixResult.orderNumber ?? pixResult.checkoutId
     const message = [
-      '🚀 PIX gerado na Ads Ativos',
+      `Segue ordem de pedido de compra aberta, *ADS ATIVOS #${orderId}*.`,
       '',
-      `Produto: ${pixResult.title}`,
-      `Quantidade: ${pixResult.qty}`,
-      `Valor: R$ ${pixResult.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      `Produto: *${pixResult.title}*`,
+      `Quantidade: ${pixResult.qty} unidade(s)`,
+      `Valor: *R$ ${pixResult.totalAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}*`,
       '',
-      'PIX copia e cola:',
+      `Segue seu link seguro para pagamento:`,
+      pixResult.resumeUrl,
+      '',
+      `Pague dentro de *20 minutos* no máximo, caso contrário o link expira!`,
+      '',
+      `📋 PIX Copia e Cola:`,
       pixResult.pixCopyPaste,
-      '',
-      `Checkout + Entrega: ${pixResult.resumeUrl}`,
-      '',
-      'Após o pagamento, o cliente deve preencher a tela de entrega com e-mail AdsPower e confirmar perfil liberado.',
     ].join('\n')
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
@@ -1514,9 +1517,16 @@ export function VendaRapidaTab({
 
         {pixResult ? (
           <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-semibold text-emerald-300">PIX gerado com sucesso</p>
-              <span className="text-xs text-zinc-400">TXID: {pixResult.txid.slice(0, 12)}...</span>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <p className="font-semibold text-emerald-300">PIX gerado com sucesso</p>
+                {pixResult.orderNumber && (
+                  <p className="text-xs font-bold text-white mt-0.5">
+                    Pedido <span className="text-emerald-400">{pixResult.orderNumber}</span>
+                  </p>
+                )}
+              </div>
+              <span className="text-xs text-zinc-500">TXID: {pixResult.txid.slice(0, 12)}...</span>
             </div>
 
             <div className="grid md:grid-cols-[160px_1fr] gap-3 items-start">

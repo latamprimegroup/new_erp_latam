@@ -257,6 +257,27 @@ function buildAssetWhere(listing: {
   }
 }
 
+// Mapeamento canônico: categoria do ProductListing → enum AssetCategory do banco
+// ProductListing.assetCategory é String livre; Asset.category é enum AssetCategory
+const LISTING_CATEGORY_TO_ENUM: Record<string, string> = {
+  GOOGLE_ADS:   'CONTAS',
+  META_ADS:     'CONTAS',
+  TIKTOK_ADS:   'CONTAS',
+  AMAZON_ADS:   'CONTAS',
+  LINKEDIN_ADS: 'CONTAS',
+  PINTEREST_ADS:'CONTAS',
+  SNAPCHAT_ADS: 'CONTAS',
+  OTHER:        'OUTROS',
+  // Passthrough para categorias já no formato do enum
+  CONTAS: 'CONTAS', PERFIS: 'PERFIS', BM: 'BM',
+  PROXIES: 'PROXIES', SOFTWARE: 'SOFTWARE', INFRA: 'INFRA',
+  HARDWARE: 'HARDWARE', OUTROS: 'OUTROS',
+}
+
+function mapToAssetCategory(listingCategory: string): string {
+  return LISTING_CATEGORY_TO_ENUM[listingCategory] ?? 'CONTAS'
+}
+
 function buildAssetReserveWhere(listing: {
   assetCategory: string
   stockProductCode: string | null
@@ -265,58 +286,38 @@ function buildAssetReserveWhere(listing: {
   const code = normalizeStockCode(listing.stockProductCode)
   const name = normalizeStockName(listing.stockProductName)
 
-  const orClauses: Array<Record<string, unknown>> = []
-  if (code) {
-    orClauses.push(
-      { adsId: code },
-      { specs: { path: '$.productCode', equals: code } },
-      { specs: { path: '$.codigoProduto', equals: code } },
-    )
-  }
-  if (name) {
-    orClauses.push(
-      { displayName: { equals: name, mode: 'insensitive' as const } },
-      { subCategory: { equals: name, mode: 'insensitive' as const } },
-      { specs: { path: '$.productName', equals: name } },
-      { specs: { path: '$.nomeProduto', equals: name } },
-      // Estoque rápido salva a categoria original do listing em specs.listingCategory
-      { specs: { path: '$.listingCategory', equals: listing.assetCategory } },
-    )
-  }
-
-  // Com código ou nome: busca por match sem filtro de categoria
-  // (estoque rápido converte GOOGLE_ADS → CONTAS, mas vincula pelo nome/código)
-  if (orClauses.length > 0) {
-    return {
-      status: 'AVAILABLE' as const,
-      OR: orClauses,
+  // Quando há código ou nome, buscamos SEM filtro de categoria para
+  // suportar o estoque rápido (que converte GOOGLE_ADS → CONTAS no banco).
+  if (code || name) {
+    const orClauses: Array<Record<string, unknown>> = []
+    if (code) {
+      orClauses.push(
+        { adsId: code },
+        { specs: { path: '$.productCode',   equals: code } },
+        { specs: { path: '$.codigoProduto', equals: code } },
+      )
     }
+    if (name) {
+      orClauses.push(
+        { displayName: { equals: name, mode: 'insensitive' as const } },
+        { subCategory:  { equals: name, mode: 'insensitive' as const } },
+        { specs: { path: '$.productName',      equals: name } },
+        { specs: { path: '$.nomeProduto',      equals: name } },
+        { specs: { path: '$.listingCategory',  equals: listing.assetCategory } },
+      )
+    }
+    return { status: 'AVAILABLE' as const, OR: orClauses }
   }
 
-  // Sem vínculo: filtra por categoria — com mapeamento para enum correto
-  // ProductListing usa GOOGLE_ADS, META_ADS etc; Asset usa CONTAS, PERFIS etc
-  const CATEGORY_MAP: Record<string, string> = {
-    GOOGLE_ADS: 'CONTAS', META_ADS: 'CONTAS', TIKTOK_ADS: 'CONTAS',
-    AMAZON_ADS: 'CONTAS', LINKEDIN_ADS: 'CONTAS', PINTEREST_ADS: 'CONTAS',
-    SNAPCHAT_ADS: 'CONTAS', OTHER: 'OUTROS',
-  }
-  const assetCategory = CATEGORY_MAP[listing.assetCategory] ?? listing.assetCategory
-  return {
-    status: 'AVAILABLE' as const,
-    category: assetCategory as never,
-  }
-}
-
-const LISTING_TO_ASSET_CATEGORY: Record<string, string> = {
-  GOOGLE_ADS: 'CONTAS', META_ADS: 'CONTAS', TIKTOK_ADS: 'CONTAS',
-  AMAZON_ADS: 'CONTAS', LINKEDIN_ADS: 'CONTAS', PINTEREST_ADS: 'CONTAS',
-  SNAPCHAT_ADS: 'CONTAS', OTHER: 'OUTROS',
+  // Sem vínculo explícito: filtra pelo enum correto da categoria
+  const assetCategory = mapToAssetCategory(listing.assetCategory)
+  return { status: 'AVAILABLE' as const, category: assetCategory as never }
 }
 
 async function countAvailableAssetsWithFallback(listing: {
   assetCategory: string
 }) {
-  const mappedCategory = LISTING_TO_ASSET_CATEGORY[listing.assetCategory] ?? listing.assetCategory
+  const mappedCategory = mapToAssetCategory(listing.assetCategory)
   const byCategory = {
     category: mappedCategory as never,
     status: 'AVAILABLE' as const,
@@ -820,13 +821,14 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     }, { status: 502 })
   }
 
-  // 2. Reserva ativos de forma ATÔMICA dentro da transação
-  //    updateMany retorna { count } — se count < qty, outra requisição chegou primeiro
+  // 2. RESERVA ATÔMICA — Asset + Checkout em uma única $transaction
+  //    Nenhum registro é criado se qualquer etapa falhar (rollback automático).
   let checkout: Awaited<ReturnType<typeof prisma.quickSaleCheckout.create>>
   let generatedOrderNumber: string | null = null
   try {
+    // Garante que a sequência de pedidos existe antes da transação
     await prisma.systemSetting.upsert({
-      where: { key: QUICK_SALE_ORDER_SEQUENCE_KEY },
+      where:  { key: QUICK_SALE_ORDER_SEQUENCE_KEY },
       create: { key: QUICK_SALE_ORDER_SEQUENCE_KEY, value: '0' },
       update: {},
     })
@@ -835,13 +837,21 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt += 1) {
       try {
         txResult = await prisma.$transaction(async (tx) => {
-      // Seleciona IDs dentro da transação para evitar leitura suja
-          const candidates = await tx.asset.findMany({
-            where:   buildAssetReserveWhere(listing),
-            select:  { id: true },
-            take:    qty,
-            orderBy: { createdAt: 'asc' },
-          })
+          // Sanitiza o where e executa com tratamento de erro explícito
+          const reserveWhere = buildAssetReserveWhere(listing)
+          let candidates: { id: string }[] = []
+          try {
+            candidates = await tx.asset.findMany({
+              where:   reserveWhere,
+              select:  { id: true },
+              take:    qty,
+              orderBy: { createdAt: 'asc' },
+            })
+          } catch (queryErr) {
+            const qMsg = String((queryErr as Error).message ?? queryErr)
+            console.error('[Loja $tx] findMany falhou:', qMsg, '| where:', JSON.stringify(reserveWhere))
+            throw new Error(`QUERY_ERROR:${qMsg.slice(0, 100)}`)
+          }
 
           if (candidates.length < qty) {
             throw new Error(`STOCK_INSUFFICIENT:${candidates.length}`)
@@ -849,13 +859,12 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
 
           const assetIds = candidates.map((a) => a.id)
 
-          // Reserva atômica: só afeta registros que AINDA estão AVAILABLE
+          // Reserva atômica — só afeta registros que AINDA estão AVAILABLE
           const { count } = await tx.asset.updateMany({
             where: { id: { in: assetIds }, status: 'AVAILABLE' },
             data:  { status: 'QUARANTINE' },
           })
 
-          // Se count < qty, outro processo tomou alguns antes de nós
           if (count < qty) {
             throw new Error(`STOCK_RACE:${count}`)
           }
@@ -914,16 +923,36 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
     checkout = txResult.checkout
     generatedOrderNumber = txResult.orderNumber
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.startsWith('STOCK_INSUFFICIENT') || msg.startsWith('STOCK_RACE')) {
+    const msg = err instanceof Error ? err.message : String(err ?? '')
+    console.error('[Loja reserva]', msg)
+
+    if (msg.startsWith('STOCK_INSUFFICIENT')) {
       const avail = msg.split(':')[1] ?? '0'
       return NextResponse.json({
-        error: `Estoque insuficiente. Disponível: ${avail} unidade(s). Reduza a quantidade ou tente novamente.`,
+        error: `Estoque insuficiente. Disponível: ${avail} unidade(s). Reduza a quantidade ou tente outro momento.`,
+        code: 'STOCK_INSUFFICIENT',
+        available: Number(avail),
       }, { status: 409 })
     }
-    const errMsg = err instanceof Error ? err.message : String(err)
-    console.error('[Loja reserva]', errMsg)
-    return NextResponse.json({ error: `Erro interno ao reservar estoque. [${errMsg.slice(0, 150)}]` }, { status: 500 })
+    if (msg.startsWith('STOCK_RACE')) {
+      return NextResponse.json({
+        error: 'Estoque tomado por outro comprador simultaneamente. Tente novamente.',
+        code: 'STOCK_RACE',
+      }, { status: 409 })
+    }
+    if (msg.startsWith('QUERY_ERROR')) {
+      const detail = msg.replace('QUERY_ERROR:', '').trim()
+      return NextResponse.json({
+        error: 'Erro na consulta de estoque. Contate o suporte.',
+        code: 'QUERY_ERROR',
+        detail,
+      }, { status: 400 })
+    }
+    // Erro genérico — nunca expõe detalhes internos do Prisma ao cliente
+    return NextResponse.json({
+      error: 'Erro ao processar reserva de estoque. Tente novamente.',
+      code: 'RESERVATION_FAILED',
+    }, { status: 500 })
   }
 
   const baseUrl = getPublicAppBaseUrl() || new URL(req.url).origin
