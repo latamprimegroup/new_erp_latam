@@ -172,6 +172,8 @@ function createMtlsAgent(): Agent {
  * Faz uma requisição HTTPS com mTLS usando o módulo nativo do Node.js.
  * Alternativa ao undici para maior compatibilidade em ambientes serverless.
  */
+const INTER_REQUEST_TIMEOUT_MS = 15_000 // 15s — suficiente para mTLS + resposta Inter
+
 function httpsRequestMtls(options: {
   method: string
   url: string
@@ -191,6 +193,7 @@ function httpsRequestMtls(options: {
       cert:     options.cert,
       key:      options.key,
       rejectUnauthorized: true,
+      timeout: INTER_REQUEST_TIMEOUT_MS,
     }
     const req = https.request(reqOptions, (res) => {
       let data = ''
@@ -198,6 +201,10 @@ function httpsRequestMtls(options: {
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }))
     })
     req.on('error', reject)
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error(`Inter API timeout após ${INTER_REQUEST_TIMEOUT_MS}ms — ${options.url}`))
+    })
     if (options.body) req.write(options.body)
     req.end()
   })
@@ -255,9 +262,9 @@ export async function getInterToken(): Promise<string> {
 
   const { cert, key } = loadCerts()
 
-  // Retry automático (3 tentativas com backoff) usando https nativo (mais compatível com Vercel)
+  // Retry automático (2 tentativas com backoff curto — timeout de 15s por tentativa)
   let lastErr: unknown
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await httpsRequestMtls({
         method:  'POST',
