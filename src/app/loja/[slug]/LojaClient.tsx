@@ -745,13 +745,23 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: P
             </div>
 
             <div className="flex flex-col items-center space-y-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`data:image/png;base64,${pixData.qrCodeBase64}`}
-                alt="QR Code PIX"
-                className="w-52 h-52 rounded-xl border border-zinc-700"
-              />
-              <p className="text-zinc-500 text-xs">Escaneie o QR Code com seu banco</p>
+              {pixData.qrCodeBase64 ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:image/png;base64,${pixData.qrCodeBase64}`}
+                    alt="QR Code PIX"
+                    className="w-52 h-52 rounded-xl border border-zinc-700"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                  <p className="text-zinc-500 text-xs">Escaneie o QR Code com seu banco</p>
+                </>
+              ) : (
+                <div className="w-52 h-52 rounded-xl border border-zinc-700 bg-zinc-800/50 flex flex-col items-center justify-center gap-2">
+                  <p className="text-zinc-400 text-sm font-medium">Use o PIX Copia e Cola</p>
+                  <p className="text-zinc-600 text-xs text-center px-4">QR Code não disponível. Copie o código abaixo.</p>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3">

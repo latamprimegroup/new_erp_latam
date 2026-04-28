@@ -34,6 +34,8 @@ const ROUTE_ROLES: Record<string, string[]> = {
   '/dashboard/venda-rapida-global': ['ADMIN', 'CEO', 'COMMERCIAL'],
   '/dashboard/pos-venda': ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER'],
   '/api/admin/pos-venda': ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER'],
+  '/dashboard/vendas-aprovadas': ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER'],
+  '/api/admin/vendas-aprovadas': ['ADMIN', 'CEO', 'COMMERCIAL', 'DELIVERER'],
   '/api/admin/pos-venda/magic-link': ['ADMIN', 'CEO', 'DELIVERER'],
   '/api/admin/pos-venda/troca-rapida': ['ADMIN', 'CEO', 'DELIVERER'],
   '/api/admin/pos-venda/saude': ['ADMIN', 'CEO', 'COMMERCIAL'],
