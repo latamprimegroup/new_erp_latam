@@ -219,9 +219,17 @@ function extractPixItems(raw: unknown): InterPixItem[] {
 // ─── Handler principal ────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // Validação de segurança opcional via secret header
+  // Log de todos os headers para diagnóstico
+  const allHeaders: Record<string, string> = {}
+  req.headers.forEach((v, k) => { allHeaders[k] = v })
+  console.log('[Inter Webhook] Headers recebidos:', JSON.stringify(allHeaders))
+
+  // Validação via secret — Inter Empresas envia via mTLS, não via secret header
+  // Mantemos a validação opcional: só bloqueia se secret estiver definido E header vier errado
   const secret = process.env.INTER_PIX_WEBHOOK_SECRET?.trim()
-  if (secret && req.headers.get('x-inter-webhook-secret') !== secret) {
+  const receivedSecret = req.headers.get('x-inter-webhook-secret') ?? ''
+  if (secret && receivedSecret && receivedSecret !== secret) {
+    console.error('[Inter Webhook] Secret inválido recebido:', receivedSecret.slice(0, 10))
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
