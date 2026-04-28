@@ -460,11 +460,20 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: P
     if (pollRef.current) clearInterval(pollRef.current)
   }, [])
 
+  // Só marca como expirado se já iniciou a contagem (secs > 0 pelo menos uma vez)
+  const pixStartedRef = useRef(false)
   useEffect(() => {
-    if (step === 'pix' && secs === 0) {
+    if (step === 'pix' && secs > 0) {
+      pixStartedRef.current = true
+    }
+    if (step === 'pix' && secs === 0 && pixStartedRef.current) {
       if (pollRef.current) clearInterval(pollRef.current)
       setErrorMsg('O PIX expirou. Gere um novo pedido.')
       setStep('error')
+      pixStartedRef.current = false
+    }
+    if (step !== 'pix') {
+      pixStartedRef.current = false
     }
   }, [secs, step])
 
