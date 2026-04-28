@@ -219,42 +219,31 @@ function buildAssetWhere(listing: {
 }) {
   const code = normalizeStockCode(listing.stockProductCode)
   const name = normalizeStockName(listing.stockProductName)
-  const base = {
-    status: 'AVAILABLE' as const,
-  }
-  const orClauses: Array<Record<string, unknown>> = []
-  if (code) {
-    orClauses.push(
-      { adsId: code },
-      { specs: { path: '$.productCode', equals: code } },
-      { specs: { path: '$.codigoProduto', equals: code } },
-    )
-  }
-  if (name) {
-    orClauses.push(
-      { displayName: { equals: name, mode: 'insensitive' as const } },
-      { subCategory: { equals: name, mode: 'insensitive' as const } },
-      { specs: { path: '$.productName', equals: name } },
-      { specs: { path: '$.nomeProduto', equals: name } },
-      { specs: { path: '$.listingCategory', equals: listing.assetCategory } },
-    )
-  }
-  if (orClauses.length === 0) {
-    const CATEGORY_MAP: Record<string, string> = {
-      GOOGLE_ADS: 'CONTAS', META_ADS: 'CONTAS', TIKTOK_ADS: 'CONTAS',
-      AMAZON_ADS: 'CONTAS', LINKEDIN_ADS: 'CONTAS', PINTEREST_ADS: 'CONTAS',
-      SNAPCHAT_ADS: 'CONTAS', OTHER: 'OUTROS',
+  const base = { status: 'AVAILABLE' as const }
+
+  if (code || name) {
+    const orClauses: Array<Record<string, unknown>> = []
+    if (code) {
+      orClauses.push(
+        { adsId: code },
+        { specs: { path: '$.productCode',   equals: code } },
+        { specs: { path: '$.codigoProduto', equals: code } },
+      )
     }
-    const assetCategory = CATEGORY_MAP[listing.assetCategory] ?? listing.assetCategory
-    return {
-      ...base,
-      category: assetCategory as never,
+    if (name) {
+      orClauses.push(
+        { displayName: { equals: name, mode: 'insensitive' as const } },
+        { subCategory:  { equals: name, mode: 'insensitive' as const } },
+        { specs: { path: '$.productName',     equals: name } },
+        { specs: { path: '$.nomeProduto',     equals: name } },
+        { specs: { path: '$.listingCategory', equals: listing.assetCategory } },
+      )
     }
+    return { ...base, OR: orClauses }
   }
-  return {
-    ...base,
-    OR: orClauses,
-  }
+
+  const assetCategory = mapToAssetCategory(listing.assetCategory)
+  return { ...base, category: assetCategory as never }
 }
 
 // Mapeamento canônico: categoria do ProductListing → enum AssetCategory do banco
@@ -340,7 +329,15 @@ async function countAvailableAssetsForListingWithFallback(listing: {
   try {
     return await prisma.asset.count({ where })
   } catch (err) {
-    console.error('[Loja GET] Falha no count filtrado por listing:', err)
+    // Log estruturado com contexto completo para diagnóstico
+    console.error('[Loja GET] Falha no count filtrado:', JSON.stringify({
+      error:       String((err as Error).message ?? err),
+      assetCategory: listing.assetCategory,
+      mappedCategory: mapToAssetCategory(listing.assetCategory),
+      stockProductCode: listing.stockProductCode,
+      stockProductName: listing.stockProductName,
+    }))
+    // Fallback seguro: conta por categoria sem JSON path
     return countAvailableAssetsWithFallback(listing)
   }
 }
@@ -833,33 +830,48 @@ export async function POST(req: globalThis.Request, { params }: { params: { slug
       update: {},
     })
 
-    // PRÉ-SELEÇÃO fora da transaction: usa query complexa (JSON path + OR)
-    // antes de entrar no lock de Serializable para evitar erros de MySQL
+    // PRÉ-SELEÇÃO fora da transaction: query complexa (JSON path + OR) executada
+    // com read normal — sem o overhead de locking reads do SERIALIZABLE.
+    // Dentro da transaction usa apenas WHERE id IN [...] para atomicidade.
     let preCandidateIds: string[] = []
+    const reserveWhere = buildAssetReserveWhere(listing)
+    console.log('[Loja reserva] Iniciando pré-seleção', JSON.stringify({
+      listingId: listing.id,
+      slug: listing.slug,
+      assetCategory: listing.assetCategory,
+      mappedCategory: mapToAssetCategory(listing.assetCategory),
+      stockProductCode: listing.stockProductCode,
+      stockProductName: listing.stockProductName,
+      qty,
+    }))
     try {
-      const reserveWhere = buildAssetReserveWhere(listing)
       const preCandidates = await prisma.asset.findMany({
         where:   reserveWhere,
-        select:  { id: true },
-        take:    qty * 3, // busca 3x para compensar possível race condition
+        select:  { id: true, adsId: true, displayName: true },
+        take:    qty * 3,
         orderBy: { createdAt: 'asc' },
       })
       preCandidateIds = preCandidates.map((a) => a.id)
+      console.log(`[Loja reserva] Pré-seleção: ${preCandidateIds.length} candidatos`, preCandidates.map(a => a.adsId))
     } catch (queryErr) {
       const qMsg = String((queryErr as Error).message ?? queryErr)
-      console.error('[Loja pré-seleção] findMany falhou:', qMsg)
-      // Fallback: busca simples por categoria
+      console.error('[Loja reserva] findMany complexo falhou:', JSON.stringify({
+        error: qMsg, where: JSON.stringify(reserveWhere),
+        assetCategory: listing.assetCategory, mappedCategory: mapToAssetCategory(listing.assetCategory),
+      }))
+      // Fallback: busca simples por categoria mapeada
       try {
         const assetCat = mapToAssetCategory(listing.assetCategory)
         const fallback = await prisma.asset.findMany({
           where:   { status: 'AVAILABLE', category: assetCat as never },
-          select:  { id: true },
+          select:  { id: true, adsId: true, displayName: true },
           take:    qty * 3,
           orderBy: { createdAt: 'asc' },
         })
         preCandidateIds = fallback.map((a) => a.id)
+        console.log(`[Loja reserva] Fallback por categoria "${assetCat}": ${preCandidateIds.length} candidatos`, fallback.map(a => a.adsId))
       } catch (fallbackErr) {
-        console.error('[Loja pré-seleção fallback] falhou:', fallbackErr)
+        console.error('[Loja reserva] Fallback por categoria falhou:', String((fallbackErr as Error).message ?? fallbackErr))
       }
     }
 
