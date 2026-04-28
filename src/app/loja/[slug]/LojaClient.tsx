@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { captureUtms, buildUtmPayload, type UtmData } from '@/lib/utm-tracker'
 import { QUICK_SALE_LEGAL_TERMS_TEXT } from '@/lib/quick-sale-legal-terms'
 
@@ -745,23 +746,23 @@ export function LojaClient({ slug, urlUtms, checkoutId, sellerRef, urlCupom }: P
             </div>
 
             <div className="flex flex-col items-center space-y-3">
-              {pixData.qrCodeBase64 ? (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`data:image/png;base64,${pixData.qrCodeBase64}`}
-                    alt="QR Code PIX"
-                    className="w-52 h-52 rounded-xl border border-zinc-700"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              {/* Sempre gera o QR Code localmente a partir do pixCopyPaste — nunca fica em branco */}
+              {pixData.pixCopyPaste ? (
+                <div className="p-2 bg-white rounded-xl border border-zinc-700">
+                  <QRCodeSVG
+                    value={pixData.pixCopyPaste}
+                    size={192}
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    level="M"
                   />
-                  <p className="text-zinc-500 text-xs">Escaneie o QR Code com seu banco</p>
-                </>
+                </div>
               ) : (
-                <div className="w-52 h-52 rounded-xl border border-zinc-700 bg-zinc-800/50 flex flex-col items-center justify-center gap-2">
-                  <p className="text-zinc-400 text-sm font-medium">Use o PIX Copia e Cola</p>
-                  <p className="text-zinc-600 text-xs text-center px-4">QR Code não disponível. Copie o código abaixo.</p>
+                <div className="w-52 h-52 rounded-xl border border-zinc-700 bg-zinc-800/50 flex items-center justify-center">
+                  <p className="text-zinc-500 text-sm">Carregando QR Code...</p>
                 </div>
               )}
+              <p className="text-zinc-500 text-xs">Escaneie o QR Code com seu banco</p>
             </div>
 
             <div className="flex items-center gap-3">
