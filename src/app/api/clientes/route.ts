@@ -154,7 +154,7 @@ export async function GET(req: Request) {
   }
 
   const [total, clients] = await Promise.all([
-    prisma.clientProfile.count({ where }),
+    prisma.clientProfile.count({ where }).catch(() => 0),
     prisma.clientProfile.findMany({
       where,
       include: {
@@ -174,6 +174,18 @@ export async function GET(req: Request) {
       orderBy: { user: { name: 'asc' } },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
+    }).catch(async () => {
+      // Fallback sem metrics se a coluna não existir
+      return prisma.clientProfile.findMany({
+        where,
+        include: {
+          user: { select: { id: true, name: true, email: true, phone: true, createdAt: true } },
+          accountManager: { select: { id: true, name: true } },
+        },
+        orderBy: { user: { name: 'asc' } },
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+      }).catch(() => [])
     }),
   ])
 

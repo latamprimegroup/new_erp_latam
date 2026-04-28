@@ -234,7 +234,8 @@ export function ClientesAdminClient() {
       if (!res.ok) {
         if (res.status === 401) throw new Error('Sessão expirada. Faça login novamente.')
         if (res.status === 403) throw new Error('Seu perfil não tem permissão para visualizar clientes.')
-        throw new Error('Erro ao carregar')
+        const errBody = await res.text().catch(() => '')
+        throw new Error(`Erro ao carregar (${res.status}): ${errBody.slice(0, 100)}`)
       }
       const data = await res.json()
       setClients(data.clients ?? [])
