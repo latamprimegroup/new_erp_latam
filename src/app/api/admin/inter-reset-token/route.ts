@@ -26,11 +26,9 @@ export async function POST() {
     // Força nova autenticação
     const token = await getInterToken()
 
-    // Sempre usa o domínio de produção canônico para o webhook
-    // Nunca usa .vercel.app — o Inter só chama URLs de produção
-    const { getPublicAppBaseUrl } = await import('@/lib/public-app-url')
-    const appBase = getPublicAppBaseUrl() || 'https://www.adsativos.com'
-    const webhookUrl = `${appBase}/api/webhooks/inter/pix`
+    // Força domínio de produção — nunca usa .vercel.app
+    const PRODUCTION_URL = 'https://www.adsativos.com'
+    const webhookUrl = `${PRODUCTION_URL}/api/webhooks/inter/pix`
     let webhookMsg = 'Webhook não registrado (URL base não configurada)'
     if (appBase) {
       try {
